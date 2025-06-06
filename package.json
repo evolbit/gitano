@@ -1,0 +1,42 @@
+{
+  "name": "gitano",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@gfazioli/mantine-split-pane": "^2.1.2",
+    "@gitgraph/react": "^1.6.0",
+    "@mantine/core": "^8.0.2",
+    "@mantine/hooks": "^8.0.2",
+    "@mantine/styles": "^6.0.22",
+    "@tabler/icons-react": "^3.34.0",
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.2.2",
+    "@tauri-apps/plugin-opener": "^2",
+    "dagre": "^0.8.5",
+    "i18next": "^25.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^15.5.2",
+    "react-icons": "^5.5.0",
+    "reactflow": "^11.11.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/dagre": "^0.7.52",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.8",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}
