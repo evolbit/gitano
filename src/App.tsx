@@ -7,7 +7,8 @@ import {
   IconPlus,
   IconSettings,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./index.css";
 
@@ -23,6 +24,48 @@ export default function App() {
     setTabs([...tabs, { id: newId, label: `Tab ${tabs.length + 1}` }]);
     setActiveTab(newId);
   };
+
+  useEffect(() => {
+    const unlisten = listen<string>("menu-event", (event) => {
+      switch (event.payload) {
+        case "new_tab":
+          addTab();
+          break;
+        case "close_tab":
+          // TODO: Implement close tab logic
+          break;
+        case "reopen_tab":
+          // TODO: Implement reopen closed tab logic
+          break;
+        case "clone_repo":
+          // TODO: Implement clone repo logic
+          break;
+        case "init_repo":
+          // TODO: Implement init repo logic
+          break;
+        case "open_repo":
+          // TODO: Implement open repo logic
+          break;
+        case "open_repo_external":
+          // TODO: Implement open repo in external editor logic
+          break;
+        case "open_terminal":
+          // TODO: Implement open external terminal logic
+          break;
+        case "open_file_manager":
+          // TODO: Implement open in file manager logic
+          break;
+        case "sign_in":
+          // TODO: Implement sign into a different account logic
+          break;
+        default:
+          break;
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [tabs]);
 
   return (
     <div className="h-full w-full bg-zinc-900 text-white">
