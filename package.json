@@ -28,6 +28,7 @@
     "reactflow": "^11.11.4"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.8",
     "@tauri-apps/cli": "^2",
     "@types/dagre": "^0.7.52",
     "@types/react": "^18.3.1",

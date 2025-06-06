@@ -25,7 +25,7 @@ export default function App() {
   };
 
   return (
-    <Box>
+    <div className="h-full w-full bg-zinc-900 text-white">
       <Tabs
         value={activeTab}
         onChange={(value) => setActiveTab(value || "")}
@@ -52,22 +52,23 @@ export default function App() {
             key={tab.id}
             value={tab.id}
             p={0}
-            className="h-[calc(100vh-42px)] w-screen p-0 m-0 bg-zinc-900 text-white">
+            className="h-[calc(100vh-42px)] w-full p-0 m-0 bg-zinc-900 text-white">
             <Split className="h-full w-full">
               {/* Sidebar izquierdo */}
               <Split.Pane
                 initialWidth={240}
                 minWidth={200}
-                className="h-full !w-full">
-                <Box className="h-full w-full !bg-zinc-800 border-r border-zinc-700 !text-zinc-200">
+                maxWidth={350}
+                className="!h-full !w-full">
+                <Box className="!h-full !w-full bg-zinc-800 border-r border-zinc-700 text-zinc-200">
                   <Accordion
                     defaultValue="section1"
                     variant="contained"
                     classNames={{
-                      root: "!bg-zinc-800 !text-zinc-200",
-                      item: "!bg-zinc-800 !text-zinc-200",
-                      control: "!bg-zinc-800 !text-zinc-200",
-                      panel: "!bg-zinc-800 !text-zinc-200",
+                      root: "bg-zinc-800 text-zinc-200",
+                      item: "bg-zinc-800 text-zinc-200",
+                      control: "bg-zinc-800 text-zinc-200",
+                      panel: "bg-zinc-800 text-zinc-200",
                     }}>
                     <Accordion.Item value="section1">
                       <Accordion.Control icon={<IconFolder size={18} />}>
@@ -97,10 +98,10 @@ export default function App() {
               {/* Centro de contenido */}
               <Split.Pane
                 minWidth={300}
-                className="h-full w-full">
-                <ScrollArea className="h-full w-full p-4">
-                  <Box className="!bg-zinc-900 h-full min-h-[400px] w-full !text-white">
-                    <h2 className="!text-white text-2xl font-bold mb-2">
+                className="!h-full !w-full">
+                <ScrollArea className="!h-full !w-full p-4">
+                  <Box className="bg-zinc-900 h-full min-h-[400px] w-full text-white">
+                    <h2 className="text-white text-2xl font-bold mb-2">
                       Contenido principal
                     </h2>
                     <p className="text-zinc-400">
@@ -120,8 +121,8 @@ export default function App() {
                 initialWidth={240}
                 minWidth={200}
                 maxWidth={350}
-                className="h-full w-full">
-                <Box className="h-full w-full !bg-zinc-800 border-l border-zinc-700 !text-zinc-200">
+                className="!h-full !w-full">
+                <Box className="!h-full !w-full bg-zinc-800 border-l border-zinc-700 text-zinc-200">
                   <Box className="p-4">
                     <IconInfoCircle
                       size={24}
@@ -135,6 +136,6 @@ export default function App() {
           </Tabs.Panel>
         ))}
       </Tabs>
-    </Box>
+    </div>
   );
 }
