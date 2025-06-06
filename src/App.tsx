@@ -59,8 +59,8 @@ export default function App() {
                 initialWidth={240}
                 minWidth={200}
                 maxWidth={350}
-                className="!h-full !w-full">
-                <Box className="!h-full !w-full bg-zinc-800 border-r border-zinc-700 text-zinc-200">
+                className="!h-full !min-h-0">
+                <Box className="!h-full bg-zinc-800 border-r border-zinc-700 text-zinc-200">
                   <Accordion
                     defaultValue="section1"
                     variant="contained"
@@ -98,8 +98,8 @@ export default function App() {
               {/* Centro de contenido */}
               <Split.Pane
                 minWidth={300}
-                className="!h-full !w-full">
-                <ScrollArea className="!h-full !w-full p-4">
+                className="h-full min-h-0 grow">
+                <ScrollArea className="!h-full p-4">
                   <Box className="bg-zinc-900 h-full min-h-[400px] w-full text-white">
                     <h2 className="text-white text-2xl font-bold mb-2">
                       Contenido principal
@@ -121,8 +121,8 @@ export default function App() {
                 initialWidth={240}
                 minWidth={200}
                 maxWidth={350}
-                className="!h-full !w-full">
-                <Box className="!h-full !w-full bg-zinc-800 border-l border-zinc-700 text-zinc-200">
+                className="!h-full !min-h-0">
+                <Box className="!h-full bg-zinc-800 border-l border-zinc-700 text-zinc-200">
                   <Box className="p-4">
                     <IconInfoCircle
                       size={24}
