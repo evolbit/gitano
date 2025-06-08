@@ -15,6 +15,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
+import { classNames } from "./utils/ui";
 
 type TabType = {
   id: string;
@@ -117,18 +118,19 @@ export default function App() {
         onChange={(value) => setActiveTab(value || "")}
         keepMounted={false}
         variant="none">
-        <Tabs.List>
+        <Tabs.List className="bg-zinc-800 flex w-full">
           {tabs.map((tab, idx) => (
             <Tabs.Tab
               key={tab.id}
               value={tab.id}
               classNames={{
-                tab:
-                  `flex items-center gap-1 px-5 py-2 font-medium ` +
-                  (activeTab === tab.id
+                tab: classNames(
+                  "flex items-center gap-1 px-5 py-2 font-medium border-b-0",
+                  activeTab === tab.id
                     ? "!bg-zinc-700 !text-white"
-                    : "!bg-zinc-900 !text-zinc-400 hover:!bg-zinc-800") +
-                  (idx < tabs.length - 1 ? " border-r border-zinc-900" : ""),
+                    : "!bg-zinc-800 !text-zinc-400 hover:!bg-zinc-700",
+                  idx < tabs.length - 1 ? "border-r-1 border-r-zinc-900" : ""
+                ),
               }}
               style={{ borderRadius: 0 }}>
               {/* Git branch icon on the left for all tabs except home */}
@@ -153,6 +155,7 @@ export default function App() {
               )}
             </Tabs.Tab>
           ))}
+          <div className="flex-1" />
           <ActionIcon
             onClick={addTab}
             variant="subtle"
@@ -168,7 +171,7 @@ export default function App() {
             key={tab.id}
             value={tab.id}
             p={0}
-            className="h-[calc(100vh-42px)] w-full p-0 m-0 bg-zinc-900 text-white">
+            className="h-[calc(100vh-42px)] w-full p-0 m-0 bg-zinc-800 text-white">
             <Split className="h-full">
               {/* Sidebar izquierdo */}
               <Split.Pane
@@ -176,7 +179,7 @@ export default function App() {
                 minWidth={200}
                 maxWidth={350}
                 className="!h-full !min-h-0">
-                <Box className="!h-full bg-zinc-800 border-r border-zinc-700 text-zinc-200">
+                <Box className="!h-full border-r border-zinc-900 text-zinc-200">
                   <Accordion
                     defaultValue="section1"
                     variant="contained"
@@ -209,14 +212,14 @@ export default function App() {
                 size={1}
                 variant="transparent"
                 radius="xs"
-                className="border-r border-gray-700 bg-transparent p-0 m-0 w-px cursor-col-resize"
+                className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
               />
               {/* Centro de contenido */}
               <Split.Pane
                 minWidth={300}
                 className="h-full min-h-0 !grow">
                 <ScrollArea className="!h-full p-4">
-                  <Box className="bg-zinc-900 h-full min-h-[400px] w-full text-white">
+                  <Box className=" h-full min-h-[400px] w-full text-white">
                     <h2 className="text-white text-2xl font-bold mb-2">
                       Contenido principal
                     </h2>
@@ -230,7 +233,7 @@ export default function App() {
                 size={1}
                 variant="transparent"
                 radius="xs"
-                className="border-r border-gray-700 bg-transparent p-0 m-0 w-px cursor-col-resize"
+                className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
               />
               {/* Sidebar derecho */}
               <Split.Pane
@@ -238,7 +241,7 @@ export default function App() {
                 minWidth={200}
                 maxWidth={350}
                 className="!h-full !min-h-0">
-                <Box className="!h-full bg-zinc-800 border-l border-zinc-700 text-zinc-200">
+                <Box className="!h-full border-l border-zinc-900 text-zinc-200">
                   <Box className="p-4">
                     <IconInfoCircle
                       size={24}

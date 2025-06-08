@@ -51,7 +51,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
     <Group
       px={0}
       py={0}
-      className={`${bg} border-b border-zinc-900 min-h-[44px] w-full m-0 flex items-end justify-between`}>
+      className={`${bg} min-h-[44px] w-full m-0 flex items-end justify-between`}>
       {/* Left: repo/branch dropdowns */}
       <Group
         gap="md"
@@ -76,7 +76,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 className="text-xs text-zinc-400 text-center">
                 Repository
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-900 px-3 py-0.5 min-w-[120px] cursor-pointer">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer hover:bg-zinc-800 transition-colors rounded">
                 <IconGitBranch
                   size={16}
                   className="text-blue-400"
@@ -86,6 +86,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                   className="text-sm text-white font-medium">
                   efectoled-backend
                 </Text>
+                <span className="flex-1" />
                 <HiChevronDown
                   className="ml-1 text-zinc-400"
                   size={14}
@@ -141,7 +142,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 className="text-xs text-zinc-400 text-center">
                 Branch
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-900 px-3 py-0.5 min-w-[120px] cursor-pointer">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer hover:bg-zinc-800 transition-colors rounded">
                 <IconGitBranch
                   size={16}
                   className="text-lime-400"
@@ -151,6 +152,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                   className="text-sm text-white font-medium truncate max-w-[110px]">
                   feature/OYS-24721_CC_BACKOFFICE...
                 </Text>
+                <span className="flex-1" />
                 <HiChevronDown
                   className="ml-1 text-zinc-400"
                   size={14}
