@@ -5,32 +5,22 @@ import {
   ActionIcon,
   Box,
   Divider,
-  Group,
-  Menu,
   ScrollArea,
-  Stack,
   Tabs,
-  Text,
 } from "@mantine/core";
 import {
-  IconArrowBackUp,
-  IconArrowBarToUp,
-  IconArrowForwardUp,
-  IconCloudDownload,
-  IconCloudUpload,
   IconFolder,
   IconGitBranch,
   IconHome,
   IconInfoCircle,
   IconPlus,
   IconSettings,
-  IconStack2,
-  IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import TopToolbar from "./components/TopToolbar";
 import "./index.css";
 
 type TabType = {
@@ -175,262 +165,8 @@ export default function App() {
             <IconPlus size={18} />
           </ActionIcon>
         </Tabs.List>
-        {/* Bar below the tabs with icons */}
         <Divider my={0} />
-        <Group
-          gap="md"
-          px="md"
-          py={6}
-          style={{ background: "#23232a", alignItems: "end" }}>
-          {/* Repository dropdown with label */}
-          <Stack
-            gap={2}
-            align="center"
-            style={{ minWidth: 120 }}>
-            <Text
-              size="xs"
-              style={{ color: "#aaa", textAlign: "center" }}>
-              Repository
-            </Text>
-            <Menu
-              shadow="md"
-              width={220}>
-              <Menu.Target>
-                <Box
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: "#23232a",
-                    border: "1px solid #333",
-                    borderRadius: 6,
-                    padding: "2px 12px",
-                    minWidth: 120,
-                    cursor: "pointer",
-                  }}>
-                  <IconGitBranch
-                    size={16}
-                    style={{ color: "#60a5fa" }}
-                  />
-                  <Text
-                    size="sm"
-                    style={{ color: "#fff", fontWeight: 500 }}>
-                    efectoled-backend
-                  </Text>
-                  <svg
-                    width="14"
-                    height="14"
-                    style={{ marginLeft: 4 }}
-                    viewBox="0 0 20 20"
-                    fill="none">
-                    <path
-                      d="M6 8L10 12L14 8"
-                      stroke="#aaa"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </Box>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item>efectoled-backend</Menu.Item>
-                <Menu.Item>microservices</Menu.Item>
-                <Menu.Item>Launchpad</Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          </Stack>
-          {/* Vertical divider between repo and branch dropdowns */}
-          <Divider
-            orientation="vertical"
-            style={{ height: 28, borderColor: "#333" }}
-          />
-          {/* Branch dropdown with label */}
-          <Stack
-            gap={2}
-            align="center"
-            style={{ minWidth: 120 }}>
-            <Text
-              size="xs"
-              style={{ color: "#aaa", textAlign: "center" }}>
-              Branch
-            </Text>
-            <Menu
-              shadow="md"
-              width={220}>
-              <Menu.Target>
-                <Box
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: "#23232a",
-                    border: "1px solid #333",
-                    borderRadius: 6,
-                    padding: "2px 12px",
-                    minWidth: 120,
-                    cursor: "pointer",
-                  }}>
-                  <IconGitBranch
-                    size={16}
-                    style={{ color: "#a3e635" }}
-                  />
-                  <Text
-                    size="sm"
-                    style={{ color: "#fff", fontWeight: 500 }}>
-                    feature/OYS-24721_CC_BACKOFFICE...
-                  </Text>
-                  <svg
-                    width="14"
-                    height="14"
-                    style={{ marginLeft: 4 }}
-                    viewBox="0 0 20 20"
-                    fill="none">
-                    <path
-                      d="M6 8L10 12L14 8"
-                      stroke="#aaa"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </Box>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item>develop</Menu.Item>
-                <Menu.Item>feature/OYS-24721_CC_BACKOFFICE...</Menu.Item>
-                <Menu.Item>release/20250519.01</Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          </Stack>
-          {/* Bar icons with labels */}
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconArrowBackUp size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Undo
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconArrowForwardUp size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Redo
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconCloudDownload size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Pull
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconCloudUpload size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Push
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconGitBranch size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Branch
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconStack2 size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Stash
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconArrowBarToUp size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Pop
-            </Text>
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="lg">
-              <IconTerminal2 size={18} />
-            </ActionIcon>
-            <Text
-              size="xs"
-              mt={2}
-              style={{ color: "#aaa" }}>
-              Terminal
-            </Text>
-          </Stack>
-        </Group>
+        <TopToolbar />
         {tabs.map((tab) => (
           <Tabs.Panel
             key={tab.id}
