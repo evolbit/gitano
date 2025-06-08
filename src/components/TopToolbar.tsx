@@ -54,9 +54,9 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
       className={`${bg} min-h-[44px] w-full m-0 flex items-end justify-between !pb-1`}>
       {/* Left: repo/branch dropdowns */}
       <Group
-        gap="md"
         px="md"
-        className="!min-w-[520px] h-full">
+        gap={0}
+        className="!w-[620px] h-full">
         {/* Repository dropdown with label */}
         <Menu
           shadow="md"
@@ -69,7 +69,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
             <Stack
               gap={0}
               align="center"
-              className="cursor-pointer group rounded overflow-hidden">
+              className="cursor-pointer group rounded overflow-hidden w-1/2">
               <Text
                 size="xs"
                 className="text-xs text-zinc-400 px-4 group-hover:bg-zinc-800 w-full transition-colors">
@@ -134,7 +134,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
             <Stack
               gap={0}
               align="center"
-              className="min-w-[120px] cursor-pointer group rounded overflow-hidden">
+              className="cursor-pointer group rounded overflow-hidden !w-1/2">
               <Text
                 size="xs"
                 className="text-xs text-zinc-400 group-hover:bg-zinc-800 w-full px-3 pt-1 transition-colors">
