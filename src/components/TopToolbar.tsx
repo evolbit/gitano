@@ -11,6 +11,7 @@ import {
   IconArrowBackUp,
   IconArrowBarToUp,
   IconArrowForwardUp,
+  IconBrandGit,
   IconCloudDownload,
   IconCloudUpload,
   IconGitBranch,
@@ -54,7 +55,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
       className={`${bg} min-h-[44px] w-full m-0 flex items-end justify-between !pb-1`}>
       {/* Left: repo/branch dropdowns */}
       <Group
-        px="md"
+        px="sm"
         gap={0}
         className="!w-[620px] h-full">
         {/* Repository dropdown with label */}
@@ -62,6 +63,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
           shadow="md"
           offset={0}
           position="bottom-start"
+          width="target"
           opened={repoMenuOpened}
           onOpen={() => setRepoMenuOpened(true)}
           onClose={() => setRepoMenuOpened(false)}>
@@ -72,11 +74,11 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               className="cursor-pointer group rounded overflow-hidden w-1/2">
               <Text
                 size="xs"
-                className="text-xs text-zinc-400 px-4 group-hover:bg-zinc-800 w-full transition-colors">
+                className="text-xs text-zinc-400 px-3 pt-1 group-hover:bg-zinc-800 w-full transition-colors">
                 Repository
               </Text>
               <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
-                <IconGitBranch
+                <IconBrandGit
                   size={16}
                   className="text-blue-400"
                 />
@@ -93,8 +95,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               </Box>
             </Stack>
           </Menu.Target>
-          <Menu.Dropdown className="p-0 min-w-[320px]">
-            <div className="px-2 pt-2 pb-1 sticky top-0 bg-zinc-900 z-10">
+          <Menu.Dropdown className="p-0 bg-zinc-800 border border-zinc-700 rounded-b transition-colors">
+            <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t">
               <TextInput
                 value={repoSearch}
                 onChange={(e) => setRepoSearch(e.currentTarget.value)}
@@ -106,9 +108,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                   />
                 }
                 leftSectionPointerEvents="none"
+                leftSectionWidth={28}
                 size="xs"
                 classNames={{
-                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400",
+                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400 pl-8",
                 }}
                 radius="md"
                 autoFocus
@@ -118,7 +121,11 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
             )}
             {filteredRepos.map((repo) => (
-              <Menu.Item key={repo}>{repo}</Menu.Item>
+              <Menu.Item
+                key={repo}
+                className="px-4 py-2">
+                {repo}
+              </Menu.Item>
             ))}
           </Menu.Dropdown>
         </Menu>
@@ -127,6 +134,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
           shadow="md"
           offset={0}
           position="bottom-start"
+          width="target"
           opened={branchMenuOpened}
           onOpen={() => setBranchMenuOpened(true)}
           onClose={() => setBranchMenuOpened(false)}>
@@ -158,8 +166,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               </Box>
             </Stack>
           </Menu.Target>
-          <Menu.Dropdown className="p-0 min-w-[260px]">
-            <div className="px-2 pt-2 pb-1 sticky top-0 bg-zinc-900 z-10">
+          <Menu.Dropdown className="p-0 bg-zinc-800 border border-zinc-700 rounded-b transition-colors">
+            <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t">
               <TextInput
                 value={branchSearch}
                 onChange={(e) => setBranchSearch(e.currentTarget.value)}
@@ -171,9 +179,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                   />
                 }
                 leftSectionPointerEvents="none"
+                leftSectionWidth={28}
                 size="xs"
                 classNames={{
-                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400",
+                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400 pl-8",
                 }}
                 radius="md"
                 autoFocus
@@ -183,7 +192,11 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
             )}
             {filteredBranches.map((branch) => (
-              <Menu.Item key={branch}>{branch}</Menu.Item>
+              <Menu.Item
+                key={branch}
+                className="px-4 py-2">
+                {branch}
+              </Menu.Item>
             ))}
           </Menu.Dropdown>
         </Menu>
@@ -308,7 +321,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
       {/* Right: Terminal and Search */}
       <Group
         gap="md"
-        px="md"
+        px="sm"
         className="min-w-[120px] justify-end">
         <Stack
           gap={0}
