@@ -1,11 +1,11 @@
 import {
   ActionIcon,
   Box,
-  Divider,
   Group,
   Menu,
   Stack,
   Text,
+  TextInput,
 } from "@mantine/core";
 import {
   IconArrowBackUp,
@@ -14,320 +14,355 @@ import {
   IconCloudDownload,
   IconCloudUpload,
   IconGitBranch,
+  IconSearch,
   IconStack2,
   IconTerminal2,
 } from "@tabler/icons-react";
-import React from "react";
+import React, { useState } from "react";
+import { HiChevronDown } from "react-icons/hi2";
 
-const TopToolbar: React.FC = () => (
-  <Group
-    px={0}
-    py={0}
-    style={{
-      background: "#23232a",
-      borderBottom: "1px solid #23232a",
-      minHeight: 44,
-      width: "100%",
-      margin: 0,
-      display: "flex",
-      alignItems: "flex-end",
-      justifyContent: "space-between",
-    }}>
-    {/* Left: repo/branch dropdowns */}
+const REPOS = ["efectoled-backend", "microservices", "Launchpad"];
+const BRANCHES = [
+  "develop",
+  "feature/OYS-24721_CC_BACKOFFICE...",
+  "release/20250519.01",
+];
+
+interface TopToolbarProps {
+  bg?: string;
+}
+
+const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-zinc-700" }) => {
+  // Search state for dropdowns
+  const [repoSearch, setRepoSearch] = useState("");
+  const [branchSearch, setBranchSearch] = useState("");
+  // Menu open state for hover/active styling
+  const [repoMenuOpened, setRepoMenuOpened] = useState(false);
+  const [branchMenuOpened, setBranchMenuOpened] = useState(false);
+
+  const filteredRepos = REPOS.filter((r) =>
+    r.toLowerCase().includes(repoSearch.toLowerCase())
+  );
+  const filteredBranches = BRANCHES.filter((b) =>
+    b.toLowerCase().includes(branchSearch.toLowerCase())
+  );
+
+  return (
     <Group
-      gap="md"
-      px="md"
-      style={{ minWidth: 320 }}>
-      {/* Repository dropdown with label */}
-      <Menu
-        shadow="md"
-        width={220}>
-        <Menu.Target>
-          <Stack
-            gap={2}
-            align="center"
-            style={{ minWidth: 120, cursor: "pointer" }}>
-            <Text
-              size="xs"
-              style={{ color: "#aaa", textAlign: "center" }}>
-              Repository
-            </Text>
-            <Box
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "#23232a",
-                padding: "2px 12px",
-                minWidth: 120,
-                cursor: "pointer",
-              }}>
-              <IconGitBranch
-                size={16}
-                style={{ color: "#60a5fa" }}
-              />
+      px={0}
+      py={0}
+      className={`${bg} border-b border-zinc-900 min-h-[44px] w-full m-0 flex items-end justify-between`}>
+      {/* Left: repo/branch dropdowns */}
+      <Group
+        gap="md"
+        px="md"
+        className="min-w-[320px]">
+        {/* Repository dropdown with label */}
+        <Menu
+          shadow="md"
+          width={220}
+          offset={0}
+          position="bottom-start"
+          opened={repoMenuOpened}
+          onOpen={() => setRepoMenuOpened(true)}
+          onClose={() => setRepoMenuOpened(false)}>
+          <Menu.Target>
+            <Stack
+              gap={2}
+              align="center"
+              className="min-w-[120px] cursor-pointer">
               <Text
-                size="sm"
-                style={{ color: "#fff", fontWeight: 500 }}>
-                efectoled-backend
+                size="xs"
+                className="text-xs text-zinc-400 text-center">
+                Repository
               </Text>
-              <svg
-                width="14"
-                height="14"
-                style={{ marginLeft: 4 }}
-                viewBox="0 0 20 20"
-                fill="none">
-                <path
-                  d="M6 8L10 12L14 8"
-                  stroke="#aaa"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
+              <Box className="flex items-center gap-1.5 bg-zinc-900 px-3 py-0.5 min-w-[120px] cursor-pointer">
+                <IconGitBranch
+                  size={16}
+                  className="text-blue-400"
                 />
-              </svg>
-            </Box>
-          </Stack>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item>efectoled-backend</Menu.Item>
-          <Menu.Item>microservices</Menu.Item>
-          <Menu.Item>Launchpad</Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-      {/* Vertical divider between repo and branch dropdowns */}
-      <Divider
-        orientation="vertical"
-        style={{ height: 28, borderColor: "#333" }}
-      />
-      {/* Branch dropdown with label */}
-      <Menu
-        shadow="md"
-        width={220}>
-        <Menu.Target>
-          <Stack
-            gap={2}
-            align="center"
-            style={{ minWidth: 120, cursor: "pointer" }}>
-            <Text
-              size="xs"
-              style={{ color: "#aaa", textAlign: "center" }}>
-              Branch
-            </Text>
-            <Box
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "#23232a",
-                padding: "2px 12px",
-                minWidth: 120,
-                cursor: "pointer",
-              }}>
-              <IconGitBranch
-                size={16}
-                style={{ color: "#a3e635" }}
+                <Text
+                  size="sm"
+                  className="text-sm text-white font-medium">
+                  efectoled-backend
+                </Text>
+                <HiChevronDown
+                  className="ml-1 text-zinc-400"
+                  size={14}
+                />
+              </Box>
+            </Stack>
+          </Menu.Target>
+          <Menu.Dropdown className="p-0 min-w-[220px]">
+            <div className="px-2 pt-2 pb-1 sticky top-0 bg-zinc-900 z-10">
+              <TextInput
+                value={repoSearch}
+                onChange={(e) => setRepoSearch(e.currentTarget.value)}
+                placeholder="Search"
+                leftSection={
+                  <IconSearch
+                    size={16}
+                    className="text-zinc-400"
+                  />
+                }
+                leftSectionPointerEvents="none"
+                size="xs"
+                classNames={{
+                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400",
+                }}
+                radius="md"
+                autoFocus
               />
+            </div>
+            {filteredRepos.length === 0 && (
+              <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
+            )}
+            {filteredRepos.map((repo) => (
+              <Menu.Item key={repo}>{repo}</Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+        {/* Branch dropdown with label */}
+        <Menu
+          shadow="md"
+          width={260}
+          offset={0}
+          position="bottom-start"
+          opened={branchMenuOpened}
+          onOpen={() => setBranchMenuOpened(true)}
+          onClose={() => setBranchMenuOpened(false)}>
+          <Menu.Target>
+            <Stack
+              gap={2}
+              align="center"
+              className="min-w-[120px] cursor-pointer">
               <Text
-                size="sm"
-                style={{ color: "#fff", fontWeight: 500 }}>
-                feature/OYS-24721_CC_BACKOFFICE...
+                size="xs"
+                className="text-xs text-zinc-400 text-center">
+                Branch
               </Text>
-              <svg
-                width="14"
-                height="14"
-                style={{ marginLeft: 4 }}
-                viewBox="0 0 20 20"
-                fill="none">
-                <path
-                  d="M6 8L10 12L14 8"
-                  stroke="#aaa"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
+              <Box className="flex items-center gap-1.5 bg-zinc-900 px-3 py-0.5 min-w-[120px] cursor-pointer">
+                <IconGitBranch
+                  size={16}
+                  className="text-lime-400"
                 />
-              </svg>
-            </Box>
-          </Stack>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item>develop</Menu.Item>
-          <Menu.Item>feature/OYS-24721_CC_BACKOFFICE...</Menu.Item>
-          <Menu.Item>release/20250519.01</Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
+                <Text
+                  size="sm"
+                  className="text-sm text-white font-medium truncate max-w-[110px]">
+                  feature/OYS-24721_CC_BACKOFFICE...
+                </Text>
+                <HiChevronDown
+                  className="ml-1 text-zinc-400"
+                  size={14}
+                />
+              </Box>
+            </Stack>
+          </Menu.Target>
+          <Menu.Dropdown className="p-0 min-w-[260px]">
+            <div className="px-2 pt-2 pb-1 sticky top-0 bg-zinc-900 z-10">
+              <TextInput
+                value={branchSearch}
+                onChange={(e) => setBranchSearch(e.currentTarget.value)}
+                placeholder="Search"
+                leftSection={
+                  <IconSearch
+                    size={16}
+                    className="text-zinc-400"
+                  />
+                }
+                leftSectionPointerEvents="none"
+                size="xs"
+                classNames={{
+                  input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400",
+                }}
+                radius="md"
+                autoFocus
+              />
+            </div>
+            {filteredBranches.length === 0 && (
+              <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
+            )}
+            {filteredBranches.map((branch) => (
+              <Menu.Item key={branch}>{branch}</Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
+      {/* Center: main tool icons */}
+      <Group
+        gap="xl"
+        className="justify-center flex-1">
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowBackUp size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Undo
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowForwardUp size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Redo
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconCloudDownload size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Pull
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconCloudUpload size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Push
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconGitBranch size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Branch
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconStack2 size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Stash
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowBarToUp size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Pop
+          </Text>
+        </Stack>
+      </Group>
+      {/* Right: Terminal and Search */}
+      <Group
+        gap="md"
+        px="md"
+        className="min-w-[120px] justify-end">
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconTerminal2 size={18} />
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Terminal
+          </Text>
+        </Stack>
+        <Stack
+          gap={0}
+          align="center">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 20 20"
+              fill="none">
+              <circle
+                cx="9"
+                cy="9"
+                r="7"
+                stroke="#aaa"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M15 15L18 18"
+                stroke="#aaa"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </ActionIcon>
+          <Text
+            size="xs"
+            mt={2}
+            className="text-xs text-zinc-400 mt-0.5">
+            Search
+          </Text>
+        </Stack>
+      </Group>
     </Group>
-    {/* Center: main tool icons */}
-    <Group
-      gap="xl"
-      style={{ justifyContent: "center", flex: 1 }}>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconArrowBackUp size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Undo
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconArrowForwardUp size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Redo
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconCloudDownload size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Pull
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconCloudUpload size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Push
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconGitBranch size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Branch
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconStack2 size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Stash
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconArrowBarToUp size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Pop
-        </Text>
-      </Stack>
-    </Group>
-    {/* Right: Terminal and Search */}
-    <Group
-      gap="md"
-      px="md"
-      style={{ minWidth: 120, justifyContent: "flex-end" }}>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <IconTerminal2 size={18} />
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Terminal
-        </Text>
-      </Stack>
-      <Stack
-        gap={0}
-        align="center">
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          size="lg">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 20 20"
-            fill="none">
-            <circle
-              cx="9"
-              cy="9"
-              r="7"
-              stroke="#aaa"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M15 15L18 18"
-              stroke="#aaa"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </ActionIcon>
-        <Text
-          size="xs"
-          mt={2}
-          style={{ color: "#aaa" }}>
-          Search
-        </Text>
-      </Stack>
-    </Group>
-  </Group>
-);
+  );
+};
 
 export default TopToolbar;

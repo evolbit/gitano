@@ -1,13 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import "@gfazioli/mantine-split-pane/styles.css";
-import {
-  Accordion,
-  ActionIcon,
-  Box,
-  Divider,
-  ScrollArea,
-  Tabs,
-} from "@mantine/core";
+import { Accordion, ActionIcon, Box, ScrollArea, Tabs } from "@mantine/core";
 import {
   IconFolder,
   IconGitBranch,
@@ -122,18 +115,21 @@ export default function App() {
       <Tabs
         value={activeTab}
         onChange={(value) => setActiveTab(value || "")}
-        keepMounted={false}>
+        keepMounted={false}
+        variant="none">
         <Tabs.List>
           {tabs.map((tab, idx) => (
             <Tabs.Tab
               key={tab.id}
               value={tab.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                paddingRight: 0,
-              }}>
+              className={
+                `flex items-center gap-1 px-5 py-2 font-medium ` +
+                (activeTab === tab.id
+                  ? "bg-zinc-700 text-white"
+                  : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800") +
+                (idx < tabs.length - 1 ? " border-r border-zinc-900" : "")
+              }
+              style={{ borderRadius: 0 }}>
               {/* Git branch icon on the left for all tabs except home */}
               {tab.id !== "home" && branchIcon}
               {/* Home icon for home tab */}
@@ -165,8 +161,7 @@ export default function App() {
             <IconPlus size={18} />
           </ActionIcon>
         </Tabs.List>
-        <Divider my={0} />
-        <TopToolbar />
+        <TopToolbar bg="bg-zinc-700" />
         {tabs.map((tab) => (
           <Tabs.Panel
             key={tab.id}
