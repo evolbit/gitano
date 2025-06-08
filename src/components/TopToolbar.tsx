@@ -51,16 +51,15 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
     <Group
       px={0}
       py={0}
-      className={`${bg} min-h-[44px] w-full m-0 flex items-end justify-between`}>
+      className={`${bg} min-h-[44px] w-full m-0 flex items-end justify-between !pb-1`}>
       {/* Left: repo/branch dropdowns */}
       <Group
         gap="md"
         px="md"
-        className="min-w-[320px]">
+        className="!min-w-[520px] h-full">
         {/* Repository dropdown with label */}
         <Menu
           shadow="md"
-          width={220}
           offset={0}
           position="bottom-start"
           opened={repoMenuOpened}
@@ -68,15 +67,15 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
           onClose={() => setRepoMenuOpened(false)}>
           <Menu.Target>
             <Stack
-              gap={2}
+              gap={0}
               align="center"
-              className="min-w-[120px] cursor-pointer">
+              className="cursor-pointer group rounded overflow-hidden">
               <Text
                 size="xs"
-                className="text-xs text-zinc-400 text-center">
+                className="text-xs text-zinc-400 px-4 group-hover:bg-zinc-800 w-full transition-colors">
                 Repository
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer hover:bg-zinc-800 transition-colors rounded">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
                 <IconGitBranch
                   size={16}
                   className="text-blue-400"
@@ -88,13 +87,13 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 </Text>
                 <span className="flex-1" />
                 <HiChevronDown
-                  className="ml-1 text-zinc-400"
-                  size={14}
+                  className="text-zinc-400 h-6 w-6 flex items-center justify-center"
+                  size={18}
                 />
               </Box>
             </Stack>
           </Menu.Target>
-          <Menu.Dropdown className="p-0 min-w-[220px]">
+          <Menu.Dropdown className="p-0 min-w-[320px]">
             <div className="px-2 pt-2 pb-1 sticky top-0 bg-zinc-900 z-10">
               <TextInput
                 value={repoSearch}
@@ -126,7 +125,6 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
         {/* Branch dropdown with label */}
         <Menu
           shadow="md"
-          width={260}
           offset={0}
           position="bottom-start"
           opened={branchMenuOpened}
@@ -134,15 +132,15 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
           onClose={() => setBranchMenuOpened(false)}>
           <Menu.Target>
             <Stack
-              gap={2}
+              gap={0}
               align="center"
-              className="min-w-[120px] cursor-pointer">
+              className="min-w-[120px] cursor-pointer group rounded overflow-hidden">
               <Text
                 size="xs"
-                className="text-xs text-zinc-400 text-center">
+                className="text-xs text-zinc-400 group-hover:bg-zinc-800 w-full px-3 pt-1 transition-colors">
                 Branch
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer hover:bg-zinc-800 transition-colors rounded">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
                 <IconGitBranch
                   size={16}
                   className="text-lime-400"
@@ -154,8 +152,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 </Text>
                 <span className="flex-1" />
                 <HiChevronDown
-                  className="ml-1 text-zinc-400"
-                  size={14}
+                  className="text-zinc-400 h-6 w-6 flex items-center justify-center"
+                  size={18}
                 />
               </Box>
             </Stack>
