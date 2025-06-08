@@ -6,8 +6,11 @@ import {
   Box,
   Divider,
   Group,
+  Menu,
   ScrollArea,
+  Stack,
   Tabs,
+  Text,
 } from "@mantine/core";
 import {
   IconArrowBackUp,
@@ -37,8 +40,8 @@ type TabType = {
 
 const branchIcon = (
   <IconGitBranch
-    size={18}
-    style={{ marginRight: 4 }}
+    size={16}
+    style={{ marginRight: 6, verticalAlign: "middle" }}
   />
 );
 
@@ -47,13 +50,10 @@ const TABS_INITIAL: TabType[] = [
     id: "home",
     label: undefined,
     icon: (
-      <>
-        <IconHome
-          size={18}
-          style={{ marginRight: 4 }}
-        />
-        {branchIcon}
-      </>
+      <IconHome
+        size={18}
+        style={{ marginRight: 4 }}
+      />
     ),
   },
 ];
@@ -65,19 +65,16 @@ export default function App() {
 
   const addTab = () => {
     const newId = `tab-${tabs.length + 1}`;
-    setTabs([
-      ...tabs,
-      { id: newId, label: `Tab ${tabs.length + 1}`, icon: branchIcon },
-    ]);
+    setTabs([...tabs, { id: newId, label: `Tab ${tabs.length + 1}` }]);
     setActiveTab(newId);
   };
 
-  const closeTab = () => {
-    if (tabs.length > 1) {
-      const currentIndex = tabs.findIndex((tab) => tab.id === activeTab);
-      const newTabs = tabs.filter((tab) => tab.id !== activeTab);
-      setTabs(newTabs);
-      setActiveTab(newTabs[Math.max(0, currentIndex - 1)].id);
+  const closeTab = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) return;
+    setTabs(tabs.filter((t) => t.id !== id));
+    if (activeTab === id && tabs.length > 1) {
+      setActiveTab(tabs[0].id);
     }
   };
 
@@ -88,7 +85,13 @@ export default function App() {
           addTab();
           break;
         case "close_tab":
-          closeTab();
+          // Just close the active tab (simulate close button click)
+          if (tabs.length > 1) {
+            const currentIndex = tabs.findIndex((tab) => tab.id === activeTab);
+            const newTabs = tabs.filter((tab) => tab.id !== activeTab);
+            setTabs(newTabs);
+            setActiveTab(newTabs[Math.max(0, currentIndex - 1)].id);
+          }
           break;
         case "reopen_tab":
           // TODO: Implement reopen closed tab logic
@@ -130,15 +133,47 @@ export default function App() {
         onChange={(value) => setActiveTab(value || "")}
         keepMounted={false}>
         <Tabs.List>
-          {tabs.map((tab) => (
+          {tabs.map((tab, idx) => (
             <Tabs.Tab
               key={tab.id}
-              value={tab.id}>
-              {tab.icon}
+              value={tab.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                paddingRight: 0,
+              }}>
+              {/* Git branch icon on the left for all tabs except home */}
+              {tab.id !== "home" && branchIcon}
+              {/* Home icon for home tab */}
+              {tab.id === "home" && tab.icon}
               {tab.label && (
-                <span style={{ marginLeft: tab.icon ? 6 : 0 }}>
+                <span style={{ marginLeft: tab.icon ? 0 : 0 }}>
                   {tab.label}
                 </span>
+              )}
+              {/* Close icon on the right for all tabs except home */}
+              {tab.id !== "home" && (
+                <ActionIcon
+                  size={18}
+                  variant="subtle"
+                  color="gray"
+                  onClick={(e) => closeTab(tab.id, e)}
+                  style={{ marginLeft: 6 }}>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path
+                      d="M3 3L9 9M9 3L3 9"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </ActionIcon>
               )}
             </Tabs.Tab>
           ))}
@@ -154,58 +189,238 @@ export default function App() {
         {/* Bar below the tabs with icons */}
         <Divider my={0} />
         <Group
-          gap="xs"
+          gap="md"
           px="md"
           py={6}
-          style={{ background: "#23232a" }}>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconArrowBackUp size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconArrowForwardUp size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconCloudDownload size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconCloudUpload size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconGitBranch size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconStack2 size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconArrowBarToUp size={18} />
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconTerminal2 size={18} />
-          </ActionIcon>
+          style={{ background: "#23232a", alignItems: "end" }}>
+          {/* Repository dropdown */}
+          <Menu
+            shadow="md"
+            width={220}>
+            <Menu.Target>
+              <Box
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "#23232a",
+                  border: "1px solid #333",
+                  borderRadius: 6,
+                  padding: "2px 12px",
+                  minWidth: 120,
+                  cursor: "pointer",
+                }}>
+                <IconGitBranch
+                  size={16}
+                  style={{ color: "#60a5fa" }}
+                />
+                <Text
+                  size="sm"
+                  style={{ color: "#fff", fontWeight: 500 }}>
+                  efectoled-backend
+                </Text>
+                <svg
+                  width="14"
+                  height="14"
+                  style={{ marginLeft: 4 }}
+                  viewBox="0 0 20 20"
+                  fill="none">
+                  <path
+                    d="M6 8L10 12L14 8"
+                    stroke="#aaa"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </Box>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item>efectoled-backend</Menu.Item>
+              <Menu.Item>microservices</Menu.Item>
+              <Menu.Item>Launchpad</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+          {/* Vertical divider between repo and branch dropdowns */}
+          <Divider
+            orientation="vertical"
+            style={{ height: 28, borderColor: "#333" }}
+          />
+          {/* Branch dropdown */}
+          <Menu
+            shadow="md"
+            width={220}>
+            <Menu.Target>
+              <Box
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "#23232a",
+                  border: "1px solid #333",
+                  borderRadius: 6,
+                  padding: "2px 12px",
+                  minWidth: 120,
+                  cursor: "pointer",
+                }}>
+                <IconGitBranch
+                  size={16}
+                  style={{ color: "#a3e635" }}
+                />
+                <Text
+                  size="sm"
+                  style={{ color: "#fff", fontWeight: 500 }}>
+                  feature/OYS-24721_CC_BACKOFFICE...
+                </Text>
+                <svg
+                  width="14"
+                  height="14"
+                  style={{ marginLeft: 4 }}
+                  viewBox="0 0 20 20"
+                  fill="none">
+                  <path
+                    d="M6 8L10 12L14 8"
+                    stroke="#aaa"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </Box>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item>develop</Menu.Item>
+              <Menu.Item>feature/OYS-24721_CC_BACKOFFICE...</Menu.Item>
+              <Menu.Item>release/20250519.01</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+          {/* Bar icons with labels */}
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconArrowBackUp size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Undo
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconArrowForwardUp size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Redo
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconCloudDownload size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Pull
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconCloudUpload size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Push
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconGitBranch size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Branch
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconStack2 size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Stash
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconArrowBarToUp size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Pop
+            </Text>
+          </Stack>
+          <Stack
+            gap={0}
+            align="center">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg">
+              <IconTerminal2 size={18} />
+            </ActionIcon>
+            <Text
+              size="xs"
+              mt={2}
+              style={{ color: "#aaa" }}>
+              Terminal
+            </Text>
+          </Stack>
         </Group>
         {tabs.map((tab) => (
           <Tabs.Panel
