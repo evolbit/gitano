@@ -26,6 +26,7 @@ import {
   IconSettings,
   IconStack2,
   IconTerminal2,
+  IconX,
 } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useEffect, useState } from "react";
@@ -160,19 +161,7 @@ export default function App() {
                   color="gray"
                   onClick={(e) => closeTab(tab.id, e)}
                   style={{ marginLeft: 6 }}>
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg">
-                    <path
-                      d="M3 3L9 9M9 3L3 9"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
+                  <IconX size={12} />
                 </ActionIcon>
               )}
             </Tabs.Tab>
@@ -193,105 +182,125 @@ export default function App() {
           px="md"
           py={6}
           style={{ background: "#23232a", alignItems: "end" }}>
-          {/* Repository dropdown */}
-          <Menu
-            shadow="md"
-            width={220}>
-            <Menu.Target>
-              <Box
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#23232a",
-                  border: "1px solid #333",
-                  borderRadius: 6,
-                  padding: "2px 12px",
-                  minWidth: 120,
-                  cursor: "pointer",
-                }}>
-                <IconGitBranch
-                  size={16}
-                  style={{ color: "#60a5fa" }}
-                />
-                <Text
-                  size="sm"
-                  style={{ color: "#fff", fontWeight: 500 }}>
-                  efectoled-backend
-                </Text>
-                <svg
-                  width="14"
-                  height="14"
-                  style={{ marginLeft: 4 }}
-                  viewBox="0 0 20 20"
-                  fill="none">
-                  <path
-                    d="M6 8L10 12L14 8"
-                    stroke="#aaa"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
+          {/* Repository dropdown with label */}
+          <Stack
+            gap={2}
+            align="center"
+            style={{ minWidth: 120 }}>
+            <Text
+              size="xs"
+              style={{ color: "#aaa", textAlign: "center" }}>
+              Repository
+            </Text>
+            <Menu
+              shadow="md"
+              width={220}>
+              <Menu.Target>
+                <Box
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#23232a",
+                    border: "1px solid #333",
+                    borderRadius: 6,
+                    padding: "2px 12px",
+                    minWidth: 120,
+                    cursor: "pointer",
+                  }}>
+                  <IconGitBranch
+                    size={16}
+                    style={{ color: "#60a5fa" }}
                   />
-                </svg>
-              </Box>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item>efectoled-backend</Menu.Item>
-              <Menu.Item>microservices</Menu.Item>
-              <Menu.Item>Launchpad</Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+                  <Text
+                    size="sm"
+                    style={{ color: "#fff", fontWeight: 500 }}>
+                    efectoled-backend
+                  </Text>
+                  <svg
+                    width="14"
+                    height="14"
+                    style={{ marginLeft: 4 }}
+                    viewBox="0 0 20 20"
+                    fill="none">
+                    <path
+                      d="M6 8L10 12L14 8"
+                      stroke="#aaa"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </Box>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item>efectoled-backend</Menu.Item>
+                <Menu.Item>microservices</Menu.Item>
+                <Menu.Item>Launchpad</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Stack>
           {/* Vertical divider between repo and branch dropdowns */}
           <Divider
             orientation="vertical"
             style={{ height: 28, borderColor: "#333" }}
           />
-          {/* Branch dropdown */}
-          <Menu
-            shadow="md"
-            width={220}>
-            <Menu.Target>
-              <Box
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#23232a",
-                  border: "1px solid #333",
-                  borderRadius: 6,
-                  padding: "2px 12px",
-                  minWidth: 120,
-                  cursor: "pointer",
-                }}>
-                <IconGitBranch
-                  size={16}
-                  style={{ color: "#a3e635" }}
-                />
-                <Text
-                  size="sm"
-                  style={{ color: "#fff", fontWeight: 500 }}>
-                  feature/OYS-24721_CC_BACKOFFICE...
-                </Text>
-                <svg
-                  width="14"
-                  height="14"
-                  style={{ marginLeft: 4 }}
-                  viewBox="0 0 20 20"
-                  fill="none">
-                  <path
-                    d="M6 8L10 12L14 8"
-                    stroke="#aaa"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
+          {/* Branch dropdown with label */}
+          <Stack
+            gap={2}
+            align="center"
+            style={{ minWidth: 120 }}>
+            <Text
+              size="xs"
+              style={{ color: "#aaa", textAlign: "center" }}>
+              Branch
+            </Text>
+            <Menu
+              shadow="md"
+              width={220}>
+              <Menu.Target>
+                <Box
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#23232a",
+                    border: "1px solid #333",
+                    borderRadius: 6,
+                    padding: "2px 12px",
+                    minWidth: 120,
+                    cursor: "pointer",
+                  }}>
+                  <IconGitBranch
+                    size={16}
+                    style={{ color: "#a3e635" }}
                   />
-                </svg>
-              </Box>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item>develop</Menu.Item>
-              <Menu.Item>feature/OYS-24721_CC_BACKOFFICE...</Menu.Item>
-              <Menu.Item>release/20250519.01</Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+                  <Text
+                    size="sm"
+                    style={{ color: "#fff", fontWeight: 500 }}>
+                    feature/OYS-24721_CC_BACKOFFICE...
+                  </Text>
+                  <svg
+                    width="14"
+                    height="14"
+                    style={{ marginLeft: 4 }}
+                    viewBox="0 0 20 20"
+                    fill="none">
+                    <path
+                      d="M6 8L10 12L14 8"
+                      stroke="#aaa"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </Box>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item>develop</Menu.Item>
+                <Menu.Item>feature/OYS-24721_CC_BACKOFFICE...</Menu.Item>
+                <Menu.Item>release/20250519.01</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Stack>
           {/* Bar icons with labels */}
           <Stack
             gap={0}
