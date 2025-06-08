@@ -1,28 +1,84 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import "@gfazioli/mantine-split-pane/styles.css";
-import { Accordion, ActionIcon, Box, ScrollArea, Tabs } from "@mantine/core";
 import {
+  Accordion,
+  ActionIcon,
+  Box,
+  Divider,
+  Group,
+  ScrollArea,
+  Tabs,
+} from "@mantine/core";
+import {
+  IconArrowBackUp,
+  IconArrowBarToUp,
+  IconArrowForwardUp,
+  IconCloudDownload,
+  IconCloudUpload,
   IconFolder,
+  IconGitBranch,
+  IconHome,
   IconInfoCircle,
   IconPlus,
   IconSettings,
+  IconStack2,
+  IconTerminal2,
 } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import "./index.css";
 
-const TABS_INITIAL = [{ id: "tab-1", label: "Tab 1" }];
+type TabType = {
+  id: string;
+  label?: string;
+  icon?: ReactNode;
+};
+
+const branchIcon = (
+  <IconGitBranch
+    size={18}
+    style={{ marginRight: 4 }}
+  />
+);
+
+const TABS_INITIAL: TabType[] = [
+  {
+    id: "home",
+    label: undefined,
+    icon: (
+      <>
+        <IconHome
+          size={18}
+          style={{ marginRight: 4 }}
+        />
+        {branchIcon}
+      </>
+    ),
+  },
+];
 
 export default function App() {
   const { t } = useTranslation();
-  const [tabs, setTabs] = useState(TABS_INITIAL);
+  const [tabs, setTabs] = useState<TabType[]>(TABS_INITIAL);
   const [activeTab, setActiveTab] = useState(tabs[0].id);
 
   const addTab = () => {
     const newId = `tab-${tabs.length + 1}`;
-    setTabs([...tabs, { id: newId, label: `Tab ${tabs.length + 1}` }]);
+    setTabs([
+      ...tabs,
+      { id: newId, label: `Tab ${tabs.length + 1}`, icon: branchIcon },
+    ]);
     setActiveTab(newId);
+  };
+
+  const closeTab = () => {
+    if (tabs.length > 1) {
+      const currentIndex = tabs.findIndex((tab) => tab.id === activeTab);
+      const newTabs = tabs.filter((tab) => tab.id !== activeTab);
+      setTabs(newTabs);
+      setActiveTab(newTabs[Math.max(0, currentIndex - 1)].id);
+    }
   };
 
   useEffect(() => {
@@ -32,7 +88,7 @@ export default function App() {
           addTab();
           break;
         case "close_tab":
-          // TODO: Implement close tab logic
+          closeTab();
           break;
         case "reopen_tab":
           // TODO: Implement reopen closed tab logic
@@ -78,7 +134,12 @@ export default function App() {
             <Tabs.Tab
               key={tab.id}
               value={tab.id}>
-              {tab.label}
+              {tab.icon}
+              {tab.label && (
+                <span style={{ marginLeft: tab.icon ? 6 : 0 }}>
+                  {tab.label}
+                </span>
+              )}
             </Tabs.Tab>
           ))}
           <ActionIcon
@@ -90,6 +151,62 @@ export default function App() {
             <IconPlus size={18} />
           </ActionIcon>
         </Tabs.List>
+        {/* Bar below the tabs with icons */}
+        <Divider my={0} />
+        <Group
+          gap="xs"
+          px="md"
+          py={6}
+          style={{ background: "#23232a" }}>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowBackUp size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowForwardUp size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconCloudDownload size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconCloudUpload size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconGitBranch size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconStack2 size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconArrowBarToUp size={18} />
+          </ActionIcon>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="lg">
+            <IconTerminal2 size={18} />
+          </ActionIcon>
+        </Group>
         {tabs.map((tab) => (
           <Tabs.Panel
             key={tab.id}
