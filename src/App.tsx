@@ -122,13 +122,14 @@ export default function App() {
             <Tabs.Tab
               key={tab.id}
               value={tab.id}
-              className={
-                `flex items-center gap-1 px-5 py-2 font-medium ` +
-                (activeTab === tab.id
-                  ? "bg-zinc-700 text-white"
-                  : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800") +
-                (idx < tabs.length - 1 ? " border-r border-zinc-900" : "")
-              }
+              classNames={{
+                tab:
+                  `flex items-center gap-1 px-5 py-2 font-medium ` +
+                  (activeTab === tab.id
+                    ? "!bg-zinc-700 !text-white"
+                    : "!bg-zinc-900 !text-zinc-400 hover:!bg-zinc-800") +
+                  (idx < tabs.length - 1 ? " border-r border-zinc-900" : ""),
+              }}
               style={{ borderRadius: 0 }}>
               {/* Git branch icon on the left for all tabs except home */}
               {tab.id !== "home" && branchIcon}
@@ -161,14 +162,14 @@ export default function App() {
             <IconPlus size={18} />
           </ActionIcon>
         </Tabs.List>
-        <TopToolbar bg="bg-zinc-700" />
+        <TopToolbar bg="!bg-zinc-700" />
         {tabs.map((tab) => (
           <Tabs.Panel
             key={tab.id}
             value={tab.id}
             p={0}
             className="h-[calc(100vh-42px)] w-full p-0 m-0 bg-zinc-900 text-white">
-            <Split className="h-full w-full">
+            <Split className="h-full">
               {/* Sidebar izquierdo */}
               <Split.Pane
                 initialWidth={240}
@@ -213,7 +214,7 @@ export default function App() {
               {/* Centro de contenido */}
               <Split.Pane
                 minWidth={300}
-                className="h-full min-h-0 grow">
+                className="h-full min-h-0 !grow">
                 <ScrollArea className="!h-full p-4">
                   <Box className="bg-zinc-900 h-full min-h-[400px] w-full text-white">
                     <h2 className="text-white text-2xl font-bold mb-2">

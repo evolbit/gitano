@@ -32,7 +32,7 @@ interface TopToolbarProps {
   bg?: string;
 }
 
-const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-zinc-700" }) => {
+const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
   // Search state for dropdowns
   const [repoSearch, setRepoSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
