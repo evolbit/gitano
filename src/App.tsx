@@ -205,9 +205,10 @@ export default function App() {
                       variant="contained"
                       classNames={{
                         root: "bg-zinc-800 text-zinc-200",
-                        item: "bg-zinc-800 text-zinc-200",
+                        item: "bg-zinc-800 text-zinc-200 p-2 border-b border-zinc-900",
                         control: "bg-zinc-800 text-zinc-200",
                         panel: "bg-zinc-800 text-zinc-200",
+                        icon: "mr-2",
                       }}>
                       <Accordion.Item value="branches">
                         <Accordion.Control icon={<IconGitBranch size={18} />}>

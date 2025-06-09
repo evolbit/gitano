@@ -3,6 +3,7 @@ import {
   IconChevronRight,
   IconCloud,
   IconDeviceFloppy,
+  IconFolder,
   IconGitBranch,
   IconGitMerge,
 } from "@tabler/icons-react";
@@ -73,7 +74,29 @@ export function BranchList({ repoPath }: { repoPath: string }) {
     const command = type === "local" ? "get_branches" : "get_remote_branches";
     core
       .invoke<string[]>(command, { path: repoPath })
-      .then(setBranches)
+      .then((allBranches) => {
+        if (type === "local") {
+          // Solo oculta ramas que empiezan con <remoto>/ (ej: origin/feature/foo), pero NO las locales con /
+          setBranches(
+            allBranches.filter(
+              (b) =>
+                !/^\w+\//.test(b) ||
+                b.startsWith("feature/") ||
+                b.startsWith("hotfix/") ||
+                b.startsWith("release/") ||
+                b.startsWith("bugfix/") ||
+                b.startsWith("chore/") ||
+                b.startsWith("test/") ||
+                b.startsWith("fix/") ||
+                b.startsWith("refactor/") ||
+                b.startsWith("task/")
+            )
+          );
+        } else {
+          // Solo incluye ramas que empiezan con <remoto>/
+          setBranches(allBranches.filter((b) => /^\w+\//.test(b)));
+        }
+      })
       .catch((e) => setError(e.toString()))
       .finally(() => setLoading(false));
   }, [repoPath, type]);
@@ -109,6 +132,12 @@ export function BranchList({ repoPath }: { repoPath: string }) {
                       />
                     )}
                   </span>
+                  <span className="inline-flex items-center justify-center w-5 h-5">
+                    <IconFolder
+                      size={18}
+                      className="text-blue-300"
+                    />
+                  </span>
                   <span>{node.name}</span>
                 </div>
                 {isOpen && (
@@ -141,16 +170,9 @@ export function BranchList({ repoPath }: { repoPath: string }) {
   if (!repoPath) return null;
 
   return (
-    <div className="p-4 h-full flex flex-col">
+    <div className="p-1 my-2 h-full flex flex-col">
       <div className="font-bold mb-2 flex items-center gap-2 text-sm">
-        <span className="inline-flex items-center justify-center w-5 h-5">
-          <IconGitBranch
-            className="w-5 h-5 align-middle"
-            size={18}
-          />
-        </span>
-        Ramas
-        <div className="ml-auto flex gap-1">
+        <div className="flex gap-1">
           <button
             className={`px-2 py-1 rounded flex items-center gap-1 text-xs ${
               type === "local"
@@ -189,7 +211,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
       </div>
       {loading && <div className="text-xs text-zinc-400">Cargando...</div>}
       {error && <div className="text-xs text-red-400">{error}</div>}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 mt-2">
         <div
           className="overflow-y-auto max-h-[55vh] pr-1"
           style={{ height: "100%" }}>
