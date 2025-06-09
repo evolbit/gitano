@@ -1,4 +1,4 @@
-use git2::{Oid, Repository};
+use git2::{BranchType, Oid, Repository};
 use tauri::command;
 
 #[derive(serde::Serialize)]
@@ -116,4 +116,20 @@ pub fn get_commit_graph(path: String) -> Result<Vec<CommitNode>, String> {
         });
     }
     Ok(nodes)
+}
+
+#[command]
+pub fn get_remote_branches(path: String) -> Result<Vec<String>, String> {
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let mut branches = Vec::new();
+    let branch_iter = repo
+        .branches(Some(BranchType::Remote))
+        .map_err(|e| e.to_string())?;
+    for branch in branch_iter {
+        let (branch, _) = branch.map_err(|e| e.to_string())?;
+        if let Some(name) = branch.name().map_err(|e| e.to_string())? {
+            branches.push(name.to_string());
+        }
+    }
+    Ok(branches)
 }

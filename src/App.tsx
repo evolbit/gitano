@@ -7,12 +7,12 @@ import {
   IconHome,
   IconInfoCircle,
   IconPlus,
-  IconSettings,
   IconX,
 } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { BranchList } from "./components/BranchList";
 import HomePage from "./components/HomePage";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
@@ -24,6 +24,8 @@ type TabType = {
   icon?: ReactNode;
 };
 
+type RepoTabType = TabType & { repoPath?: string };
+
 const branchIcon = (
   <IconGitBranch
     size={16}
@@ -31,7 +33,7 @@ const branchIcon = (
   />
 );
 
-const TABS_INITIAL: TabType[] = [
+const TABS_INITIAL: RepoTabType[] = [
   {
     id: "home",
     label: undefined,
@@ -46,7 +48,7 @@ const TABS_INITIAL: TabType[] = [
 
 export default function App() {
   const { t } = useTranslation();
-  const [tabs, setTabs] = useState<TabType[]>(TABS_INITIAL);
+  const [tabs, setTabs] = useState<RepoTabType[]>(TABS_INITIAL);
   const [activeTab, setActiveTab] = useState(tabs[0].id);
 
   const addTab = () => {
@@ -54,6 +56,13 @@ export default function App() {
     setTabs([...tabs, { id: newId, label: `Tab ${tabs.length + 1}` }]);
     setActiveTab(newId);
   };
+
+  const handleRepoOpened = useCallback((repoPath: string) => {
+    const repoName = repoPath.split("/").filter(Boolean).pop() || repoPath;
+    const newId = `repo-${repoName}-${Date.now()}`;
+    setTabs((prev) => [...prev, { id: newId, label: repoName, repoPath }]);
+    setActiveTab(newId);
+  }, []);
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -113,13 +122,16 @@ export default function App() {
   }, [tabs]);
 
   return (
-    <div className="h-full w-full bg-zinc-900 text-white">
+    <div className="h-screen w-screen bg-zinc-900 text-white flex flex-col overflow-hidden">
       <Tabs
         value={activeTab}
         onChange={(value) => setActiveTab(value || "")}
         keepMounted={false}
-        variant="none">
-        <Tabs.List className="bg-zinc-800 flex w-full">
+        variant="none"
+        className="flex flex-col h-full">
+        <Tabs.List
+          className="bg-zinc-800 flex w-full sticky top-0 z-30"
+          style={{ borderBottom: "1px solid #27272a" }}>
           {tabs.map((tab, idx) => (
             <Tabs.Tab
               key={tab.id}
@@ -166,17 +178,21 @@ export default function App() {
             <IconPlus size={18} />
           </ActionIcon>
         </Tabs.List>
-        <TopToolbar bg="!bg-zinc-700" />
+        <div className="sticky top-[42px] z-20">
+          <TopToolbar bg="!bg-zinc-700" />
+        </div>
         {tabs.map((tab) => (
           <Tabs.Panel
             key={tab.id}
             value={tab.id}
             p={0}
-            className="h-[calc(100vh-42px)] w-full p-0 m-0 bg-zinc-800 text-white">
+            className="flex-1 min-h-0 w-full p-0 m-0 bg-zinc-800 text-white flex flex-col">
             {tab.id === "home" ? (
-              <HomePage />
+              <div className="flex-1 min-h-0 overflow-auto">
+                <HomePage onRepoOpened={handleRepoOpened} />
+              </div>
             ) : (
-              <Split className="h-full">
+              <Split className="h-full min-h-0 flex-1">
                 {/* Sidebar izquierdo */}
                 <Split.Pane
                   initialWidth={240}
@@ -185,7 +201,7 @@ export default function App() {
                   className="!h-full !min-h-0">
                   <Box className="!h-full border-r border-zinc-900 text-zinc-200">
                     <Accordion
-                      defaultValue="section1"
+                      defaultValue="branches"
                       variant="contained"
                       classNames={{
                         root: "bg-zinc-800 text-zinc-200",
@@ -193,16 +209,16 @@ export default function App() {
                         control: "bg-zinc-800 text-zinc-200",
                         panel: "bg-zinc-800 text-zinc-200",
                       }}>
-                      <Accordion.Item value="section1">
-                        <Accordion.Control icon={<IconFolder size={18} />}>
-                          Sección 1
+                      <Accordion.Item value="branches">
+                        <Accordion.Control icon={<IconGitBranch size={18} />}>
+                          Ramas
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <Box className="p-2">Contenido del acordeón 1</Box>
+                          <BranchList repoPath={tab.repoPath || ""} />
                         </Accordion.Panel>
                       </Accordion.Item>
                       <Accordion.Item value="section2">
-                        <Accordion.Control icon={<IconSettings size={18} />}>
+                        <Accordion.Control icon={<IconFolder size={18} />}>
                           Sección 2
                         </Accordion.Control>
                         <Accordion.Panel>

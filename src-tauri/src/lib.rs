@@ -88,7 +88,8 @@ pub fn run() {
             git::open_local_repo,
             git::get_branches,
             git::get_commits,
-            git::get_commit_graph
+            git::get_commit_graph,
+            git::get_remote_branches
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

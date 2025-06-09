@@ -8,6 +8,7 @@ import {
   IconStar,
 } from "@tabler/icons-react";
 import React from "react";
+import { openLocalRepoDialog } from "../utils/openRepo";
 
 const mockRepos = [
   {
@@ -94,7 +95,10 @@ const RepoRow = ({ repo }: { repo: (typeof mockRepos)[0] }) => (
   </Group>
 );
 
-const HomePage: React.FC = () => {
+interface HomePageProps {
+  onRepoOpened?: (repoPath: string) => void;
+}
+const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
   return (
     <Box className="w-full h-full bg-zinc-900 text-zinc-100 p-8 overflow-auto">
       <Box className="flex items-center justify-between mb-6">
@@ -105,7 +109,11 @@ const HomePage: React.FC = () => {
           <Button
             size="xs"
             variant="filled"
-            color="blue">
+            color="blue"
+            onClick={async () => {
+              const repoPath = await openLocalRepoDialog();
+              if (repoPath && onRepoOpened) onRepoOpened(repoPath);
+            }}>
             Browse
           </Button>
           <Button
