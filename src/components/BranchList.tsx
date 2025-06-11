@@ -80,6 +80,9 @@ export function BranchList({ repoPath }: { repoPath: string }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [showOther, setShowOther] = useState(false);
   const [submenuLeft, setSubmenuLeft] = useState(true);
+  const [submenuDirection, setSubmenuDirection] = useState<"down" | "up">(
+    "down"
+  );
   const otherRef = useRef<HTMLDivElement>(null);
 
   // Cerrar menú contextual al hacer click fuera
@@ -142,15 +145,23 @@ export function BranchList({ repoPath }: { repoPath: string }) {
     if (newY !== menuPos.y) setMenuPos({ x: menuPos.x, y: newY });
   }, [contextMenu, menuPos]);
 
-  // Detectar si el submenú se sale del viewport derecho
+  // Detectar si el submenú se sale del viewport derecho o inferior
   useLayoutEffect(() => {
     if (!showOther || !otherRef.current) return;
     const rect = otherRef.current.getBoundingClientRect();
     const submenuWidth = 200; // ancho estimado del submenú
+    const submenuHeight = 220; // alto estimado del submenú (ajusta si tienes más/menos opciones)
+    // Izquierda/derecha
     if (rect.right + submenuWidth > window.innerWidth - 8) {
       setSubmenuLeft(false); // abrir hacia la izquierda
     } else {
       setSubmenuLeft(true); // abrir hacia la derecha
+    }
+    // Arriba/abajo
+    if (rect.bottom + submenuHeight > window.innerHeight - 8) {
+      setSubmenuDirection("up");
+    } else {
+      setSubmenuDirection("down");
     }
   }, [showOther]);
 
@@ -443,9 +454,9 @@ export function BranchList({ repoPath }: { repoPath: string }) {
             {/* Submenú Otros */}
             {showOther && (
               <div
-                className={`submenu bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none min-w-[180px] z-[100000] absolute top-0 ${
-                  submenuLeft ? "left-full ml-1" : "right-full mr-1"
-                }`}
+                className={`submenu bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none min-w-[180px] z-[100000] absolute ${
+                  submenuDirection === "down" ? "top-0" : "bottom-0"
+                } ${submenuLeft ? "left-full ml-1" : "right-full mr-1"}`}
                 onMouseEnter={() => setShowOther(true)}
                 onMouseLeave={() => setShowOther(false)}>
                 <div
