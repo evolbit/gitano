@@ -203,6 +203,7 @@ export default function App() {
                     <Accordion
                       defaultValue="branches"
                       variant="contained"
+                      chevronPosition="left"
                       classNames={{
                         root: "bg-zinc-800 text-zinc-200",
                         item: "bg-zinc-800 text-zinc-200 p-2 border-b border-zinc-900",
@@ -211,8 +212,24 @@ export default function App() {
                         icon: "mr-2",
                       }}>
                       <Accordion.Item value="branches">
-                        <Accordion.Control icon={<IconGitBranch size={18} />}>
-                          Ramas
+                        <Accordion.Control>
+                          <div className="flex flex-row items-center w-full justify-between">
+                            <span className="flex items-center gap-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5">
+                                <IconGitBranch size={18} />
+                              </span>
+                              Ramas
+                            </span>
+                            <button
+                              className="ml-2 p-1 rounded hover:bg-lime-400 transition-colors hover:text-zinc-900"
+                              title="Nueva rama"
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation(); /* lógica para crear rama */
+                              }}>
+                              <IconPlus size={16} />
+                            </button>
+                          </div>
                         </Accordion.Control>
                         <Accordion.Panel>
                           <BranchList repoPath={tab.repoPath || ""} />
