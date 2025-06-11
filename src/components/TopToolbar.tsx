@@ -124,7 +124,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               <Menu.Item
                 key={repo}
                 className="px-4 py-2">
-                {repo}
+                <span className="text-sm">{repo}</span>
               </Menu.Item>
             ))}
           </Menu.Dropdown>
@@ -155,7 +155,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 />
                 <Text
                   size="sm"
-                  className="text-sm text-white font-medium truncate max-w-[110px]">
+                  className="text-sm text-white font-medium truncate">
                   feature/OYS-24721_CC_BACKOFFICE...
                 </Text>
                 <span className="flex-1" />
@@ -195,7 +195,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
               <Menu.Item
                 key={branch}
                 className="px-4 py-2">
-                {branch}
+                <span className="text-sm">{branch}</span>
               </Menu.Item>
             ))}
           </Menu.Dropdown>

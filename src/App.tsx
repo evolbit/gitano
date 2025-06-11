@@ -196,7 +196,7 @@ export default function App() {
                 {/* Sidebar izquierdo */}
                 <Split.Pane
                   initialWidth={240}
-                  minWidth={200}
+                  minWidth={300}
                   maxWidth={350}
                   className="!h-full !min-h-0">
                   <Box className="!h-full border-r border-zinc-900 text-zinc-200">
@@ -247,7 +247,7 @@ export default function App() {
                   </Box>
                 </Split.Pane>
                 <Split.Resizer
-                  size={1}
+                  size={2}
                   variant="transparent"
                   radius="xs"
                   className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
@@ -268,7 +268,7 @@ export default function App() {
                   </ScrollArea>
                 </Split.Pane>
                 <Split.Resizer
-                  size={1}
+                  size={2}
                   variant="transparent"
                   radius="xs"
                   className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
@@ -276,7 +276,7 @@ export default function App() {
                 {/* Sidebar derecho */}
                 <Split.Pane
                   initialWidth={240}
-                  minWidth={200}
+                  minWidth={300}
                   maxWidth={350}
                   className="!h-full !min-h-0">
                   <Box className="!h-full border-l border-zinc-900 text-zinc-200">

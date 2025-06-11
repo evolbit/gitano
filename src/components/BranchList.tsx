@@ -303,7 +303,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
       if (relatedTarget?.closest(".submenu")) return;
       submenuTimeout.current = setTimeout(() => {
         closeMenus();
-      }, 200);
+      }, 500);
     }
     function handleSubmenuMouseEnter() {
       if (submenuTimeout.current) {
@@ -315,7 +315,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
     function handleSubmenuMouseLeave() {
       submenuTimeout.current = setTimeout(() => {
         setShowOther(false);
-      }, 200);
+      }, 500);
     }
 
     return ReactDOM.createPortal(
@@ -332,7 +332,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
         {/* Menú principal */}
         <div className="bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none backdrop-blur z-[99999] min-w-[320px]">
           {/* Remote actions, Branch operations, Worktree, Branching, Danger zone */}
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Remote actions
           </div>
           <div
@@ -357,7 +357,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
             Set Upstream
           </div>
           <div className="my-1 border-t border-zinc-700" />
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Branch operations
           </div>
           <div
@@ -382,7 +382,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
             Rebase ... onto {branchName}
           </div>
           <div className="my-1 border-t border-zinc-700" />
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Worktree
           </div>
           <div
@@ -400,7 +400,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
             Create worktree from {branchName}
           </div>
           <div className="my-1 border-t border-zinc-700" />
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Branching
           </div>
           <div
@@ -431,27 +431,10 @@ export function BranchList({ repoPath }: { repoPath: string }) {
             }}>
             Revert commit
           </div>
-          <div className="my-1 border-t border-zinc-700" />
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
-            Danger zone
-          </div>
-          <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
-            onClick={() => {
-              closeMenus();
-            }}>
-            Rename {branchName}
-          </div>
-          <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
-            onClick={() => {
-              closeMenus();
-            }}>
-            Delete {branchName}
-          </div>
+
           <div className="my-1 border-t border-zinc-700" />
           {/* Compare fuera del submenú */}
-          <div className="text-[10px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Compare
           </div>
           <div
@@ -526,6 +509,24 @@ export function BranchList({ repoPath }: { repoPath: string }) {
                 </div>
               </div>
             )}
+          </div>
+          <div className="my-1 border-t border-zinc-700" />
+          <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+            Danger zone
+          </div>
+          <div
+            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            onClick={() => {
+              closeMenus();
+            }}>
+            Rename {branchName}
+          </div>
+          <div
+            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
+            onClick={() => {
+              closeMenus();
+            }}>
+            Delete {branchName}
           </div>
         </div>
       </div>,
