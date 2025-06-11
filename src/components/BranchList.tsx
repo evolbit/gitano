@@ -84,6 +84,14 @@ export function BranchList({ repoPath }: { repoPath: string }) {
     "down"
   );
   const otherRef = useRef<HTMLDivElement>(null);
+  const submenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Limpiar timeout al desmontar (debe estar en el cuerpo principal, no en renderContextMenu)
+  useEffect(() => {
+    return () => {
+      if (submenuTimeout.current) clearTimeout(submenuTimeout.current);
+    };
+  }, []);
 
   // Cerrar menú contextual al hacer click fuera
   useEffect(() => {
@@ -289,6 +297,27 @@ export function BranchList({ repoPath }: { repoPath: string }) {
       setShowOther(false);
     }
 
+    // Handler para mouseleave con retardo (grace period)
+    function handleMenuMouseLeave(e: React.MouseEvent) {
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      if (relatedTarget?.closest(".submenu")) return;
+      submenuTimeout.current = setTimeout(() => {
+        closeMenus();
+      }, 200);
+    }
+    function handleSubmenuMouseEnter() {
+      if (submenuTimeout.current) {
+        clearTimeout(submenuTimeout.current);
+        submenuTimeout.current = null;
+      }
+      setShowOther(true);
+    }
+    function handleSubmenuMouseLeave() {
+      submenuTimeout.current = setTimeout(() => {
+        setShowOther(false);
+      }, 200);
+    }
+
     return ReactDOM.createPortal(
       <div
         ref={menuRef}
@@ -299,13 +328,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
           zIndex: 99999,
         }}
         className="flex"
-        onMouseLeave={(e) => {
-          // Verificar si el mouse está sobre el submenú
-          const relatedTarget = e.relatedTarget as HTMLElement;
-          if (!relatedTarget?.closest(".submenu")) {
-            closeMenus();
-          }
-        }}>
+        onMouseLeave={handleMenuMouseLeave}>
         {/* Menú principal */}
         <div className="bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none backdrop-blur z-[99999] min-w-[320px]">
           {/* Remote actions, Branch operations, Worktree, Branching, Danger zone */}
@@ -457,8 +480,8 @@ export function BranchList({ repoPath }: { repoPath: string }) {
                 className={`submenu bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none min-w-[180px] z-[100000] absolute ${
                   submenuDirection === "down" ? "top-0" : "bottom-0"
                 } ${submenuLeft ? "left-full ml-1" : "right-full mr-1"}`}
-                onMouseEnter={() => setShowOther(true)}
-                onMouseLeave={() => setShowOther(false)}>
+                onMouseEnter={handleSubmenuMouseEnter}
+                onMouseLeave={handleSubmenuMouseLeave}>
                 <div
                   className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
                   onClick={() => {
