@@ -353,9 +353,20 @@ pub fn get_formatted_commits(
         commit_lookup.insert(commit.hash.clone(), i);
     }
 
-    for hash in &ref_data.heads {
-        if let Some(&index) = commit_lookup.get(hash) {
-            commits[index].heads.push("head".to_string());
+    // heads: nombres de ramas locales que apuntan a cada commit
+    for reference in repo.references().map_err(|e| e.to_string())? {
+        if let Ok(reference) = reference {
+            let name = reference.name().unwrap_or("");
+            if name.starts_with("refs/heads/") {
+                if let Some(target) = reference.target() {
+                    if let Some(&index) = commit_lookup.get(&target.to_string()) {
+                        // Extrae el nombre de la rama después de 'refs/heads/'
+                        if let Some(branch_name) = name.strip_prefix("refs/heads/") {
+                            commits[index].heads.push(branch_name.to_string());
+                        }
+                    }
+                }
+            }
         }
     }
 

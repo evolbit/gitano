@@ -1,3 +1,9 @@
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { core } from "@tauri-apps/api";
 import { useEffect, useState } from "react";
 
@@ -54,6 +60,59 @@ type GitCommitData = {
   error: string | null;
 };
 
+// Datos ficticios para pruebas
+const data = [
+  {
+    graph: "●",
+    description: "feat: initial commit",
+    date: "2024-06-16 13:27",
+    author: "Alice",
+    commit: "8d8b6a03",
+  },
+  {
+    graph: "●",
+    description: "fix: bug in sidebar",
+    date: "2024-06-15 10:12",
+    author: "Bob",
+    commit: "9812e9ec",
+  },
+  {
+    graph: "●",
+    description: "refactor: cleanup",
+    date: "2024-06-14 09:00",
+    author: "Carol",
+    commit: "4d69e6c6",
+  },
+];
+
+const columns: ColumnDef<any>[] = [
+  {
+    accessorKey: "graph",
+    header: () => "Graph",
+    size: 60,
+  },
+  {
+    accessorKey: "description",
+    header: () => "Description",
+    size: 300,
+  },
+  {
+    accessorKey: "date",
+    header: () => "Date",
+    size: 160,
+  },
+  {
+    accessorKey: "author",
+    header: () => "Author",
+    size: 120,
+  },
+  {
+    accessorKey: "commit",
+    header: () => "Commit",
+    size: 100,
+  },
+];
+
 export function GitGraph({ repoPath }: { repoPath: string }) {
   const [commitData, setCommitData] = useState<GitCommitData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,6 +147,15 @@ export function GitGraph({ repoPath }: { repoPath: string }) {
       .finally(() => setLoading(false));
   }, [repoPath]);
 
+  // Tabla TanStack
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    columnResizeMode: "onChange",
+    debugTable: false,
+  });
+
   if (!repoPath) return null;
 
   return (
@@ -100,7 +168,65 @@ export function GitGraph({ repoPath }: { repoPath: string }) {
         position: "relative",
       }}>
       {error && <div className="text-red-500">{error}</div>}
-      {/* Aquí irá el grafo de commits personalizado */}
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <table
+          style={{ width: "100%", color: "#fff", borderCollapse: "collapse" }}>
+          <thead>
+            {table.getHeaderGroups().map((headerGroup: any) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header: any) => (
+                  <th
+                    key={header.id}
+                    style={{
+                      width: header.getSize(),
+                      borderBottom: "1px solid #333",
+                      background: "#23232b",
+                      padding: "8px",
+                      userSelect: "none",
+                      position: "relative",
+                    }}>
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext()
+                    )}
+                    {header.column.getCanResize() && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: 0,
+                          height: "100%",
+                          width: "4px",
+                          cursor: "col-resize",
+                          zIndex: 1,
+                          userSelect: "none",
+                        }}
+                      />
+                    )}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row: any) => (
+              <tr
+                key={row.id}
+                style={{ borderBottom: "1px solid #222" }}>
+                {row.getVisibleCells().map((cell: any) => (
+                  <td
+                    key={cell.id}
+                    style={{ padding: "8px" }}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
