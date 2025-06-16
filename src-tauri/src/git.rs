@@ -1,6 +1,7 @@
-use git2::{BranchType, Oid, Repository};
+use git2::{BranchType, Repository};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
 
 #[derive(serde::Serialize)]
@@ -208,7 +209,6 @@ pub fn get_formatted_commits(
     show_remote_branches: bool,
     include_commits_mentioned_by_reflogs: bool,
     only_follow_first_parent: bool,
-    commit_ordering: CommitOrdering,
     remotes: Vec<String>,
     hide_remotes: Vec<String>,
     stashes: Vec<GitStash>,
@@ -230,7 +230,8 @@ pub fn get_formatted_commits(
             .flatten()
         {
             if let Ok(reference) = repo.revparse_single(tag) {
-                revwalk.push(reference.id()).map_err(|e| e.to_string())?;
+                let target = reference.id();
+                revwalk.push(target).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -240,9 +241,9 @@ pub fn get_formatted_commits(
             if !hide_remotes.contains(remote) {
                 if let Ok(reference) = repo.find_reference(&format!("refs/remotes/{}/HEAD", remote))
                 {
-                    revwalk
-                        .push(reference.target().unwrap())
-                        .map_err(|e| e.to_string())?;
+                    if let Some(target) = reference.target() {
+                        revwalk.push(target).map_err(|e| e.to_string())?;
+                    }
                 }
             }
         }
@@ -262,9 +263,9 @@ pub fn get_formatted_commits(
     if let Some(branches) = branches {
         for branch in branches {
             if let Ok(reference) = repo.find_reference(&format!("refs/heads/{}", branch)) {
-                revwalk
-                    .push(reference.target().unwrap())
-                    .map_err(|e| e.to_string())?;
+                if let Some(target) = reference.target() {
+                    revwalk.push(target).map_err(|e| e.to_string())?;
+                }
             }
         }
     } else {
@@ -283,11 +284,17 @@ pub fn get_formatted_commits(
 
         let oid = oid_result.map_err(|e| e.to_string())?;
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
-
+        let author_name = commit.author().name().unwrap_or("").to_string();
+        // Filtro por autores si corresponde
+        if let Some(ref authors_list) = authors {
+            if !authors_list.contains(&author_name) {
+                continue;
+            }
+        }
         commits.push(GitCommit {
             hash: commit.id().to_string(),
             parents: commit.parent_ids().map(|p| p.to_string()).collect(),
-            author: commit.author().name().unwrap_or("").to_string(),
+            author: author_name,
             email: commit.author().email().unwrap_or("").to_string(),
             date: commit.author().when().seconds(),
             message: commit.summary().unwrap_or("").to_string(),
@@ -308,25 +315,33 @@ pub fn get_formatted_commits(
 
     // Get HEAD
     if let Ok(head) = repo.head() {
-        ref_data.head = Some(head.target().unwrap().to_string());
+        if let Some(target) = head.target() {
+            ref_data.head = Some(target.to_string());
+        }
     }
 
-    // Get branches and tags
+    // Get branches, tags, and remotes
+    let mut remote_refs: Vec<(String, String)> = Vec::new(); // (commit_hash, remote_name)
     for reference in repo.references().map_err(|e| e.to_string())? {
         if let Ok(reference) = reference {
             let name = reference.name().unwrap_or("");
             if name == "HEAD" {
                 continue;
             } else if name.starts_with("refs/heads/") {
-                ref_data.heads.push(reference.target().unwrap().to_string());
+                if let Some(target) = reference.target() {
+                    ref_data.heads.push(target.to_string());
+                }
             } else if name.starts_with("refs/tags/") {
-                ref_data.tags.push(reference.target().unwrap().to_string());
+                if let Some(target) = reference.target() {
+                    ref_data.tags.push(target.to_string());
+                }
             } else if name.starts_with("refs/remotes/") {
                 let remote = name.split('/').nth(2).unwrap_or("");
                 if !hide_remotes.contains(&remote.to_string()) {
-                    ref_data
-                        .remotes
-                        .push(reference.target().unwrap().to_string());
+                    if let Some(target) = reference.target() {
+                        ref_data.remotes.push(target.to_string());
+                        remote_refs.push((target.to_string(), remote.to_string()));
+                    }
                 }
             }
         }
@@ -344,11 +359,34 @@ pub fn get_formatted_commits(
         }
     }
 
-    for hash in &ref_data.tags {
-        if let Some(&index) = commit_lookup.get(hash) {
-            commits[index].tags.push(GitTag {
-                name: hash.clone(),
-                annotated: true,
+    // TAGS: Detect annotated vs lightweight
+    for tag in repo
+        .tag_names(None)
+        .map_err(|e| e.to_string())?
+        .iter()
+        .flatten()
+    {
+        if let Ok(object) = repo.revparse_single(tag) {
+            let id = object.id();
+            let annotated = match repo.find_tag(object.id()) {
+                Ok(_) => true,
+                Err(_) => false,
+            };
+            if let Some(&index) = commit_lookup.get(&id.to_string()) {
+                commits[index].tags.push(GitTag {
+                    name: tag.to_string(),
+                    annotated,
+                });
+            }
+        }
+    }
+
+    // REMOTES: Anotar remotes en los commits
+    for (commit_hash, remote_name) in remote_refs {
+        if let Some(&index) = commit_lookup.get(&commit_hash) {
+            commits[index].remotes.push(GitRemote {
+                name: remote_name.clone(),
+                remote: Some(remote_name),
             });
         }
     }
@@ -357,6 +395,44 @@ pub fn get_formatted_commits(
     for stash in stashes {
         if let Some(&index) = commit_lookup.get(&stash.base_hash) {
             commits[index].stash = Some(stash);
+        }
+    }
+
+    // Uncommitted Changes: Si hay cambios no commiteados, agrega un commit especial
+    if let Ok(statuses) = repo.statuses(None) {
+        let has_uncommitted = statuses.iter().any(|entry| {
+            let s = entry.status();
+            s.is_index_new()
+                || s.is_index_modified()
+                || s.is_index_deleted()
+                || s.is_wt_new()
+                || s.is_wt_modified()
+                || s.is_wt_deleted()
+        });
+        if has_uncommitted {
+            let head_hash = ref_data.head.clone().unwrap_or_default();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+            let num_changes = statuses.iter().count();
+            let uncommitted_commit = GitCommit {
+                hash: "UNCOMMITTED".to_string(),
+                parents: if head_hash.is_empty() {
+                    vec![]
+                } else {
+                    vec![head_hash]
+                },
+                author: "*".to_string(),
+                email: "".to_string(),
+                date: now,
+                message: format!("Uncommitted Changes ({})", num_changes),
+                heads: vec![],
+                tags: vec![],
+                remotes: vec![],
+                stash: None,
+            };
+            commits.insert(0, uncommitted_commit);
         }
     }
 

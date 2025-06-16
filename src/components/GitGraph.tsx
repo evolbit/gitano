@@ -59,6 +59,8 @@ export function GitGraph({ repoPath }: { repoPath: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  console.log("repoPath", repoPath);
+
   useEffect(() => {
     if (!repoPath) return;
     setLoading(true);
@@ -68,14 +70,14 @@ export function GitGraph({ repoPath }: { repoPath: string }) {
         path: repoPath,
         branches: null,
         authors: null,
-        max_commits: 200,
-        show_tags: true,
-        show_remote_branches: true,
-        include_commits_mentioned_by_reflogs: false,
-        only_follow_first_parent: false,
-        commit_ordering: "Date",
+        maxCommits: 200,
+        showTags: true,
+        showRemoteBranches: true,
+        includeCommitsMentionedByReflogs: false,
+        onlyFollowFirstParent: false,
+        commitOrdering: "Date",
         remotes: ["origin"],
-        hide_remotes: [],
+        hideRemotes: [],
         stashes: [],
       })
       .then((data: GitCommitData) => {
@@ -97,6 +99,7 @@ export function GitGraph({ repoPath }: { repoPath: string }) {
         overflow: "auto",
         position: "relative",
       }}>
+      {error && <div className="text-red-500">{error}</div>}
       {/* Aquí irá el grafo de commits personalizado */}
     </div>
   );
