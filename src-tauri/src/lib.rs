@@ -89,7 +89,8 @@ pub fn run() {
             git::get_branches,
             git::get_commits,
             git::get_commit_graph,
-            git::get_remote_branches
+            git::get_remote_branches,
+            git::get_formatted_commits
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

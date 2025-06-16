@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BranchList } from "./components/BranchList";
+import { GitGraph } from "./components/GitGraph";
 import HomePage from "./components/HomePage";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
@@ -160,6 +161,7 @@ export default function App() {
                 <ActionIcon
                   size={18}
                   variant="subtle"
+                  component="span"
                   color="gray"
                   onClick={(e) => closeTab(tab.id, e)}
                   style={{ marginLeft: 6 }}>
@@ -220,15 +222,14 @@ export default function App() {
                               </span>
                               Ramas
                             </span>
-                            <button
+                            <span
                               className="ml-2 p-1 rounded hover:bg-lime-400 transition-colors hover:text-zinc-900"
                               title="Nueva rama"
-                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation(); /* lógica para crear rama */
                               }}>
                               <IconPlus size={16} />
-                            </button>
+                            </span>
                           </div>
                         </Accordion.Control>
                         <Accordion.Panel>
@@ -257,13 +258,8 @@ export default function App() {
                   minWidth={300}
                   className="h-full min-h-0 !grow">
                   <ScrollArea className="!h-full p-4">
-                    <Box className=" h-full min-h-[400px] w-full text-white">
-                      <h2 className="text-white text-2xl font-bold mb-2">
-                        Contenido principal
-                      </h2>
-                      <p className="text-zinc-400">
-                        Aquí va el contenido de la pestaña {tab.label}.
-                      </p>
+                    <Box className="h-full min-h-[400px] w-full text-white">
+                      <GitGraph repoPath={tab.repoPath || ""} />
                     </Box>
                   </ScrollArea>
                 </Split.Pane>

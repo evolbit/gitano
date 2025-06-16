@@ -1,4 +1,6 @@
 use git2::{BranchType, Oid, Repository};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use tauri::command;
 
 #[derive(serde::Serialize)]
@@ -17,6 +19,68 @@ pub struct CommitNode {
     pub branches: Vec<String>,
     pub is_head: bool,
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitCommit {
+    pub hash: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    pub email: String,
+    pub date: i64,
+    pub message: String,
+    pub heads: Vec<String>,
+    pub tags: Vec<GitTag>,
+    pub remotes: Vec<GitRemote>,
+    pub stash: Option<GitStash>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitTag {
+    pub name: String,
+    pub annotated: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitRemote {
+    pub name: String,
+    pub remote: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitStash {
+    pub hash: String,
+    pub base_hash: String,
+    pub untracked_files_hash: String,
+    pub selector: String,
+    pub author: String,
+    pub email: String,
+    pub date: i64,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitCommitData {
+    pub commits: Vec<GitCommit>,
+    pub head: Option<String>,
+    pub tags: Vec<String>,
+    pub more_commits_available: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitRefData {
+    pub head: Option<String>,
+    pub heads: Vec<String>,
+    pub tags: Vec<String>,
+    pub remotes: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CommitOrdering {
+    Date,
+    Topo,
+    AuthorDate,
 }
 
 #[command]
@@ -132,4 +196,175 @@ pub fn get_remote_branches(path: String) -> Result<Vec<String>, String> {
         }
     }
     Ok(branches)
+}
+
+#[command]
+pub fn get_formatted_commits(
+    path: String,
+    branches: Option<Vec<String>>,
+    authors: Option<Vec<String>>,
+    max_commits: usize,
+    show_tags: bool,
+    show_remote_branches: bool,
+    include_commits_mentioned_by_reflogs: bool,
+    only_follow_first_parent: bool,
+    commit_ordering: CommitOrdering,
+    remotes: Vec<String>,
+    hide_remotes: Vec<String>,
+    stashes: Vec<GitStash>,
+) -> Result<GitCommitData, String> {
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+
+    // Configure revwalk based on options
+    if only_follow_first_parent {
+        revwalk.simplify_first_parent().map_err(|e| e.to_string())?;
+    }
+
+    // Push references based on options
+    if show_tags {
+        for tag in repo
+            .tag_names(None)
+            .map_err(|e| e.to_string())?
+            .iter()
+            .flatten()
+        {
+            if let Ok(reference) = repo.revparse_single(tag) {
+                revwalk.push(reference.id()).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    if show_remote_branches {
+        for remote in &remotes {
+            if !hide_remotes.contains(remote) {
+                if let Ok(reference) = repo.find_reference(&format!("refs/remotes/{}/HEAD", remote))
+                {
+                    revwalk
+                        .push(reference.target().unwrap())
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    if include_commits_mentioned_by_reflogs {
+        for reference in repo.references().map_err(|e| e.to_string())? {
+            if let Ok(reference) = reference {
+                if let Some(target) = reference.target() {
+                    revwalk.push(target).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    // Push branches if specified
+    if let Some(branches) = branches {
+        for branch in branches {
+            if let Ok(reference) = repo.find_reference(&format!("refs/heads/{}", branch)) {
+                revwalk
+                    .push(reference.target().unwrap())
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    } else {
+        revwalk.push_head().map_err(|e| e.to_string())?;
+    }
+
+    // Get commits
+    let mut commits = Vec::new();
+    let mut more_commits_available = false;
+
+    for (i, oid_result) in revwalk.enumerate() {
+        if i >= max_commits {
+            more_commits_available = true;
+            break;
+        }
+
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+        commits.push(GitCommit {
+            hash: commit.id().to_string(),
+            parents: commit.parent_ids().map(|p| p.to_string()).collect(),
+            author: commit.author().name().unwrap_or("").to_string(),
+            email: commit.author().email().unwrap_or("").to_string(),
+            date: commit.author().when().seconds(),
+            message: commit.summary().unwrap_or("").to_string(),
+            heads: Vec::new(),
+            tags: Vec::new(),
+            remotes: Vec::new(),
+            stash: None,
+        });
+    }
+
+    // Get refs
+    let mut ref_data = GitRefData {
+        head: None,
+        heads: Vec::new(),
+        tags: Vec::new(),
+        remotes: Vec::new(),
+    };
+
+    // Get HEAD
+    if let Ok(head) = repo.head() {
+        ref_data.head = Some(head.target().unwrap().to_string());
+    }
+
+    // Get branches and tags
+    for reference in repo.references().map_err(|e| e.to_string())? {
+        if let Ok(reference) = reference {
+            let name = reference.name().unwrap_or("");
+            if name == "HEAD" {
+                continue;
+            } else if name.starts_with("refs/heads/") {
+                ref_data.heads.push(reference.target().unwrap().to_string());
+            } else if name.starts_with("refs/tags/") {
+                ref_data.tags.push(reference.target().unwrap().to_string());
+            } else if name.starts_with("refs/remotes/") {
+                let remote = name.split('/').nth(2).unwrap_or("");
+                if !hide_remotes.contains(&remote.to_string()) {
+                    ref_data
+                        .remotes
+                        .push(reference.target().unwrap().to_string());
+                }
+            }
+        }
+    }
+
+    // Add refs to commits
+    let mut commit_lookup: HashMap<String, usize> = HashMap::new();
+    for (i, commit) in commits.iter().enumerate() {
+        commit_lookup.insert(commit.hash.clone(), i);
+    }
+
+    for hash in &ref_data.heads {
+        if let Some(&index) = commit_lookup.get(hash) {
+            commits[index].heads.push("head".to_string());
+        }
+    }
+
+    for hash in &ref_data.tags {
+        if let Some(&index) = commit_lookup.get(hash) {
+            commits[index].tags.push(GitTag {
+                name: hash.clone(),
+                annotated: true,
+            });
+        }
+    }
+
+    // Add stashes
+    for stash in stashes {
+        if let Some(&index) = commit_lookup.get(&stash.base_hash) {
+            commits[index].stash = Some(stash);
+        }
+    }
+
+    Ok(GitCommitData {
+        commits,
+        head: ref_data.head,
+        tags: ref_data.tags,
+        more_commits_available,
+        error: None,
+    })
 }
