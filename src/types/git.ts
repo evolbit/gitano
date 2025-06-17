@@ -1,0 +1,41 @@
+export interface GitTag {
+  name: string;
+  annotated: boolean;
+}
+
+export interface GitRemote {
+  name: string;
+  remote: string | null;
+}
+
+export interface GitStash {
+  hash: string;
+  base_hash: string;
+  untracked_files_hash: string;
+  selector: string;
+  author: string;
+  email: string;
+  date: number;
+  message: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  parents: string[];
+  author: string;
+  email: string;
+  date: number;
+  message: string;
+  heads: string[];
+  tags: GitTag[];
+  remotes: GitRemote[];
+  stash?: GitStash | null;
+}
+
+export interface GitCommitData {
+  commits: GitCommit[];
+  head: string | null;
+  tags: string[];
+  more_commits_available: boolean;
+  error?: string | null;
+}

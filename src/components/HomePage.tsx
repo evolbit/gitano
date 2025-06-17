@@ -31,6 +31,34 @@ const mockRepos = [
   },
 ];
 
+const exampleCommits = [
+  {
+    hash: "a1b2c3d4",
+    parents: [],
+    branch: "main",
+  },
+  {
+    hash: "e5f6g7h8",
+    parents: ["a1b2c3d4"],
+    branch: "main",
+  },
+  {
+    hash: "i9j0k1l2",
+    parents: ["e5f6g7h8"],
+    branch: "feature",
+  },
+  {
+    hash: "m3n4o5p6",
+    parents: ["e5f6g7h8"],
+    branch: "main",
+  },
+  {
+    hash: "q7r8s9t0",
+    parents: ["i9j0k1l2", "m3n4o5p6"],
+    branch: "main",
+  },
+];
+
 const Section = ({
   title,
   children,

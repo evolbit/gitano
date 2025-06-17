@@ -1,0 +1,179 @@
+.graph {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.graph svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.graph circle {
+  cursor: pointer;
+  transition: r 0.15s ease-in-out;
+}
+
+.graph circle:hover {
+  r: 6;
+}
+
+.graph circle.current {
+  stroke-width: 2;
+}
+
+.graph circle.stashOuter {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.graph circle.stashInner {
+  fill: #808080;
+}
+
+.graph path {
+  fill: none;
+  stroke-width: 2;
+  transition: stroke-width 0.15s ease-in-out;
+}
+
+.graph path:hover {
+  stroke-width: 3;
+}
+
+.graph path.uncommitted {
+  stroke-dasharray: 4, 4;
+}
+
+.git-graph-table {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+.git-graph-table .table-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.git-graph-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.git-graph-table th,
+.git-graph-table td {
+  padding: 0;
+  margin: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  cursor: default;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.git-graph-table th {
+  border-bottom: 1px solid transparent;
+  box-shadow: 0 1px 0 rgba(128, 128, 128, 0.5);
+  line-height: 18px;
+  padding: 6px 12px;
+  position: sticky;
+  top: 0;
+  background-color: var(--vscode-editor-background);
+  z-index: 10;
+}
+
+.git-graph-table td {
+  line-height: 24px;
+  padding: 0 4px;
+}
+
+.git-graph-table tr.commit {
+  cursor: pointer;
+}
+
+.git-graph-table tr.commit.current span.description .text {
+  font-weight: bold;
+}
+
+.git-graph-table tr.commit span.description {
+  display: flex;
+}
+
+.git-graph-table tr.commit span.description .text {
+  display: inline-block;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-grow: 1;
+}
+
+.git-graph-table tr.commit:hover {
+  background-color: rgba(128, 128, 128, 0.15);
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.resize-handle:hover {
+  background-color: var(--vscode-focusBorder);
+}
+
+/* Fixed layout */
+.git-graph-table.fixed-layout table {
+  table-layout: fixed;
+}
+
+/* Auto layout */
+.git-graph-table.auto-layout td:nth-child(2),
+.git-graph-table.auto-layout th:nth-child(2) {
+  width: 100%;
+  max-width: 0;
+}
+
+.git-graph-table.auto-layout td.authorCol,
+.git-graph-table.auto-layout th.authorCol {
+  max-width: 124px;
+}
+
+@media screen and (min-width: 775px) and (max-width: 850px) {
+  .git-graph-table.auto-layout td.dateCol,
+  .git-graph-table.auto-layout th.dateCol,
+  .git-graph-table.auto-layout td.authorCol,
+  .git-graph-table.auto-layout th.authorCol {
+    max-width: 100px;
+  }
+}
+
+@media screen and (min-width: 700px) and (max-width: 775px) {
+  .git-graph-table.auto-layout td.dateCol,
+  .git-graph-table.auto-layout th.dateCol,
+  .git-graph-table.auto-layout td.authorCol,
+  .git-graph-table.auto-layout th.authorCol {
+    max-width: 90px;
+  }
+}
+
+@media screen and (max-width: 700px) {
+  .git-graph-table.auto-layout td.dateCol,
+  .git-graph-table.auto-layout th.dateCol,
+  .git-graph-table.auto-layout td.authorCol,
+  .git-graph-table.auto-layout th.authorCol {
+    max-width: 80px;
+  }
+}
