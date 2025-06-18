@@ -1,7 +1,6 @@
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { GitCommitData } from "../types/git";
-import { Graph } from "./graph/Graph";
 import "./graph/styles.css";
 import { GraphConfig } from "./graph/types";
 
@@ -28,7 +27,6 @@ const defaultConfig: GraphConfig = {
 
 export const GitGraph: React.FC<GitGraphProps> = ({ repoPath }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<Graph | null>(null);
   const [commits, setCommits] = useState<any[]>([]);
   const [commitHead, setCommitHead] = useState<string | null>(null);
   const [commitLookup, setCommitLookup] = useState<{ [hash: string]: number }>(
@@ -36,7 +34,7 @@ export const GitGraph: React.FC<GitGraphProps> = ({ repoPath }) => {
   );
   const [loading, setLoading] = useState(false);
 
-  const [onlyFollowFirstParent, setOnlyFollowFirstParent] = useState(true);
+  const [onlyFollowFirstParent, setOnlyFollowFirstParent] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -55,7 +53,7 @@ export const GitGraph: React.FC<GitGraphProps> = ({ repoPath }) => {
         stashes: [],
       })
       .then((data: any) => {
-        console.log(data);
+        console.log(JSON.stringify(data, null, 2));
         setCommits(data.commits || []);
         setCommitHead(data.head || null);
         // Construir commitLookup
@@ -68,24 +66,6 @@ export const GitGraph: React.FC<GitGraphProps> = ({ repoPath }) => {
       });
   }, [repoPath, onlyFollowFirstParent]);
 
-  useEffect(() => {
-    if (!containerRef.current || commits.length === 0) return;
-    if (!graphRef.current) {
-      graphRef.current = new Graph(
-        "git-graph",
-        containerRef.current,
-        defaultConfig
-      );
-    }
-    graphRef.current.loadCommits(
-      commits,
-      commitHead,
-      commitLookup,
-      onlyFollowFirstParent
-    );
-    graphRef.current.render(containerRef.current);
-  }, [commits, commitHead, commitLookup, onlyFollowFirstParent]);
-
   if (loading) return <div>Cargando commits...</div>;
   if (commits.length === 0) return <div>No hay commits para mostrar.</div>;
 
@@ -94,7 +74,7 @@ export const GitGraph: React.FC<GitGraphProps> = ({ repoPath }) => {
       ref={containerRef}
       style={{
         width: "100%",
-        height: "100%",
+        height: "5000px",
         overflow: "auto",
       }}
     />

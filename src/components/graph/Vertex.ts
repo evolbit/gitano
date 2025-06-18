@@ -1,3 +1,4 @@
+// ARCHIVADO: Este archivo está en desuso temporalmente mientras se replantea la lógica del grafo.
 import { Branch } from "./Branch";
 import { GraphConfig, Point } from "./types";
 
@@ -131,5 +132,9 @@ export class Vertex {
 
   public setX(x: number) {
     this.x = x;
+  }
+
+  public getX(): number {
+    return this.x;
   }
 }

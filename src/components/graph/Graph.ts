@@ -1,3 +1,4 @@
+// ARCHIVADO: Este archivo está en desuso temporalmente mientras se replantea la lógica del grafo.
 import { Branch } from "./Branch";
 import { GraphConfig, UNCOMMITTED } from "./types";
 import { Vertex } from "./Vertex";
@@ -81,6 +82,7 @@ export class Graph {
     commitLookup: { [hash: string]: number },
     onlyFollowFirstParent: boolean
   ) {
+    // NO ordenar topológicamente, usar el orden HEAD -> root
     this.commits = commits;
     this.currentCommit = commitHead;
     this.commitLookup = commitLookup;
@@ -114,8 +116,21 @@ export class Graph {
       });
     });
 
+    // Invertir el array de commits para recorrer de root a HEAD
+    commits = [...commits].reverse();
+
     // Asignar lanes dinámicamente (como vscode-git-graph)
     this.assignLanes(commits, this.commitLookup, this.vertices);
+
+    // Log de depuración: X y padres de cada vértice
+    Object.values(this.vertices).forEach((vertex, idx) => {
+      console.log(
+        `DEBUG: Commit #${idx} X=${vertex.getX()}, padres: [${vertex
+          .getParents()
+          .map((p) => p.id)
+          .join(", ")}]`
+      );
+    });
 
     // Handle uncommitted changes
     if (commits[0].hash === UNCOMMITTED) {
@@ -232,13 +247,26 @@ export class Graph {
     // Crear una Branch para cada lane
     const laneBranches: Branch[] = [];
 
+    // Recorrer de root a HEAD (índice 0 a N-1)
     for (let i = 0; i < commits.length; i++) {
-      // Buscar si alguno de los padres ya está en una lane activa
+      // Log hijos de cada commit
+      const hijos = commits
+        .map((c, idx) => ({ idx, hash: c.hash }))
+        .filter((c) => commits[i].parents.includes(c.hash))
+        .map((c) => c.idx);
+      // console.log(
+      //   `Commit #${i} (${commits[i].hash}) hijos: [${hijos.join(", ")}]`
+      // );
       let lane = -1;
       for (let l = 0; l < activeLanes.length; l++) {
         if (activeLanes[l] !== null) {
-          const parentIdx = activeLanes[l]!;
-          if (commits[i].parents.includes(commits[parentIdx].hash)) {
+          const childIdx = activeLanes[l]!;
+          const isHijo = commits[childIdx].parents.includes(commits[i].hash);
+          // console.log(
+          //   `¿Commit #${i} (${commits[i].hash}) es padre de #${childIdx} (${commits[childIdx].hash})?`,
+          //   isHijo
+          // );
+          if (isHijo) {
             lane = l;
             break;
           }
@@ -266,14 +294,9 @@ export class Graph {
       vertices[i].addToBranch(laneBranches[lane], lane);
       // Guarda la branch en this.branches para que se dibuje
       this.branches[`lane${lane}`] = laneBranches[lane];
-
-      // Si el commit ya no tiene hijos, libera la lane
-      const isLast = !commits
-        .slice(i + 1)
-        .some((c) => c.parents.includes(commits[i].hash));
-      if (isLast) {
-        activeLanes[lane] = null;
-      }
+      // Log de depuración: lane asignada
+      console.log(`DEBUG: Commit #${i} asignado a lane ${lane}`);
+      // (Liberar lanes: puedes dejarlo comentado por paginación)
     }
   }
 }
