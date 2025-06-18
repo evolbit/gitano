@@ -87,13 +87,14 @@ pub enum CommitOrdering {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitListItem {
     pub sha: String,
-    pub mensaje: String,
-    pub autor: String,
-    pub rama_actual: String,
-    pub rama_origen: String,
+    pub message: String,
+    pub author: String,
+    pub date: i64,
+    pub current_branch: String,
+    pub source_branch: String,
     pub pr: Option<String>,
-    pub mergeado_en: Option<String>,
-    pub archivos: usize,
+    pub merged_in: Option<String>,
+    pub files: usize,
     pub ci: Option<String>,
 }
 
@@ -510,23 +511,25 @@ pub fn get_commits_list_paginated(
         let oid = oid_result.map_err(|e| e.to_string())?;
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
         let sha = commit.id().to_string();
-        let mensaje = commit.summary().unwrap_or("").to_string();
-        let autor = commit.author().name().unwrap_or("").to_string();
-        let rama_actual = branch.clone();
-        let rama_origen = branch.clone(); // Placeholder
+        let message = commit.summary().unwrap_or("").to_string();
+        let author = commit.author().name().unwrap_or("").to_string();
+        let date = commit.time().seconds();
+        let current_branch = branch.clone();
+        let source_branch = branch.clone(); // Placeholder
         let pr = None;
-        let mergeado_en = None;
-        let archivos = commit.tree().map(|t| t.len()).unwrap_or(0);
+        let merged_in = None;
+        let files = commit.tree().map(|t| t.len()).unwrap_or(0);
         let ci = None;
         rows.push(CommitListItem {
             sha,
-            mensaje,
-            autor,
-            rama_actual,
-            rama_origen,
+            message,
+            author,
+            date,
+            current_branch,
+            source_branch,
             pr,
-            mergeado_en,
-            archivos,
+            merged_in,
+            files,
             ci,
         });
         taken += 1;

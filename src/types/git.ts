@@ -39,3 +39,16 @@ export interface GitCommitData {
   more_commits_available: boolean;
   error?: string | null;
 }
+
+export interface CommitListItem {
+  sha: string;
+  message: string;
+  author: string;
+  date: number;
+  current_branch: string;
+  source_branch: string;
+  pr?: string | null;
+  merged_in?: string | null;
+  files: number;
+  ci?: string | null;
+}

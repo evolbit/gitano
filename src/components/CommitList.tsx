@@ -49,13 +49,32 @@ export default function CommitList() {
   // Definir columnas con render personalizado para CI
   const columns: TableColumn<any>[] = [
     { key: "sha", label: "SHA", width: 120 },
-    { key: "mensaje", label: "Mensaje", width: 250 },
-    { key: "autor", label: "Autor", width: 120 },
-    { key: "rama_actual", label: "Rama actual", width: 120 },
-    { key: "rama_origen", label: "Rama de origen", width: 140 },
+    {
+      key: "date",
+      label: "Fecha",
+      width: 150,
+      render: (value) => {
+        if (!value) return "";
+        const date =
+          typeof value === "number" ? new Date(value * 1000) : new Date(value);
+        return date instanceof Date && !isNaN(date.getTime())
+          ? date.toLocaleString("es-ES", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "";
+      },
+    },
+    { key: "message", label: "Mensaje", width: 250 },
+    { key: "author", label: "Autor", width: 120 },
+    { key: "current_branch", label: "Rama actual", width: 120 },
+    { key: "source_branch", label: "Rama de origen", width: 140 },
     { key: "pr", label: "PR", width: 80 },
-    { key: "mergeado_en", label: "Mergeado en", width: 120 },
-    { key: "archivos", label: "Archivos", width: 80 },
+    { key: "merged_in", label: "Mergeado en", width: 120 },
+    { key: "files", label: "Archivos", width: 80 },
     {
       key: "ci",
       label: "CI",
