@@ -2,12 +2,10 @@ import { IconFolderPlus } from "@tabler/icons-react";
 import { core } from "@tauri-apps/api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
+import { useRepoStore } from "../store/repo";
 
-export function OpenRepoButton({
-  onRepoOpened,
-}: {
-  onRepoOpened: (path: string) => void;
-}) {
+export function OpenRepoButton() {
+  const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -22,7 +20,7 @@ export function OpenRepoButton({
         });
         setResult(res);
         if (res.startsWith("Repositorio abierto correctamente")) {
-          onRepoOpened(selected);
+          setCurrentRepo(selected);
         }
       } catch (e: any) {
         setResult(e.toString());

@@ -8,6 +8,7 @@ import {
   IconStar,
 } from "@tabler/icons-react";
 import React from "react";
+import { useRepoStore } from "../store/repo";
 import { openLocalRepoDialog } from "../utils/openRepo";
 
 const mockRepos = [
@@ -127,6 +128,8 @@ interface HomePageProps {
   onRepoOpened?: (repoPath: string) => void;
 }
 const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
+  const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
+
   return (
     <Box className="w-full h-full bg-zinc-900 text-zinc-100 p-8 overflow-auto">
       <Box className="flex items-center justify-between mb-6">

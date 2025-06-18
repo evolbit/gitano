@@ -1,14 +1,11 @@
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
 import { core } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
+import { useRepoStore } from "../store/repo";
 import InputText from "./form/InputText";
 import TableVirtualResizable, {
   TableColumn,
 } from "./tables/TableVirtualResizable";
-
-interface CommitListProps {
-  repoPath: string;
-}
 
 function StatusBadge({ status }: { status: string }) {
   let color = "text-green-400";
@@ -34,7 +31,9 @@ function StatusBadge({ status }: { status: string }) {
 
 const PAGE_SIZE = 50;
 
-export default function CommitList({ repoPath }: CommitListProps) {
+export default function CommitList() {
+  const repoPath = useRepoStore((s) => s.currentRepo);
+  const selectedBranch = useRepoStore((s) => s.selectedBranch);
   const [search, setSearch] = useState("");
   const [commits, setCommits] = useState<any[]>([]);
   const [offset, setOffset] = useState(0);
@@ -91,7 +90,7 @@ export default function CommitList({ repoPath }: CommitListProps) {
     try {
       const result: any = await core.invoke("get_commits_list_paginated", {
         path: repoPath,
-        branch: "",
+        branch: selectedBranch || "",
         offset: reset ? 0 : offset,
         limit: PAGE_SIZE,
       });
@@ -120,7 +119,7 @@ export default function CommitList({ repoPath }: CommitListProps) {
     setHasMore(true);
     loadCommits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath]);
+  }, [repoPath, selectedBranch]);
 
   return (
     <div className="h-full w-full flex flex-col">

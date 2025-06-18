@@ -11,6 +11,7 @@ import {
 import { core } from "@tauri-apps/api";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import { useRepoStore } from "../store/repo";
 
 // Helper para agrupar ramas por prefijo
 function groupBranches(branches: string[]): any[] {
@@ -62,7 +63,9 @@ function BranchIcon({ name, selected }: { name: string; selected: boolean }) {
   );
 }
 
-export function BranchList({ repoPath }: { repoPath: string }) {
+export function BranchList() {
+  const repoPath = useRepoStore((s) => s.currentRepo);
+  const setSelectedBranch = useRepoStore((s) => s.setSelectedBranch);
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -249,7 +252,7 @@ export function BranchList({ repoPath }: { repoPath: string }) {
                 }`}
                 style={{ fontSize: "13px" }}
                 tabIndex={0}
-                onClick={() => setSelectedBranchFull(node.full)}
+                onClick={() => setSelectedBranch(node.full)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setContextMenu({ x: e.clientX, y: e.clientY, node });

@@ -17,6 +17,7 @@ import CommitList from "./components/CommitList";
 import HomePage from "./components/HomePage";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
+import { useRepoStore } from "./store/repo";
 import { classNames } from "./utils/ui";
 
 type TabType = {
@@ -51,6 +52,7 @@ export default function App() {
   const { t } = useTranslation();
   const [tabs, setTabs] = useState<RepoTabType[]>(TABS_INITIAL);
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
 
   const addTab = () => {
     const newId = `tab-${tabs.length + 1}`;
@@ -58,12 +60,16 @@ export default function App() {
     setActiveTab(newId);
   };
 
-  const handleRepoOpened = useCallback((repoPath: string) => {
-    const repoName = repoPath.split("/").filter(Boolean).pop() || repoPath;
-    const newId = `repo-${repoName}-${Date.now()}`;
-    setTabs((prev) => [...prev, { id: newId, label: repoName, repoPath }]);
-    setActiveTab(newId);
-  }, []);
+  const handleRepoOpened = useCallback(
+    (repoPath: string) => {
+      const repoName = repoPath.split("/").filter(Boolean).pop() || repoPath;
+      const newId = `repo-${repoName}-${Date.now()}`;
+      setTabs((prev) => [...prev, { id: newId, label: repoName, repoPath }]);
+      setActiveTab(newId);
+      setCurrentRepo(repoPath);
+    },
+    [setCurrentRepo]
+  );
 
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -126,7 +132,11 @@ export default function App() {
     <div className="h-screen w-screen bg-zinc-900 text-white flex flex-col overflow-hidden">
       <Tabs
         value={activeTab}
-        onChange={(value) => setActiveTab(value || "")}
+        onChange={(value) => {
+          setActiveTab(value || "");
+          const tab = tabs.find((t) => t.id === value);
+          setCurrentRepo(tab?.repoPath || null);
+        }}
         keepMounted={false}
         variant="none"
         className="flex flex-col h-full">
