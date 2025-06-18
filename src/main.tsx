@@ -18,7 +18,6 @@ i18n.use(initReactI18next).init({
           branches: "Branches",
           commits: "Commits",
           changes: "Changes",
-          graph: "Graph",
           settings: "Settings",
         },
         launchpad: {

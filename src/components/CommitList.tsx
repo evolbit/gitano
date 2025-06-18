@@ -1,185 +1,119 @@
-import { Box, Group, Text } from "@mantine/core";
-import { IconGitBranch, IconGitCommit, IconTag } from "@tabler/icons-react";
-import { core } from "@tauri-apps/api";
-import { useEffect, useRef, useState } from "react";
+import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
+import { useState } from "react";
+import InputText from "./form/InputText";
+import TableVirtualResizable, {
+  TableColumn,
+} from "./tables/TableVirtualResizable";
 
-interface GitCommit {
-  hash: string;
-  message: string;
-  author: string;
-  tags: string[];
-  heads: string[];
-}
+// Datos hardcodeados de ejemplo
+const data = [
+  {
+    id: "abc123",
+    sha: "abc123",
+    mensaje: "🔧 Fix login bug",
+    autor: "Alice",
+    rama_actual: "main",
+    rama_origen: "feature/login",
+    pr: "#42",
+    mergeado_en: "main",
+    archivos: 3,
+    ci: "success",
+  },
+  {
+    id: "def456",
+    sha: "def456",
+    mensaje: "✨ Add step",
+    autor: "Bob",
+    rama_actual: "develop",
+    rama_origen: "feature/checkout",
+    pr: "",
+    mergeado_en: "",
+    archivos: 5,
+    ci: "failed",
+  },
+  // Puedes agregar más datos para probar el scroll
+];
 
-interface GitTag {
-  name: string;
-  commitHash: string;
-}
-
-interface GitRemote {
-  name: string;
-  branches: string[];
-}
-
-interface GitStash {
-  hash: string;
-  message: string;
-}
-
-interface GitCommitData {
-  commits: GitCommit[];
-  tags: GitTag[];
-  remotes: GitRemote[];
-  stashes: GitStash[];
-  moreCommitsAvailable: boolean;
-}
-
-interface CommitListProps {
-  repoPath: string;
-}
-
-export function CommitList({ repoPath }: CommitListProps) {
-  const [commitData, setCommitData] = useState<GitCommitData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const observerTarget = useRef<HTMLDivElement>(null);
-  const COMMITS_PER_PAGE = 50;
-
-  const loadCommits = async (pageNum: number) => {
-    if (loading) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const data = await core.invoke<GitCommitData>("get_formatted_commits", {
-        path: repoPath,
-        branches: null,
-        authors: null,
-        maxCommits: COMMITS_PER_PAGE,
-        showTags: true,
-        showRemoteBranches: true,
-        includeCommitsMentionedByReflogs: false,
-        onlyFollowFirstParent: false,
-        commitOrdering: "Date",
-        remotes: ["origin"],
-        hideRemotes: [],
-        stashes: [],
-      });
-
-      console.log("Git commits data:", data);
-
-      if (pageNum === 1) {
-        setCommitData(data);
-      } else {
-        setCommitData((prev) => {
-          if (!prev) return data;
-          return {
-            ...data,
-            commits: [...prev.commits, ...data.commits],
-          };
-        });
-      }
-
-      setHasMore(data.moreCommitsAvailable);
-    } catch (e: any) {
-      setError(e.toString());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (repoPath) {
-      setPage(1);
-      loadCommits(1);
-    }
-  }, [repoPath]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          setPage((prev) => prev + 1);
-          loadCommits(page + 1);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
-    return () => observer.disconnect();
-  }, [hasMore, loading, page]);
-
-  if (error) {
-    return (
-      <Box className="p-4">
-        <Text color="red">Error: {error}</Text>
-      </Box>
-    );
+function StatusBadge({ status }: { status: string }) {
+  let color = "text-green-400";
+  let dot = "bg-green-400";
+  let label = "Completado";
+  if (status === "failed") {
+    color = "text-red-400";
+    dot = "bg-red-400";
+    label = "Fallido";
+  } else if (status === "pending") {
+    color = "text-yellow-400";
+    dot = "bg-yellow-400";
+    label = "Pendiente";
   }
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 bg-zinc-800/70 rounded-full px-3 py-0.5 text-sm font-medium min-w-[90px] justify-center ${color}`}>
+      <span className={`w-2.5 h-2.5 rounded-full inline-block ${dot}`} />
+      {label}
+    </span>
+  );
+}
+
+export default function CommitList() {
+  const [search, setSearch] = useState("");
+
+  // Definir columnas con render personalizado para CI
+  const columns: TableColumn<(typeof data)[0]>[] = [
+    { key: "sha", label: "SHA", width: 120 },
+    { key: "mensaje", label: "Mensaje", width: 250 },
+    { key: "autor", label: "Autor", width: 120 },
+    { key: "rama_actual", label: "Rama actual", width: 120 },
+    { key: "rama_origen", label: "Rama de origen", width: 140 },
+    { key: "pr", label: "PR", width: 80 },
+    { key: "mergeado_en", label: "Mergeado en", width: 120 },
+    { key: "archivos", label: "Archivos", width: 80 },
+    {
+      key: "ci",
+      label: "CI",
+      width: 90,
+      render: (value) => <StatusBadge status={value} />,
+    },
+  ];
 
   return (
-    <Box className="p-4">
-      {commitData?.commits.map((commit) => (
-        <Box
-          key={commit.hash}
-          className="mb-4 p-4 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors">
-          <Group
-            justify="space-between"
-            mb={8}>
-            <Group gap={8}>
-              <IconGitCommit className="w-5 h-5 text-blue-500" />
-              <Text className="font-mono text-sm">{commit.hash}</Text>
-            </Group>
-            <Group gap={8}>
-              {commit.tags.map((tag) => (
-                <Group
-                  key={tag}
-                  gap={4}>
-                  <IconTag className="w-4 h-4 text-blue-400" />
-                  <Text
-                    size="sm"
-                    className="text-blue-400">
-                    {tag}
-                  </Text>
-                </Group>
-              ))}
-              {commit.heads.map((head) => (
-                <Group
-                  key={head}
-                  gap={4}>
-                  <IconGitBranch className="w-4 h-4 text-green-400" />
-                  <Text
-                    size="sm"
-                    className="text-green-400">
-                    {head}
-                  </Text>
-                </Group>
-              ))}
-            </Group>
-          </Group>
-          <Text className="font-medium mb-2">{commit.message}</Text>
-          <Text
-            size="sm"
-            className="text-zinc-400">
-            Author: {commit.author}
-          </Text>
-        </Box>
-      ))}
-      <div
-        ref={observerTarget}
-        className="h-4"
+    <div className="h-full w-full flex flex-col">
+      {/* Barra superior */}
+      <div className="flex items-center px-4 pt-4 pb-2 border-b border-zinc-800">
+        <InputText
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar commit..."
+          className="flex-1 bg-zinc-800 rounded-lg px-3 h-9 mr-4"
+          leftIcon={
+            <IconSearch
+              size={18}
+              className="text-zinc-400"
+            />
+          }
+        />
+        <button className="flex items-center bg-zinc-800 text-white border-none rounded-lg px-3 h-9 mr-2 cursor-pointer font-medium text-[15px]">
+          <IconFilter
+            size={18}
+            className="mr-1.5"
+          />
+          Filtros
+        </button>
+        <button className="flex items-center bg-indigo-500 text-white border-none rounded-lg px-4 h-9 cursor-pointer font-medium text-[15px]">
+          <IconPlus
+            size={18}
+            className="mr-1.5"
+          />
+          Añadir manualmente
+        </button>
+      </div>
+      {/* Tabla reutilizable */}
+      <TableVirtualResizable
+        columns={columns}
+        data={data}
+        rowHeight={56}
       />
-      {loading && (
-        <Box className="text-center py-4">
-          <Text>Loading more commits...</Text>
-        </Box>
-      )}
-    </Box>
+    </div>
   );
 }

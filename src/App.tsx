@@ -13,7 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BranchList } from "./components/BranchList";
-import { GitGraph } from "./components/GitGraph";
+import CommitList from "./components/CommitList";
 import HomePage from "./components/HomePage";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
@@ -259,7 +259,7 @@ export default function App() {
                   className="h-full min-h-0 !grow">
                   <ScrollArea className="!h-full p-4">
                     <Box className="h-full min-h-[400px] w-full text-white">
-                      <GitGraph repoPath={tab.repoPath || ""} />
+                      <CommitList />
                     </Box>
                   </ScrollArea>
                 </Split.Pane>

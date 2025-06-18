@@ -2,7 +2,6 @@ import { Box, Stack, Tooltip } from "@mantine/core";
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
-  HiChartBar,
   HiCodeBracket,
   HiCog,
   HiDocumentText,
@@ -28,7 +27,6 @@ const icons = [
   { key: "branches", icon: <HiCodeBracket size={24} /> },
   { key: "commits", icon: <HiDocumentText size={24} /> },
   { key: "changes", icon: <HiSquares2X2 size={24} /> },
-  { key: "graph", icon: <HiChartBar size={24} /> },
   { key: "settings", icon: <HiCog size={24} /> },
 ];
 

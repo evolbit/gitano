@@ -84,6 +84,25 @@ pub enum CommitOrdering {
     AuthorDate,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommitListItem {
+    pub sha: String,
+    pub mensaje: String,
+    pub autor: String,
+    pub rama_actual: String,
+    pub rama_origen: String,
+    pub pr: Option<String>,
+    pub mergeado_en: Option<String>,
+    pub archivos: usize,
+    pub ci: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommitListPage {
+    pub commits: Vec<CommitListItem>,
+    pub has_more: bool,
+}
+
 #[command]
 pub fn open_local_repo(path: String) -> Result<String, String> {
     match Repository::open(&path) {
@@ -453,5 +472,67 @@ pub fn get_formatted_commits(
         tags: ref_data.tags,
         more_commits_available,
         error: None,
+    })
+}
+
+#[command]
+pub fn get_commits_list_paginated(
+    path: String,
+    branch: String,
+    offset: usize,
+    limit: usize,
+) -> Result<CommitListPage, String> {
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    if branch.trim().is_empty() {
+        revwalk.push_head().map_err(|e| e.to_string())?;
+    } else {
+        let branch_ref = format!("refs/heads/{}", branch);
+        let reference = repo
+            .find_reference(&branch_ref)
+            .map_err(|e| e.to_string())?;
+        let target = reference.target().ok_or("No target for branch")?;
+        revwalk.push(target).map_err(|e| e.to_string())?;
+    }
+    let mut rows = Vec::new();
+    let mut skipped = 0;
+    let mut taken = 0;
+    let mut has_more = false;
+    for oid_result in revwalk {
+        if skipped < offset {
+            skipped += 1;
+            continue;
+        }
+        if taken >= limit {
+            has_more = true;
+            break;
+        }
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let sha = commit.id().to_string();
+        let mensaje = commit.summary().unwrap_or("").to_string();
+        let autor = commit.author().name().unwrap_or("").to_string();
+        let rama_actual = branch.clone();
+        let rama_origen = branch.clone(); // Placeholder
+        let pr = None;
+        let mergeado_en = None;
+        let archivos = commit.tree().map(|t| t.len()).unwrap_or(0);
+        let ci = None;
+        rows.push(CommitListItem {
+            sha,
+            mensaje,
+            autor,
+            rama_actual,
+            rama_origen,
+            pr,
+            mergeado_en,
+            archivos,
+            ci,
+        });
+        taken += 1;
+    }
+    Ok(CommitListPage {
+        commits: rows,
+        has_more,
     })
 }
