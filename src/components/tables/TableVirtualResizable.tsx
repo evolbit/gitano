@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type TableColumn<T> = {
   key: keyof T & string;
@@ -13,6 +13,12 @@ export interface TableVirtualResizableProps<T> {
   data: T[];
   rowHeight?: number;
   className?: string;
+  // Infinite scroll props
+  enableInfiniteScroll?: boolean;
+  hasMore?: boolean;
+  loading?: boolean;
+  onLoadMore?: () => void;
+  loadMoreThreshold?: number;
 }
 
 export default function TableVirtualResizable<
@@ -22,8 +28,12 @@ export default function TableVirtualResizable<
   data,
   rowHeight = 56,
   className = "",
+  enableInfiniteScroll = false,
+  hasMore = false,
+  loading = false,
+  onLoadMore,
+  loadMoreThreshold = 200,
 }: TableVirtualResizableProps<T>) {
-  console.log(columns);
   const parentRef = useRef<HTMLDivElement>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>(
     Object.fromEntries(columns.map((col) => [col.key, col.width]))
@@ -31,6 +41,7 @@ export default function TableVirtualResizable<
   const resizingCol = useRef<string | null>(null);
   const startX = useRef(0);
   const startWidth = useRef(0);
+  const lastLoadTriggered = useRef(false);
 
   // Virtualizer
   const rowVirtualizer = useVirtualizer({
@@ -39,6 +50,122 @@ export default function TableVirtualResizable<
     estimateSize: () => rowHeight,
     overscan: 5,
   });
+
+  // Infinite scroll handler - setup scroll listener
+  useEffect(() => {
+    if (!enableInfiniteScroll || !onLoadMore) return;
+
+    const handleScroll = () => {
+      console.log("Scroll event triggered", {
+        hasMore,
+        loading,
+        lastLoadTriggered: lastLoadTriggered.current,
+        parentRef: !!parentRef.current,
+      });
+
+      if (
+        !parentRef.current ||
+        loading ||
+        !hasMore ||
+        lastLoadTriggered.current
+      ) {
+        console.log("Scroll event blocked", {
+          noParent: !parentRef.current,
+          loading,
+          noHasMore: !hasMore,
+          lastLoadTriggered: lastLoadTriggered.current,
+        });
+        return;
+      }
+
+      const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
+      const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+
+      console.log("Table scroll event", {
+        scrollTop,
+        scrollHeight,
+        clientHeight,
+        threshold: loadMoreThreshold,
+        distance: distanceToBottom,
+        hasMore,
+        loading,
+        lastLoadTriggered: lastLoadTriggered.current,
+      });
+
+      // Trigger load when user is within threshold of the bottom
+      if (distanceToBottom < loadMoreThreshold) {
+        console.log("Triggering onLoadMore from table scroll");
+        lastLoadTriggered.current = true;
+        onLoadMore();
+      }
+    };
+
+    // Small delay to ensure the component is fully rendered
+    const timeoutId = setTimeout(() => {
+      const scrollElement = parentRef.current;
+      if (scrollElement) {
+        console.log(
+          "Setting up scroll listener for infinite scroll",
+          scrollElement
+        );
+        scrollElement.addEventListener("scroll", handleScroll);
+      }
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      const scrollElement = parentRef.current;
+      if (scrollElement) {
+        scrollElement.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, [enableInfiniteScroll, onLoadMore, loadMoreThreshold, hasMore, loading]);
+
+  // Reset the flag when loading state changes
+  useEffect(() => {
+    console.log("Loading state changed", {
+      loading,
+      lastLoadTriggered: lastLoadTriggered.current,
+    });
+    if (!loading) {
+      console.log("Resetting lastLoadTriggered flag");
+      lastLoadTriggered.current = false;
+    }
+  }, [loading]);
+
+  // Check if we need to load more data when content is smaller than container
+  useEffect(() => {
+    if (
+      !enableInfiniteScroll ||
+      !onLoadMore ||
+      !hasMore ||
+      loading ||
+      lastLoadTriggered.current ||
+      !parentRef.current
+    )
+      return;
+
+    // Only check if we have very few items (less than 10) to avoid excessive loading
+    if (data.length >= 10) return;
+
+    const { scrollHeight, clientHeight } = parentRef.current;
+    const needsMoreData = scrollHeight <= clientHeight;
+
+    console.log("Checking if content needs more data", {
+      scrollHeight,
+      clientHeight,
+      needsMoreData,
+      hasMore,
+      loading,
+      dataLength: data.length,
+    });
+
+    if (needsMoreData && hasMore && !loading) {
+      console.log("Content is smaller than container, triggering onLoadMore");
+      lastLoadTriggered.current = true;
+      onLoadMore();
+    }
+  }, [data.length, enableInfiniteScroll, onLoadMore, hasMore, loading]);
 
   // Handlers para resize
   const onMouseDown = (e: React.MouseEvent, key: string) => {
@@ -64,29 +191,30 @@ export default function TableVirtualResizable<
 
   return (
     <div className={`h-full w-full flex flex-col ${className}`}>
-      {/* Cabecera de la tabla */}
-      <div className="flex items-center bg-zinc-700 border-b border-zinc-800 h-11 font-semibold text-zinc-200 text-[15px] select-none">
-        <div className="w-11 px-2" />
-        {columns.map((col) => (
-          <div
-            key={col.key}
-            className="relative flex items-center px-2 truncate group"
-            style={{ width: colWidths[col.key] }}>
-            {col.label}
-            {/* Resizer */}
-            <div
-              className="absolute top-0 right-0 h-full w-2 cursor-col-resize group-hover:bg-zinc-500/30 transition"
-              onMouseDown={(e) => onMouseDown(e, col.key)}>
-              <div className="w-1 h-6 mx-auto bg-zinc-400/60 rounded" />
-            </div>
-          </div>
-        ))}
-        <div className="w-20" />
-      </div>
-      {/* Lista virtualizada */}
       <div
         ref={parentRef}
+        data-virtualizer-scroll
         className="flex-1 w-full overflow-auto relative bg-zinc-900">
+        {/* Cabecera de la tabla - normal, sin sticky */}
+        <div className="flex items-center bg-zinc-700 border-b border-zinc-800 h-11 font-semibold text-zinc-200 text-[15px] select-none">
+          <div className="w-11 px-2" />
+          {columns.map((col) => (
+            <div
+              key={col.key}
+              className="relative flex items-center px-2 truncate group"
+              style={{ width: colWidths[col.key] }}>
+              {col.label}
+              {/* Resizer */}
+              <div
+                className="absolute top-0 right-0 h-full w-2 cursor-col-resize group-hover:bg-zinc-500/30 transition"
+                onMouseDown={(e) => onMouseDown(e, col.key)}>
+                <div className="w-1 h-6 mx-auto bg-zinc-400/60 rounded" />
+              </div>
+            </div>
+          ))}
+          <div className="w-20" />
+        </div>
+        {/* Contenido de la tabla */}
         <div
           style={{
             height: rowVirtualizer.getTotalSize(),
@@ -116,6 +244,15 @@ export default function TableVirtualResizable<
             );
           })}
         </div>
+        {/* Loading indicator for infinite scroll */}
+        {enableInfiniteScroll && loading && (
+          <div className="p-4 text-zinc-400 text-center">
+            Cargando más datos...
+          </div>
+        )}
+        {enableInfiniteScroll && !hasMore && !loading && data.length > 0 && (
+          <div className="p-4 text-zinc-500 text-center">No hay más datos</div>
+        )}
       </div>
     </div>
   );

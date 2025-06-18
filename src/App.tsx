@@ -259,7 +259,7 @@ export default function App() {
                   className="h-full min-h-0 !grow">
                   <ScrollArea className="!h-full p-4">
                     <Box className="h-full min-h-[400px] w-full text-white">
-                      <CommitList />
+                      <CommitList repoPath={tab.repoPath || ""} />
                     </Box>
                   </ScrollArea>
                 </Split.Pane>

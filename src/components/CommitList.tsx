@@ -1,38 +1,14 @@
 import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
-import { useState } from "react";
+import { core } from "@tauri-apps/api";
+import { useEffect, useRef, useState } from "react";
 import InputText from "./form/InputText";
 import TableVirtualResizable, {
   TableColumn,
 } from "./tables/TableVirtualResizable";
 
-// Datos hardcodeados de ejemplo
-const data = [
-  {
-    id: "abc123",
-    sha: "abc123",
-    mensaje: "🔧 Fix login bug",
-    autor: "Alice",
-    rama_actual: "main",
-    rama_origen: "feature/login",
-    pr: "#42",
-    mergeado_en: "main",
-    archivos: 3,
-    ci: "success",
-  },
-  {
-    id: "def456",
-    sha: "def456",
-    mensaje: "✨ Add step",
-    autor: "Bob",
-    rama_actual: "develop",
-    rama_origen: "feature/checkout",
-    pr: "",
-    mergeado_en: "",
-    archivos: 5,
-    ci: "failed",
-  },
-  // Puedes agregar más datos para probar el scroll
-];
+interface CommitListProps {
+  repoPath: string;
+}
 
 function StatusBadge({ status }: { status: string }) {
   let color = "text-green-400";
@@ -56,11 +32,23 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function CommitList() {
+const PAGE_SIZE = 50;
+
+export default function CommitList({ repoPath }: CommitListProps) {
   const [search, setSearch] = useState("");
+  const [commits, setCommits] = useState<any[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [isSearchBarVisible, setIsSearchBarVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
+    null
+  );
 
   // Definir columnas con render personalizado para CI
-  const columns: TableColumn<(typeof data)[0]>[] = [
+  const columns: TableColumn<any>[] = [
     { key: "sha", label: "SHA", width: 120 },
     { key: "mensaje", label: "Mensaje", width: 250 },
     { key: "autor", label: "Autor", width: 120 },
@@ -77,10 +65,73 @@ export default function CommitList() {
     },
   ];
 
+  // Load commits (paginated)
+  const loadCommits = async (reset = false) => {
+    console.log("loadCommits called", {
+      reset,
+      offset,
+      hasMore,
+      loading,
+      repoPath,
+    });
+
+    if (loading || !repoPath) {
+      console.log("loadCommits early return - loading or no repoPath");
+      return;
+    }
+
+    if (!reset && !hasMore) {
+      console.log("loadCommits early return - no reset and no hasMore");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    console.log("Calling loadCommits", { reset, offset, hasMore });
+    try {
+      const result: any = await core.invoke("get_commits_list_paginated", {
+        path: repoPath,
+        branch: "",
+        offset: reset ? 0 : offset,
+        limit: PAGE_SIZE,
+      });
+      console.log("Backend result:", result);
+      const newCommits = result.commits || [];
+      setCommits((prev) => (reset ? newCommits : [...prev, ...newCommits]));
+      setHasMore(result.has_more);
+      setOffset((prev) => (reset ? PAGE_SIZE : prev + PAGE_SIZE));
+      console.log("Updated state", {
+        newCommitsLength: newCommits.length,
+        hasMore: result.has_more,
+        newOffset: reset ? PAGE_SIZE : offset + PAGE_SIZE,
+      });
+    } catch (err) {
+      console.error("Error loading commits:", err);
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reset when repoPath changes
+  useEffect(() => {
+    setCommits([]);
+    setOffset(0);
+    setHasMore(true);
+    loadCommits(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoPath]);
+
   return (
     <div className="h-full w-full flex flex-col">
-      {/* Barra superior */}
-      <div className="flex items-center px-4 pt-4 pb-2 border-b border-zinc-800">
+      {/* Barra superior - con comportamiento de scroll */}
+      <div
+        className={`flex items-center px-4 pt-4 pb-2 border-b border-zinc-800 bg-zinc-900 transition-transform duration-300 ease-in-out ${
+          isSearchBarVisible ? "translate-y-0" : "-translate-y-full"
+        }`}
+        style={{
+          transform: isSearchBarVisible ? "translateY(0)" : "translateY(-100%)",
+        }}>
         <InputText
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -108,12 +159,20 @@ export default function CommitList() {
           Añadir manualmente
         </button>
       </div>
-      {/* Tabla reutilizable */}
-      <TableVirtualResizable
-        columns={columns}
-        data={data}
-        rowHeight={56}
-      />
+      {/* Tabla con infinite scroll integrado */}
+      <div className="flex-1 w-full relative bg-zinc-900">
+        {error && <div className="p-4 text-red-400">Error: {error}</div>}
+        <TableVirtualResizable
+          columns={columns}
+          data={commits}
+          rowHeight={56}
+          enableInfiniteScroll={true}
+          hasMore={hasMore}
+          loading={loading}
+          onLoadMore={() => loadCommits()}
+          loadMoreThreshold={200}
+        />
+      </div>
     </div>
   );
 }
