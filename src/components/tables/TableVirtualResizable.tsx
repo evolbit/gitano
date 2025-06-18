@@ -200,14 +200,15 @@ export default function TableVirtualResizable<
           {columns.map((col) => (
             <div
               key={col.key}
-              className="relative flex items-center px-2 truncate group"
-              style={{ width: colWidths[col.key] }}>
+              className="relative flex items-center px-1 truncate group"
+              style={{ width: colWidths[col.key], minWidth: 40 }}>
               {col.label}
               {/* Resizer */}
               <div
-                className="absolute top-0 right-0 h-full w-2 cursor-col-resize group-hover:bg-zinc-500/30 transition"
-                onMouseDown={(e) => onMouseDown(e, col.key)}>
-                <div className="w-1 h-6 mx-auto bg-zinc-400/60 rounded" />
+                className="absolute top-0 right-0 h-full w-2 z-20 cursor-col-resize bg-zinc-700 transition"
+                onMouseDown={(e) => onMouseDown(e, col.key)}
+                style={{ touchAction: "none" }}>
+                <div className="w-1 h-5 mx-auto bg-zinc-400/60 rounded" />
               </div>
             </div>
           ))}
