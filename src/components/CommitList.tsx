@@ -126,7 +126,7 @@ export default function CommitList({ repoPath }: CommitListProps) {
     <div className="h-full w-full flex flex-col">
       {/* Barra superior - con comportamiento de scroll */}
       <div
-        className={`flex items-center px-4 pt-4 pb-2 border-b border-zinc-800 bg-zinc-900 transition-transform duration-300 ease-in-out ${
+        className={`flex items-center pb-4 transition-transform duration-300 ease-in-out ${
           isSearchBarVisible ? "translate-y-0" : "-translate-y-full"
         }`}
         style={{
@@ -165,7 +165,7 @@ export default function CommitList({ repoPath }: CommitListProps) {
         <TableVirtualResizable
           columns={columns}
           data={commits}
-          rowHeight={56}
+          rowHeight={45}
           enableInfiniteScroll={true}
           hasMore={hasMore}
           loading={loading}

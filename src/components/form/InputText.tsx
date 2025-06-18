@@ -24,7 +24,7 @@ const InputText: React.FC<InputTextProps> = ({
 }) => {
   return (
     <div
-      className={`flex items-center bg-zinc-800 rounded-lg px-3 h-9 ${className}`}>
+      className={`flex items-center bg-zinc-800 border border-zinc-600 rounded-lg px-3 h-9 ${className}`}>
       {leftIcon && (
         <span className="mr-2 flex items-center text-zinc-400">{leftIcon}</span>
       )}

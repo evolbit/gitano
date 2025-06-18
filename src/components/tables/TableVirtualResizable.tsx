@@ -26,7 +26,7 @@ export default function TableVirtualResizable<
 >({
   columns,
   data,
-  rowHeight = 56,
+  rowHeight = 50,
   className = "",
   enableInfiniteScroll = false,
   hasMore = false,
@@ -196,8 +196,7 @@ export default function TableVirtualResizable<
         data-virtualizer-scroll
         className="flex-1 w-full overflow-auto relative bg-zinc-900">
         {/* Cabecera de la tabla - normal, sin sticky */}
-        <div className="flex items-center bg-zinc-700 border-b border-zinc-800 h-11 font-semibold text-zinc-200 text-[15px] select-none">
-          <div className="w-11 px-2" />
+        <div className="flex items-center bg-zinc-700 border-b border-zinc-800 h-11 font-semibold text-zinc-200 text-sm select-none">
           {columns.map((col) => (
             <div
               key={col.key}
@@ -212,7 +211,6 @@ export default function TableVirtualResizable<
               </div>
             </div>
           ))}
-          <div className="w-20" />
         </div>
         {/* Contenido de la tabla */}
         <div
@@ -227,10 +225,9 @@ export default function TableVirtualResizable<
               <div
                 key={row.id || virtualRow.index}
                 className={
-                  "absolute top-0 left-0 w-full h-14 flex items-center text-zinc-200 text-[15px] border-b border-zinc-800 cursor-pointer transition-colors duration-150 bg-zinc-800 hover:bg-zinc-700"
+                  "absolute top-0 left-0 w-full h-11 flex items-center text-zinc-200 text-sm border-b border-zinc-800 cursor-pointer transition-colors duration-150 bg-zinc-800 hover:bg-zinc-700"
                 }
                 style={{ transform: `translateY(${virtualRow.start}px)` }}>
-                <div className="w-11 flex justify-center items-center" />
                 {columns.map((col) => (
                   <div
                     key={col.key}
@@ -239,7 +236,6 @@ export default function TableVirtualResizable<
                     {col.render ? col.render(row[col.key], row) : row[col.key]}
                   </div>
                 ))}
-                <div className="w-20 flex items-center justify-center gap-2" />
               </div>
             );
           })}
