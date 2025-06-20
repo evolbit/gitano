@@ -1,11 +1,10 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import "@gfazioli/mantine-split-pane/styles.css";
-import { Accordion, ActionIcon, Box, ScrollArea, Tabs } from "@mantine/core";
+import { Accordion, ActionIcon, Box, Tabs } from "@mantine/core";
 import {
   IconFolder,
   IconGitBranch,
   IconHome,
-  IconInfoCircle,
   IconPlus,
   IconX,
 } from "@tabler/icons-react";
@@ -13,11 +12,13 @@ import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BranchList } from "./components/BranchList";
+import ChangesPanel from "./components/ChangesPanel";
 import CommitList from "./components/CommitList";
 import HomePage from "./components/HomePage";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
 import { useRepoStore } from "./store/repo";
+import { CommitListItem } from "./types/git";
 import { classNames } from "./utils/ui";
 
 type TabType = {
@@ -52,6 +53,9 @@ export default function App() {
   const { t } = useTranslation();
   const [tabs, setTabs] = useState<RepoTabType[]>(TABS_INITIAL);
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const [selectedCommit, setSelectedCommit] = useState<CommitListItem | null>(
+    null
+  );
   const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
 
   const addTab = () => {
@@ -251,7 +255,7 @@ export default function App() {
                           Sección 2
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <Box className="p-2">Contenido del acordeón 2</Box>
+                          Contenido de la sección 2
                         </Accordion.Panel>
                       </Accordion.Item>
                     </Accordion>
@@ -263,15 +267,9 @@ export default function App() {
                   radius="xs"
                   className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
                 />
-                {/* Centro de contenido */}
-                <Split.Pane
-                  minWidth={300}
-                  className="h-full min-h-0 !grow">
-                  <ScrollArea className="!h-full p-4">
-                    <Box className="h-full min-h-[400px] w-full text-white">
-                      <CommitList />
-                    </Box>
-                  </ScrollArea>
+                {/* Contenido principal */}
+                <Split.Pane className="!h-full !min-h-0 flex-1">
+                  <CommitList onCommitSelected={setSelectedCommit} />
                 </Split.Pane>
                 <Split.Resizer
                   size={2}
@@ -281,19 +279,9 @@ export default function App() {
                 />
                 {/* Sidebar derecho */}
                 <Split.Pane
-                  initialWidth={240}
-                  minWidth={300}
-                  maxWidth={350}
+                  initialWidth={450}
                   className="!h-full !min-h-0">
-                  <Box className="!h-full border-l border-zinc-900 text-zinc-200">
-                    <Box className="p-4">
-                      <IconInfoCircle
-                        size={24}
-                        className="mb-2"
-                      />
-                      <div>Sidebar derecho (placeholder)</div>
-                    </Box>
-                  </Box>
+                  <ChangesPanel selectedCommit={selectedCommit} />
                 </Split.Pane>
               </Split>
             )}

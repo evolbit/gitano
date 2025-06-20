@@ -870,3 +870,100 @@ pub fn get_commits_list_paginated(
         has_more,
     })
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "PascalCase")]
+pub enum ChangeType {
+    Added,
+    Deleted,
+    Modified,
+    Renamed,
+    Copied,
+    TypeChanged,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileChange {
+    path: String,
+    status: ChangeType,
+    insertions: usize,
+    deletions: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommitDiff {
+    commit_sha: String,
+    changes: Vec<FileChange>,
+}
+
+#[command]
+pub fn get_commit_diff(path: String, sha: String) -> Result<CommitDiff, String> {
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let oid = Oid::from_str(&sha).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+    let parent_tree = if commit.parent_count() > 0 {
+        let parent = commit.parent(0).map_err(|e| e.to_string())?;
+        Some(parent.tree().map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+
+    let tree = commit.tree().map_err(|e| e.to_string())?;
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
+        .map_err(|e| e.to_string())?;
+
+    let mut changes = Vec::new();
+    for (i, delta) in diff.deltas().enumerate() {
+        let status = match delta.status() {
+            git2::Delta::Added => ChangeType::Added,
+            git2::Delta::Deleted => ChangeType::Deleted,
+            git2::Delta::Modified => ChangeType::Modified,
+            git2::Delta::Renamed => ChangeType::Renamed,
+            git2::Delta::Copied => ChangeType::Copied,
+            git2::Delta::Typechange => ChangeType::TypeChanged,
+            _ => continue,
+        };
+
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let patch = git2::Patch::from_diff(&diff, i).map_err(|e| e.to_string())?;
+        let (mut insertions, mut deletions) = (0, 0);
+
+        if let Some(patch) = patch {
+            for hunk_idx in 0..patch.num_hunks() {
+                let (_hunk, num_lines) = patch.hunk(hunk_idx).map_err(|e| e.to_string())?;
+                for line_idx in 0..num_lines {
+                    let line = patch
+                        .line_in_hunk(hunk_idx, line_idx)
+                        .map_err(|e| e.to_string())?;
+                    match line.origin() {
+                        '+' | '>' => insertions += 1,
+                        '-' | '<' => deletions += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        changes.push(FileChange {
+            path,
+            status,
+            insertions,
+            deletions,
+        });
+    }
+
+    Ok(CommitDiff {
+        commit_sha: sha,
+        changes,
+    })
+}

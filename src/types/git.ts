@@ -45,11 +45,32 @@ export interface CommitListItem {
   message: string;
   author: string;
   date: number;
-  current_branch?: string;
-  source_branch?: string;
+  current_branch: string;
+  source_branch: string;
   commit_history: string[];
-  pr?: string | null;
-  merged_in?: string | null;
+  pr: string | null;
+  merged_in: string | null;
   files: number;
-  ci?: string | null;
+  ci: string | null;
+}
+
+export enum ChangeType {
+  Added = "Added",
+  Deleted = "Deleted",
+  Modified = "Modified",
+  Renamed = "Renamed",
+  Copied = "Copied",
+  TypeChanged = "TypeChanged",
+}
+
+export interface FileChange {
+  path: string;
+  status: ChangeType;
+  insertions: number;
+  deletions: number;
+}
+
+export interface CommitDiff {
+  commit_sha: string;
+  changes: FileChange[];
 }

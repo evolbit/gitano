@@ -8,6 +8,7 @@ import {
 import { core } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
+import { CommitListItem } from "../types/git";
 import InputText from "./form/InputText";
 import TableVirtualResizable, {
   TableColumn,
@@ -37,7 +38,11 @@ function StatusBadge({ status }: { status: string }) {
 
 const PAGE_SIZE = 50;
 
-export default function CommitList() {
+type CommitListProps = {
+  onCommitSelected: (commit: CommitListItem) => void;
+};
+
+export default function CommitList({ onCommitSelected }: CommitListProps) {
   const repoPath = useRepoStore((s) => s.currentRepo);
   const selectedBranch = useRepoStore((s) => s.selectedBranch);
   const [search, setSearch] = useState("");
@@ -222,18 +227,26 @@ export default function CommitList() {
         </button>
       </div>
       {/* Tabla con infinite scroll integrado */}
-      <div className="flex-1 w-full relative bg-zinc-900">
-        {error && <div className="p-4 text-red-400">Error: {error}</div>}
+      <div
+        ref={setScrollContainer}
+        className="flex-1 overflow-y-auto"
+        onScroll={(e) => {
+          if (
+            e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
+            e.currentTarget.clientHeight + 200
+          ) {
+            loadCommits();
+          }
+        }}>
         <TableVirtualResizable
           columns={columns}
           data={commits}
-          rowHeight={45}
-          enableInfiniteScroll={true}
-          hasMore={hasMore}
           loading={loading}
-          onLoadMore={() => loadCommits()}
-          loadMoreThreshold={200}
+          onRowClick={(row: CommitListItem) => onCommitSelected(row)}
         />
+        {hasMore && !loading && (
+          <div className="text-center p-4">Cargando más commits...</div>
+        )}
       </div>
     </div>
   );

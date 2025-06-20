@@ -19,6 +19,7 @@ export interface TableVirtualResizableProps<T> {
   loading?: boolean;
   onLoadMore?: () => void;
   loadMoreThreshold?: number;
+  onRowClick?: (row: T) => void;
 }
 
 export default function TableVirtualResizable<
@@ -33,6 +34,7 @@ export default function TableVirtualResizable<
   loading = false,
   onLoadMore,
   loadMoreThreshold = 200,
+  onRowClick,
 }: TableVirtualResizableProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>(
@@ -228,7 +230,8 @@ export default function TableVirtualResizable<
                 className={
                   "absolute top-0 left-0 w-full h-11 flex items-center text-zinc-200 text-sm border-b border-zinc-800 cursor-pointer transition-colors duration-150 bg-zinc-800 hover:bg-zinc-700"
                 }
-                style={{ transform: `translateY(${virtualRow.start}px)` }}>
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                onClick={() => onRowClick && onRowClick(row)}>
                 {columns.map((col) => (
                   <div
                     key={col.key}
