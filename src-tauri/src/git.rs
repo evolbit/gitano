@@ -578,84 +578,77 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
 
     let main_branch_tip = get_main_branch_tip(repo)?;
 
-    for branch_res in repo.branches(None)? {
-        if let Ok((branch, branch_type)) = branch_res {
-            if let (Some(branch_tip), Some(branch_name_full)) =
-                (branch.get().target(), branch.name()?)
+    let all_branches: Vec<_> = repo.branches(None)?.filter_map(Result::ok).collect();
+
+    for (branch, branch_type) in all_branches {
+        if let (Some(branch_tip), Some(branch_name_full)) = (branch.get().target(), branch.name()?)
+        {
+            let branch_name_full = branch_name_full.to_string();
+            let branch_name_short = (if branch_type == BranchType::Remote {
+                branch_name_full.splitn(2, '/').last().unwrap_or("")
+            } else {
+                &branch_name_full
+            })
+            .to_string();
+
+            let priority = if branch_name_short.starts_with("feature/")
+                || branch_name_short.starts_with("release/")
+                || branch_name_short.starts_with("hotfix/")
+                || branch_name_short.starts_with("bugfix/")
             {
-                let branch_name_full = branch_name_full.to_string();
-                let branch_name_short = (if branch_type == BranchType::Remote {
-                    branch_name_full.splitn(2, '/').last().unwrap_or("")
-                } else {
-                    &branch_name_full
-                })
-                .to_string();
+                1
+            } else {
+                0
+            };
 
-                if ["develop", "main", "master"].contains(&branch_name_short.as_str()) {
-                    continue;
-                }
-
-                let priority = if branch_name_short.starts_with("feature/")
-                    || branch_name_short.starts_with("release/")
-                    || branch_name_short.starts_with("hotfix/")
-                    || branch_name_short.starts_with("bugfix/")
-                {
-                    1
-                } else {
-                    0
-                };
-
-                if let Ok(commit) = repo.find_commit(branch_tip) {
-                    let commit_time = commit.time().seconds();
-                    branches_to_process.push((
-                        branch_tip,
-                        branch_name_full,
-                        branch_name_short,
-                        priority,
-                        commit_time,
-                    ));
-                }
+            if let Ok(commit) = repo.find_commit(branch_tip) {
+                let commit_time = commit.time().seconds();
+                branches_to_process.push((
+                    branch_tip,
+                    branch_name_full,
+                    branch_name_short,
+                    priority,
+                    commit_time,
+                ));
             }
         }
     }
 
-    // Sort by commit time to get the most recent branches
-    branches_to_process.sort_by_key(|k| std::cmp::Reverse(k.4));
-
-    // Limit to a reasonable number to avoid performance issues in huge repos
-    const MAX_BRANCHES_TO_PROCESS: usize = 200;
-    branches_to_process.truncate(MAX_BRANCHES_TO_PROCESS);
-
-    // Sort again by priority to ensure feature/release branches are preferred
+    // Sort by priority to ensure feature/release branches are processed before develop/main
     branches_to_process.sort_by_key(|k| std::cmp::Reverse(k.3));
 
-    for (branch_tip, branch_name_full, branch_name_short, _priority, _commit_time) in
+    // Limit to the most recent 100 branches for performance
+    const MAX_BRANCHES_TO_PROCESS: usize = 100;
+    if branches_to_process.len() > MAX_BRANCHES_TO_PROCESS {
+        branches_to_process.truncate(MAX_BRANCHES_TO_PROCESS);
+    }
+
+    for (branch_tip, branch_name_full, _branch_name_short, _priority, _commit_time) in
         branches_to_process
     {
-        let base_tip_opt = if branch_name_short.starts_with("hotfix/") {
-            main_branch_tip
-        } else {
-            develop_branch_tip.or(main_branch_tip)
-        };
-
-        if let Some(base_tip) = base_tip_opt {
-            if let Ok(merge_base) = repo.merge_base(branch_tip, base_tip) {
-                let mut revwalk = repo.revwalk()?;
-                revwalk.push(branch_tip)?;
-                if merge_base != branch_tip {
-                    revwalk.hide(merge_base)?;
-                }
+        // For each branch, walk through all its commits and assign them to this branch
+        if let Ok(mut revwalk) = repo.revwalk() {
+            if revwalk.push(branch_tip).is_ok() {
+                // Limit the depth to avoid processing too many commits
+                let mut commit_count = 0;
+                const MAX_COMMITS_PER_BRANCH: usize = 1000;
 
                 for oid_res in revwalk {
+                    if commit_count >= MAX_COMMITS_PER_BRANCH {
+                        break;
+                    }
                     if let Ok(oid) = oid_res {
+                        // Only insert if this commit hasn't been assigned to a higher priority branch
                         commit_branch_map
                             .entry(oid)
                             .or_insert_with(|| branch_name_full.clone());
+                        commit_count += 1;
                     }
                 }
             }
         }
     }
+
     Ok(commit_branch_map)
 }
 
