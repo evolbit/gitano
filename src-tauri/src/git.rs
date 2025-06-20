@@ -564,14 +564,14 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
         .and_then(|b| {
             b.get()
                 .target()
-                .ok_or(git2::Error::from_str("No target for develop branch"))
+                .ok_or_else(|| git2::Error::from_str("No target for develop branch"))
         })
         .or_else(|_| {
             repo.find_branch("origin/develop", BranchType::Remote)
                 .and_then(|b| {
                     b.get()
                         .target()
-                        .ok_or(git2::Error::from_str("No target for origin/develop branch"))
+                        .ok_or_else(|| git2::Error::from_str("No target for origin/develop branch"))
                 })
         })
         .ok();
@@ -579,37 +579,59 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
     let main_branch_tip = get_main_branch_tip(repo)?;
 
     for branch_res in repo.branches(None)? {
-        let (branch, branch_type) = branch_res?;
-        if let (Some(branch_tip), Some(branch_name_full)) = (branch.get().target(), branch.name()?)
-        {
-            let branch_name_full = branch_name_full.to_string();
-            let branch_name_short = (if branch_type == BranchType::Remote {
-                branch_name_full.splitn(2, '/').last().unwrap_or("")
-            } else {
-                &branch_name_full
-            })
-            .to_string();
-
-            if ["develop", "main", "master"].contains(&branch_name_short.as_str()) {
-                continue;
-            }
-
-            let priority = if branch_name_short.starts_with("feature/")
-                || branch_name_short.starts_with("release/")
-                || branch_name_short.starts_with("hotfix/")
-                || branch_name_short.starts_with("bugfix/")
+        if let Ok((branch, branch_type)) = branch_res {
+            if let (Some(branch_tip), Some(branch_name_full)) =
+                (branch.get().target(), branch.name()?)
             {
-                1
-            } else {
-                0
-            };
-            branches_to_process.push((branch_tip, branch_name_full, branch_name_short, priority));
+                let branch_name_full = branch_name_full.to_string();
+                let branch_name_short = (if branch_type == BranchType::Remote {
+                    branch_name_full.splitn(2, '/').last().unwrap_or("")
+                } else {
+                    &branch_name_full
+                })
+                .to_string();
+
+                if ["develop", "main", "master"].contains(&branch_name_short.as_str()) {
+                    continue;
+                }
+
+                let priority = if branch_name_short.starts_with("feature/")
+                    || branch_name_short.starts_with("release/")
+                    || branch_name_short.starts_with("hotfix/")
+                    || branch_name_short.starts_with("bugfix/")
+                {
+                    1
+                } else {
+                    0
+                };
+
+                if let Ok(commit) = repo.find_commit(branch_tip) {
+                    let commit_time = commit.time().seconds();
+                    branches_to_process.push((
+                        branch_tip,
+                        branch_name_full,
+                        branch_name_short,
+                        priority,
+                        commit_time,
+                    ));
+                }
+            }
         }
     }
 
+    // Sort by commit time to get the most recent branches
+    branches_to_process.sort_by_key(|k| std::cmp::Reverse(k.4));
+
+    // Limit to a reasonable number to avoid performance issues in huge repos
+    const MAX_BRANCHES_TO_PROCESS: usize = 200;
+    branches_to_process.truncate(MAX_BRANCHES_TO_PROCESS);
+
+    // Sort again by priority to ensure feature/release branches are preferred
     branches_to_process.sort_by_key(|k| std::cmp::Reverse(k.3));
 
-    for (branch_tip, branch_name_full, branch_name_short, _priority) in branches_to_process {
+    for (branch_tip, branch_name_full, branch_name_short, _priority, _commit_time) in
+        branches_to_process
+    {
         let base_tip_opt = if branch_name_short.starts_with("hotfix/") {
             main_branch_tip
         } else {
