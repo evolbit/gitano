@@ -1,8 +1,13 @@
 use git2::{BranchType, Oid, Repository};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
+
+static COMMIT_BRANCH_MAP_CACHE: Lazy<Mutex<HashMap<String, HashMap<Oid, String>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(serde::Serialize)]
 pub struct CommitInfo {
@@ -496,25 +501,63 @@ fn get_all_branch_tips(repo: &Repository) -> Result<HashMap<Oid, Vec<String>>, g
 }
 
 fn get_merge_source_branch(message: &str) -> Option<String> {
+    let summary = message.lines().next().unwrap_or(message);
+
     let patterns = [
-        "Merge branch '",
-        "Merge remote-tracking branch '",
-        "Merge tag '",
+        ("Merge branch '", Some("'")),
+        ("Merge remote-tracking branch '", Some("'")),
+        ("Merge tag '", Some("'")),
+        ("Merged in ", Some(" into ")),
+        ("Merged in ", None), // Must be after the one with " into "
     ];
-    for pattern in patterns.iter() {
-        if let Some(start) = message.find(pattern) {
+
+    for (pattern, terminator) in &patterns {
+        if let Some(start) = summary.find(pattern) {
             let start = start + pattern.len();
-            if let Some(end) = message[start..].find("'") {
-                return Some(message[start..start + end].to_string());
+            let rest = &summary[start..];
+
+            if let Some(terminator_str) = terminator {
+                if let Some(end) = rest.find(terminator_str) {
+                    return Some(rest[..end].trim().to_string());
+                }
+            } else {
+                return Some(rest.trim().to_string());
             }
         }
     }
     None
 }
 
+fn get_main_branch_tip(repo: &Repository) -> Result<Option<Oid>, git2::Error> {
+    if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
+        if let Ok(resolved_ref) = reference.resolve() {
+            if let Some(oid) = resolved_ref.target() {
+                return Ok(Some(oid));
+            }
+        }
+    }
+
+    let refs_to_try = [
+        "refs/heads/main",
+        "refs/remotes/origin/main",
+        "refs/heads/master",
+        "refs/remotes/origin/master",
+    ];
+
+    for ref_name in &refs_to_try {
+        if let Ok(reference) = repo.find_reference(ref_name) {
+            if let Some(oid) = reference.target() {
+                return Ok(Some(oid));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, git2::Error> {
-    let mut commit_branch_map = HashMap::new();
-    let mut branches_with_priority = Vec::new();
+    let mut commit_branch_map: HashMap<Oid, String> = HashMap::new();
+    let mut branches_to_process = Vec::new();
 
     let develop_branch_tip = repo
         .find_branch("develop", BranchType::Local)
@@ -533,41 +576,13 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
         })
         .ok();
 
-    let main_branch_tip = repo
-        .find_branch("main", BranchType::Local)
-        .and_then(|b| {
-            b.get()
-                .target()
-                .ok_or(git2::Error::from_str("No target for main branch"))
-        })
-        .or_else(|_| {
-            repo.find_branch("origin/main", BranchType::Remote)
-                .and_then(|b| {
-                    b.get()
-                        .target()
-                        .ok_or(git2::Error::from_str("No target for origin/main branch"))
-                })
-        })
-        .or_else(|_| {
-            repo.find_branch("master", BranchType::Local).and_then(|b| {
-                b.get()
-                    .target()
-                    .ok_or(git2::Error::from_str("No target for master branch"))
-            })
-        })
-        .or_else(|_| {
-            repo.find_branch("origin/master", BranchType::Remote)
-                .and_then(|b| {
-                    b.get()
-                        .target()
-                        .ok_or(git2::Error::from_str("No target for origin/master branch"))
-                })
-        })
-        .ok();
+    let main_branch_tip = get_main_branch_tip(repo)?;
 
     for branch_res in repo.branches(None)? {
         let (branch, branch_type) = branch_res?;
-        if let Some(branch_name_full) = branch.name()?.map(|s| s.to_string()) {
+        if let (Some(branch_tip), Some(branch_name_full)) = (branch.get().target(), branch.name()?)
+        {
+            let branch_name_full = branch_name_full.to_string();
             let branch_name_short = (if branch_type == BranchType::Remote {
                 branch_name_full.splitn(2, '/').last().unwrap_or("")
             } else {
@@ -575,7 +590,7 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
             })
             .to_string();
 
-            if branch_name_short == "develop" || branch_name_short == "main" {
+            if ["develop", "main", "master"].contains(&branch_name_short.as_str()) {
                 continue;
             }
 
@@ -588,42 +603,37 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
             } else {
                 0
             };
-            branches_with_priority.push((branch, branch_name_full, branch_name_short, priority));
+            branches_to_process.push((branch_tip, branch_name_full, branch_name_short, priority));
         }
     }
-    branches_with_priority.sort_by_key(|k| std::cmp::Reverse(k.3));
 
-    for (branch, branch_name_full, branch_name_short, _priority) in branches_with_priority {
-        if let Some(branch_tip) = branch.get().target() {
-            let base_tip_opt = if branch_name_short.starts_with("release/")
-                || branch_name_short.starts_with("hotfix/")
-            {
-                main_branch_tip
-            } else {
-                develop_branch_tip
-            };
+    branches_to_process.sort_by_key(|k| std::cmp::Reverse(k.3));
 
-            if let Some(base_tip) = base_tip_opt {
-                if branch_tip == base_tip {
-                    continue;
-                }
-                if let Ok(merge_base) = repo.merge_base(branch_tip, base_tip) {
-                    let mut revwalk = repo.revwalk()?;
-                    revwalk.push(branch_tip)?;
+    for (branch_tip, branch_name_full, branch_name_short, _priority) in branches_to_process {
+        let base_tip_opt = if branch_name_short.starts_with("hotfix/") {
+            main_branch_tip
+        } else {
+            develop_branch_tip.or(main_branch_tip)
+        };
+
+        if let Some(base_tip) = base_tip_opt {
+            if let Ok(merge_base) = repo.merge_base(branch_tip, base_tip) {
+                let mut revwalk = repo.revwalk()?;
+                revwalk.push(branch_tip)?;
+                if merge_base != branch_tip {
                     revwalk.hide(merge_base)?;
+                }
 
-                    for oid_res in revwalk {
-                        if let Ok(oid) = oid_res {
-                            commit_branch_map
-                                .entry(oid)
-                                .or_insert_with(|| branch_name_full.clone());
-                        }
+                for oid_res in revwalk {
+                    if let Ok(oid) = oid_res {
+                        commit_branch_map
+                            .entry(oid)
+                            .or_insert_with(|| branch_name_full.clone());
                     }
                 }
             }
         }
     }
-
     Ok(commit_branch_map)
 }
 
@@ -635,8 +645,17 @@ pub fn get_commits_list_paginated(
     limit: usize,
 ) -> Result<CommitListPage, String> {
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+
+    let repo_path_key = repo.path().to_str().unwrap_or_default().to_string();
+    let mut cache = COMMIT_BRANCH_MAP_CACHE.lock().unwrap();
+
+    if !cache.contains_key(&repo_path_key) {
+        let map = build_commit_branch_map(&repo).map_err(|e| e.to_string())?;
+        cache.insert(repo_path_key.clone(), map);
+    }
+
+    let commit_branch_map = cache.get(&repo_path_key).unwrap();
     let branch_tips = get_all_branch_tips(&repo).map_err(|e| e.to_string())?;
-    let commit_branch_map = build_commit_branch_map(&repo).map_err(|e| e.to_string())?;
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
 
@@ -739,6 +758,10 @@ pub fn get_commits_list_paginated(
         if commit.parent_count() > 1 {
             if let Some(source) = get_merge_source_branch(commit_message) {
                 history.push(source);
+            } else if let Ok(parent2_id) = commit.parent_id(1) {
+                if let Some(branch_from_map) = commit_branch_map.get(&parent2_id) {
+                    history.push(branch_from_map.clone());
+                }
             }
         }
 
@@ -757,6 +780,41 @@ pub fn get_commits_list_paginated(
                 history.push(branch_from_map.clone());
             }
         }
+
+        // Eliminar duplicados y preferir ramas locales sobre remotas
+        history.sort();
+        history.dedup();
+
+        let mut to_remove = HashSet::<String>::new();
+        let local_branches: HashSet<String> = history
+            .iter()
+            .filter_map(|b| {
+                if b.starts_with("origin/") || b.starts_with("refs/remotes/") {
+                    None
+                } else if let Some(stripped) = b.strip_prefix("refs/heads/") {
+                    Some(stripped.to_string())
+                } else {
+                    Some(b.clone())
+                }
+            })
+            .collect();
+
+        for branch in &history {
+            let remote_equivalent = if let Some(stripped) = branch.strip_prefix("origin/") {
+                Some(stripped)
+            } else if let Some(stripped) = branch.strip_prefix("refs/remotes/origin/") {
+                Some(stripped)
+            } else {
+                None
+            };
+
+            if let Some(remote_eq) = remote_equivalent {
+                if local_branches.contains(remote_eq) {
+                    to_remove.insert(branch.clone());
+                }
+            }
+        }
+        history.retain(|b| !to_remove.contains(b));
 
         let pr = None;
         let merged_in = None;
