@@ -243,7 +243,7 @@ export default function App() {
                           </div>
                         </Accordion.Control>
                         <Accordion.Panel>
-                          <BranchList repoPath={tab.repoPath || ""} />
+                          <BranchList />
                         </Accordion.Panel>
                       </Accordion.Item>
                       <Accordion.Item value="section2">
@@ -269,7 +269,7 @@ export default function App() {
                   className="h-full min-h-0 !grow">
                   <ScrollArea className="!h-full p-4">
                     <Box className="h-full min-h-[400px] w-full text-white">
-                      <CommitList repoPath={tab.repoPath || ""} />
+                      <CommitList />
                     </Box>
                   </ScrollArea>
                 </Split.Pane>
