@@ -544,7 +544,7 @@ export function BranchList() {
       <div className="font-bold mb-2 flex items-center gap-2 text-sm">
         <div className="flex gap-1">
           <button
-            className={`px-2 py-1 rounded flex items-center gap-1 text-xs ${
+            className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
               type === "local"
                 ? "bg-blue-600 text-white"
                 : "bg-zinc-800 text-zinc-400"
@@ -561,7 +561,7 @@ export function BranchList() {
             Locales
           </button>
           <button
-            className={`px-2 py-1 rounded flex items-center gap-1 text-xs ${
+            className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
               type === "remote"
                 ? "bg-blue-600 text-white"
                 : "bg-zinc-800 text-zinc-400"
@@ -579,8 +579,8 @@ export function BranchList() {
           </button>
         </div>
       </div>
-      {loading && <div className="text-xs text-zinc-400">Cargando...</div>}
-      {error && <div className="text-xs text-red-400">{error}</div>}
+      {loading && <div className="text-sm text-zinc-400">Cargando...</div>}
+      {error && <div className="text-sm text-red-400">{error}</div>}
       <div className="flex-1 min-h-0 mt-2">
         <div
           className="overflow-y-auto max-h-[55vh] pr-1"

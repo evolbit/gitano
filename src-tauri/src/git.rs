@@ -605,57 +605,20 @@ fn clean_branch_history(history: Vec<String>) -> Vec<String> {
     result
 }
 
-fn fast_commit_history(commit: &git2::Commit, current_branch: &str, repo: &Repository) -> String {
-    let mut history = Vec::new();
-    let mut visited = std::collections::HashSet::new();
-    let mut current = commit.clone();
-
-    // Si es un merge, intentar obtener la rama de origen del mensaje
-    if current.parent_count() > 1 {
-        if let Some(source) = get_merge_source_branch(&current) {
-            history.push(source);
-        }
-    }
-
-    // Seguir la cadena de merges
-    while current.parent_count() > 0 {
-        let commit_id = current.id();
-        if visited.contains(&commit_id) {
-            break;
-        }
-        visited.insert(commit_id);
-
-        // Si es un merge, agregar la rama de origen
-        if current.parent_count() > 1 {
-            if let Some(source) = get_merge_source_branch(&current) {
-                history.push(source);
+fn fast_commit_history(commit: &git2::Commit, current_branch: &str) -> String {
+    // Si es un merge, mostrar "origen -> destino"
+    if commit.parent_count() > 1 {
+        if let Some(source_branch) = get_merge_source_branch(commit) {
+            // Evitar mostrar "rama -> rama" si son iguales
+            if source_branch != current_branch && !current_branch.is_empty() {
+                return format!("{} -> {}", source_branch, current_branch);
+            } else {
+                return source_branch;
             }
         }
-
-        // Continuar con el primer padre
-        current = match current.parent(0) {
-            Ok(parent) => parent,
-            Err(_) => break,
-        };
     }
-
-    // Limpiar la historia eliminando repeticiones consecutivas
-    let clean_history = clean_branch_history(history);
-
-    // Si no hay historia o solo está la rama actual, mostrar solo la rama actual
-    if clean_history.is_empty() || (clean_history.len() == 1 && clean_history[0] == current_branch)
-    {
-        current_branch.to_string()
-    } else {
-        // Si la última rama en la historia no es la rama actual, agregarla
-        if !current_branch.is_empty() && clean_history.last() != Some(&current_branch.to_string()) {
-            let mut final_history = clean_history;
-            final_history.push(current_branch.to_string());
-            final_history.join(" -> ")
-        } else {
-            clean_history.join(" -> ")
-        }
-    }
+    // Si no es un merge, solo mostrar la rama actual
+    current_branch.to_string()
 }
 
 #[command]
@@ -761,7 +724,7 @@ pub fn get_commits_list_paginated(
         };
 
         // commit_history rápido
-        let commit_history = fast_commit_history(&commit, &current_branch, &repo);
+        let commit_history = fast_commit_history(&commit, &current_branch);
 
         let pr = None;
         let merged_in = None;

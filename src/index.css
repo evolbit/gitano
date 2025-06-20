@@ -1,8 +1,15 @@
 @import "@mantine/core/styles.layer.css";
 @import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 html,
 body,
 #root {
   height: 100%;
+}
+
+html {
+  font-size: 15px;
 }
