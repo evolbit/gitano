@@ -47,7 +47,7 @@ export interface CommitListItem {
   date: number;
   current_branch?: string;
   source_branch?: string;
-  commit_history: string;
+  commit_history: string[];
   pr?: string | null;
   merged_in?: string | null;
   files: number;

@@ -1,6 +1,6 @@
 use git2::{BranchType, Oid, Repository};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
 
@@ -75,6 +75,7 @@ pub struct GitRefData {
     pub heads: Vec<String>,
     pub tags: Vec<String>,
     pub remotes: Vec<String>,
+    pub ci: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,7 +93,7 @@ pub struct CommitListItem {
     pub date: i64,
     pub current_branch: String,
     pub source_branch: String,
-    pub commit_history: String,
+    pub commit_history: Vec<String>,
     pub pr: Option<String>,
     pub merged_in: Option<String>,
     pub files: usize,
@@ -332,6 +333,7 @@ pub fn get_formatted_commits(
         heads: Vec::new(),
         tags: Vec::new(),
         remotes: Vec::new(),
+        ci: None,
     };
 
     // Get HEAD
@@ -460,8 +462,8 @@ pub fn get_formatted_commits(
                 date: now,
                 message: format!("Uncommitted Changes ({})", num_changes),
                 heads: vec![],
-                tags: vec![],
-                remotes: vec![],
+                tags: Vec::new(),
+                remotes: Vec::new(),
                 stash: None,
             };
             commits.insert(0, uncommitted_commit);
@@ -477,148 +479,152 @@ pub fn get_formatted_commits(
     })
 }
 
-fn get_branch_tips(repo: &Repository) -> Result<HashMap<git2::Oid, String>, git2::Error> {
-    let mut branch_tips = HashMap::new();
-    let branches = repo.branches(None)?;
-
-    for branch_result in branches {
-        if let Ok((branch, _)) = branch_result {
-            if let Ok(Some(branch_name)) = branch.name() {
-                if let Some(oid) = branch.get().target() {
-                    branch_tips.insert(oid, branch_name.to_string());
+fn get_all_branch_tips(repo: &Repository) -> Result<HashMap<Oid, Vec<String>>, git2::Error> {
+    let mut tips = HashMap::new();
+    for branch_res in repo.branches(None)? {
+        if let Ok((branch, _)) = branch_res {
+            if let Some(oid) = branch.get().target() {
+                if let Ok(Some(name)) = branch.name() {
+                    tips.entry(oid)
+                        .or_insert_with(Vec::new)
+                        .push(name.to_string());
                 }
             }
         }
     }
-
-    Ok(branch_tips)
+    Ok(tips)
 }
 
-fn find_branch_for_commit(
-    commit_id: git2::Oid,
-    branch_tips: &HashMap<git2::Oid, String>,
-) -> Option<String> {
-    branch_tips.get(&commit_id).cloned()
-}
-
-fn branches_containing_commit(repo: &Repository, oid: Oid) -> Result<Vec<String>, git2::Error> {
-    let mut branches = Vec::new();
-    for branch in repo.branches(None)? {
-        if let Ok((branch, _)) = branch {
-            if let Ok(Some(branch_name)) = branch.name() {
-                if repo.graph_descendant_of(branch.get().target().unwrap_or(oid), oid)? {
-                    branches.push(branch_name.to_string());
-                }
-            }
-        }
-    }
-    Ok(branches)
-}
-
-fn trace_commit_history_precise(
-    repo: &Repository,
-    commit: &git2::Commit,
-    target_branch: &str,
-) -> Result<String, git2::Error> {
-    let oid = commit.id();
-    let branches = branches_containing_commit(repo, oid)?;
-    // Si solo está en una rama, mostrar solo esa rama
-    if branches.len() == 1 {
-        return Ok(branches[0].clone());
-    }
-    // Si es un merge, mostrar el camino de ramas involucradas
-    if commit.parent_count() > 1 {
-        let mut history = Vec::new();
-        // Rama actual (target_branch) siempre al final
-        if !target_branch.is_empty() {
-            history.push(target_branch.to_string());
-        }
-        // Para cada padre, buscar ramas que lo contengan
-        for i in 0..commit.parent_count() {
-            if let Ok(parent_id) = commit.parent_id(i) {
-                let parent_branches = branches_containing_commit(repo, parent_id)?;
-                for b in parent_branches {
-                    if !history.contains(&b) && b != target_branch {
-                        history.insert(0, b);
-                    }
-                }
-            }
-        }
-        // Eliminar duplicados preservando el orden
-        let mut unique = Vec::new();
-        for b in history {
-            if !unique.contains(&b) {
-                unique.push(b);
-            }
-        }
-        return Ok(unique.join(" -> "));
-    }
-    // Si está en varias ramas pero no es merge, mostrar todas las ramas
-    Ok(branches.join(", "))
-}
-
-fn get_merge_source_branch(commit: &git2::Commit) -> Option<String> {
-    // Extraer la rama de origen del mensaje de merge
-    let message = commit.message().unwrap_or("");
-    if message.starts_with("Merge") {
-        // Patrones comunes de mensajes de merge
-        let patterns = [
-            "Merge branch '",
-            "Merge remote-tracking branch '",
-            "Merge tag '",
-        ];
-
-        for pattern in patterns.iter() {
-            if let Some(start) = message.find(pattern) {
-                let start = start + pattern.len();
-                if let Some(end) = message[start..].find("'") {
-                    let branch_name = message[start..start + end].to_string();
-                    // Limpiar el nombre de la rama (quitar origin/ si existe)
-                    if branch_name.starts_with("origin/") {
-                        return Some(branch_name[7..].to_string());
-                    }
-                    return Some(branch_name);
-                }
+fn get_merge_source_branch(message: &str) -> Option<String> {
+    let patterns = [
+        "Merge branch '",
+        "Merge remote-tracking branch '",
+        "Merge tag '",
+    ];
+    for pattern in patterns.iter() {
+        if let Some(start) = message.find(pattern) {
+            let start = start + pattern.len();
+            if let Some(end) = message[start..].find("'") {
+                return Some(message[start..start + end].to_string());
             }
         }
     }
     None
 }
 
-fn clean_branch_history(history: Vec<String>) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut last: Option<&String> = None;
+fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, git2::Error> {
+    let mut commit_branch_map = HashMap::new();
+    let mut branches_with_priority = Vec::new();
 
-    for branch in history.iter() {
-        // Ignorar cadenas vacías
-        if branch.trim().is_empty() {
-            continue;
-        }
-        match last {
-            Some(prev) if prev == branch => continue, // Saltar si es igual al anterior
-            _ => {
-                result.push(branch.clone());
-                last = Some(branch);
-            }
-        }
-    }
-    result
-}
+    let develop_branch_tip = repo
+        .find_branch("develop", BranchType::Local)
+        .and_then(|b| {
+            b.get()
+                .target()
+                .ok_or(git2::Error::from_str("No target for develop branch"))
+        })
+        .or_else(|_| {
+            repo.find_branch("origin/develop", BranchType::Remote)
+                .and_then(|b| {
+                    b.get()
+                        .target()
+                        .ok_or(git2::Error::from_str("No target for origin/develop branch"))
+                })
+        })
+        .ok();
 
-fn fast_commit_history(commit: &git2::Commit, current_branch: &str) -> String {
-    // Si es un merge, mostrar "origen -> destino"
-    if commit.parent_count() > 1 {
-        if let Some(source_branch) = get_merge_source_branch(commit) {
-            // Evitar mostrar "rama -> rama" si son iguales
-            if source_branch != current_branch && !current_branch.is_empty() {
-                return format!("{} -> {}", source_branch, current_branch);
+    let main_branch_tip = repo
+        .find_branch("main", BranchType::Local)
+        .and_then(|b| {
+            b.get()
+                .target()
+                .ok_or(git2::Error::from_str("No target for main branch"))
+        })
+        .or_else(|_| {
+            repo.find_branch("origin/main", BranchType::Remote)
+                .and_then(|b| {
+                    b.get()
+                        .target()
+                        .ok_or(git2::Error::from_str("No target for origin/main branch"))
+                })
+        })
+        .or_else(|_| {
+            repo.find_branch("master", BranchType::Local).and_then(|b| {
+                b.get()
+                    .target()
+                    .ok_or(git2::Error::from_str("No target for master branch"))
+            })
+        })
+        .or_else(|_| {
+            repo.find_branch("origin/master", BranchType::Remote)
+                .and_then(|b| {
+                    b.get()
+                        .target()
+                        .ok_or(git2::Error::from_str("No target for origin/master branch"))
+                })
+        })
+        .ok();
+
+    for branch_res in repo.branches(None)? {
+        let (branch, branch_type) = branch_res?;
+        if let Some(branch_name_full) = branch.name()?.map(|s| s.to_string()) {
+            let branch_name_short = (if branch_type == BranchType::Remote {
+                branch_name_full.splitn(2, '/').last().unwrap_or("")
             } else {
-                return source_branch;
+                &branch_name_full
+            })
+            .to_string();
+
+            if branch_name_short == "develop" || branch_name_short == "main" {
+                continue;
+            }
+
+            let priority = if branch_name_short.starts_with("feature/")
+                || branch_name_short.starts_with("release/")
+                || branch_name_short.starts_with("hotfix/")
+                || branch_name_short.starts_with("bugfix/")
+            {
+                1
+            } else {
+                0
+            };
+            branches_with_priority.push((branch, branch_name_full, branch_name_short, priority));
+        }
+    }
+    branches_with_priority.sort_by_key(|k| std::cmp::Reverse(k.3));
+
+    for (branch, branch_name_full, branch_name_short, _priority) in branches_with_priority {
+        if let Some(branch_tip) = branch.get().target() {
+            let base_tip_opt = if branch_name_short.starts_with("release/")
+                || branch_name_short.starts_with("hotfix/")
+            {
+                main_branch_tip
+            } else {
+                develop_branch_tip
+            };
+
+            if let Some(base_tip) = base_tip_opt {
+                if branch_tip == base_tip {
+                    continue;
+                }
+                if let Ok(merge_base) = repo.merge_base(branch_tip, base_tip) {
+                    let mut revwalk = repo.revwalk()?;
+                    revwalk.push(branch_tip)?;
+                    revwalk.hide(merge_base)?;
+
+                    for oid_res in revwalk {
+                        if let Ok(oid) = oid_res {
+                            commit_branch_map
+                                .entry(oid)
+                                .or_insert_with(|| branch_name_full.clone());
+                        }
+                    }
+                }
             }
         }
     }
-    // Si no es un merge, solo mostrar la rama actual
-    current_branch.to_string()
+
+    Ok(commit_branch_map)
 }
 
 #[command]
@@ -629,6 +635,9 @@ pub fn get_commits_list_paginated(
     limit: usize,
 ) -> Result<CommitListPage, String> {
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let branch_tips = get_all_branch_tips(&repo).map_err(|e| e.to_string())?;
+    let commit_branch_map = build_commit_branch_map(&repo).map_err(|e| e.to_string())?;
+
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
 
     if branch.trim().is_empty() {
@@ -723,8 +732,31 @@ pub fn get_commits_list_paginated(
             current_branch.clone()
         };
 
-        // commit_history rápido
-        let commit_history = fast_commit_history(&commit, &current_branch);
+        let mut history = Vec::new();
+
+        // 1. Es un commit de merge?
+        let commit_message = commit.message().unwrap_or("");
+        if commit.parent_count() > 1 {
+            if let Some(source) = get_merge_source_branch(commit_message) {
+                history.push(source);
+            }
+        }
+
+        // 2. Es la punta de una rama? (Puede ser un merge y también una punta)
+        if let Some(tip_branches) = branch_tips.get(&commit.id()) {
+            for tip in tip_branches {
+                if !history.contains(tip) {
+                    history.push(tip.clone());
+                }
+            }
+        }
+
+        // 3. Si no hemos encontrado nada, usamos el mapa pre-calculado.
+        if history.is_empty() {
+            if let Some(branch_from_map) = commit_branch_map.get(&commit.id()) {
+                history.push(branch_from_map.clone());
+            }
+        }
 
         let pr = None;
         let merged_in = None;
@@ -751,7 +783,7 @@ pub fn get_commits_list_paginated(
             date,
             current_branch: String::new(), // Ya no necesitamos mostrar esto separado
             source_branch,
-            commit_history,
+            commit_history: history,
             pr,
             merged_in,
             files,

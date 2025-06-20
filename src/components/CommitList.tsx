@@ -1,4 +1,10 @@
-import { IconFilter, IconPlus, IconSearch } from "@tabler/icons-react";
+import { Tooltip } from "@mantine/core";
+import {
+  IconFilter,
+  IconGitBranch,
+  IconPlus,
+  IconSearch,
+} from "@tabler/icons-react";
 import { core } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
@@ -46,7 +52,7 @@ export default function CommitList() {
     null
   );
 
-  // Definir columnas con render personalizado para CI
+  // Definir columnas con render personalizado para CI y commit_history
   const columns: TableColumn<any>[] = [
     { key: "sha", label: "SHA", width: 120 },
     {
@@ -70,7 +76,46 @@ export default function CommitList() {
     },
     { key: "message", label: "Mensaje", width: 250 },
     { key: "author", label: "Autor", width: 120 },
-    { key: "commit_history", label: "Historia del commit", width: 200 },
+    {
+      key: "commit_history",
+      label: "Historia del commit",
+      width: 200,
+      render: (history: string[]) => {
+        if (!history || history.length === 0) return null;
+
+        const renderBadges = (isTooltip = false) => (
+          <div
+            className={`flex items-center gap-1.5 ${
+              isTooltip ? "flex-wrap p-2" : "truncate"
+            }`}>
+            {history.map((branch, index) => (
+              <span
+                key={`${branch}-${index}`}
+                className="inline-flex items-center gap-1 bg-blue-600 text-white rounded-full px-2 py-0.5 text-xs font-medium">
+                <IconGitBranch
+                  size={12}
+                  className="flex-shrink-0"
+                />
+                <span>{branch}</span>
+              </span>
+            ))}
+          </div>
+        );
+
+        return (
+          <Tooltip
+            label={renderBadges(true)}
+            withArrow
+            w="auto"
+            transitionProps={{ transition: "pop", duration: 200 }}
+            classNames={{
+              tooltip: "bg-zinc-800 text-zinc-200 border border-zinc-700",
+            }}>
+            {renderBadges(false)}
+          </Tooltip>
+        );
+      },
+    },
     { key: "pr", label: "PR", width: 80 },
     { key: "merged_in", label: "Mergeado en", width: 120 },
     { key: "files", label: "Archivos", width: 80 },
