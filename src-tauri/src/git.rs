@@ -728,7 +728,20 @@ pub fn get_commits_list_paginated(
 
         let pr = None;
         let merged_in = None;
-        let files = commit.tree().map(|t| t.len()).unwrap_or(0);
+
+        let files = (|| -> Result<usize, git2::Error> {
+            if commit.parent_count() > 0 {
+                let parent = commit.parent(0)?;
+                let diff =
+                    repo.diff_tree_to_tree(Some(&parent.tree()?), Some(&commit.tree()?), None)?;
+                Ok(diff.stats()?.files_changed())
+            } else {
+                // Commit inicial
+                Ok(commit.tree()?.len())
+            }
+        })()
+        .map_err(|e| e.to_string())?;
+
         let ci = None;
 
         rows.push(CommitListItem {
