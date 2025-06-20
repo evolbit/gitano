@@ -14,27 +14,32 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState("");
 
   useEffect(() => {
-    if (selectedCommit && repoPath) {
-      const fetchDiff = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-          const res: CommitDiff = await core.invoke("get_commit_diff", {
-            path: repoPath,
-            sha: selectedCommit.sha,
-          });
-          setDiff(res);
-        } catch (err) {
-          setError(String(err));
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchDiff();
+    if (selectedCommit) {
+      setEditingMessage(selectedCommit.message);
+      if (repoPath) {
+        const fetchDiff = async () => {
+          setLoading(true);
+          setError(null);
+          try {
+            const res: CommitDiff = await core.invoke("get_commit_diff", {
+              path: repoPath,
+              sha: selectedCommit.sha,
+            });
+            setDiff(res);
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchDiff();
+      }
     } else {
       setDiff(null);
+      setEditingMessage("");
     }
   }, [selectedCommit, repoPath]);
 
@@ -46,12 +51,49 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
     );
   }
 
+  const handleUpdateMessage = async () => {
+    if (!repoPath || !selectedCommit) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await core.invoke("amend_commit_message", {
+        path: repoPath,
+        sha: selectedCommit.sha,
+        newMessage: editingMessage,
+      });
+      // Optionally, refresh data or show success message
+      alert("Commit message updated successfully!");
+    } catch (err) {
+      setError(String(err));
+      alert(`Error updating commit message: ${String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="p-4">
       <h2 className="text-lg font-bold mb-2">
         Commit: {selectedCommit.sha.substring(0, 7)}
       </h2>
-      <p className="mb-4">{selectedCommit.message}</p>
+      <textarea
+        value={editingMessage}
+        onChange={(e) => setEditingMessage(e.target.value)}
+        className="w-full bg-zinc-800 border border-zinc-600 rounded-md p-2 mb-2 text-white"
+        rows={4}
+      />
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={handleUpdateMessage}
+          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+          Update Message
+        </button>
+        <button
+          onClick={() => setEditingMessage(selectedCommit.message)}
+          className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+          Cancel Amend
+        </button>
+      </div>
 
       {loading && <p>Cargando cambios...</p>}
       {error && <p className="text-red-500">Error: {error}</p>}
