@@ -1,6 +1,5 @@
 export { BranchList } from "./BranchList";
 export { default as ChangesPanel } from "./ChangesPanel";
-export { default as CommitDetailsPanel } from "./CommitDetailsPanel";
 export { default as CommitList } from "./CommitList";
 export { default as DiffViewer } from "./DiffViewer";
 export { default as FileTree } from "./FileTree";

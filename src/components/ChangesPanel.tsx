@@ -1,6 +1,6 @@
+import { Split } from "@gfazioli/mantine-split-pane";
 import { core } from "@tauri-apps/api";
-import React, { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitDiff, CommitListItem } from "../types/git";
 
@@ -9,115 +9,199 @@ type ChangesPanelProps = {
 };
 
 const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
-  const { t } = useTranslation();
   const repoPath = useRepoStore((s) => s.currentRepo);
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingMessage, setEditingMessage] = useState("");
+
+  const [isAmending, setIsAmending] = useState(false);
+  const [message, setMessage] = useState("");
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (selectedCommit) {
-      setEditingMessage(selectedCommit.message);
-      if (repoPath) {
-        const fetchDiff = async () => {
-          setLoading(true);
-          setError(null);
-          try {
-            const res: CommitDiff = await core.invoke("get_commit_diff", {
-              path: repoPath,
-              sha: selectedCommit.sha,
-            });
-            setDiff(res);
-          } catch (err) {
-            setError(String(err));
-          } finally {
-            setLoading(false);
-          }
-        };
-        fetchDiff();
-      }
+      setMessage(selectedCommit.message);
+    } else {
+      setMessage("");
+    }
+    // When commit changes, exit amending mode
+    setIsAmending(false);
+  }, [selectedCommit]);
+
+  useEffect(() => {
+    if (selectedCommit && repoPath) {
+      const fetchDiff = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const res: CommitDiff = await core.invoke("get_commit_diff", {
+            path: repoPath,
+            sha: selectedCommit.sha,
+          });
+          setDiff(res);
+        } catch (err) {
+          setError(String(err));
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchDiff();
     } else {
       setDiff(null);
-      setEditingMessage("");
     }
   }, [selectedCommit, repoPath]);
 
+  const handleCancelAmend = () => {
+    setIsAmending(false);
+    if (selectedCommit) {
+      setMessage(selectedCommit.message);
+    }
+    if (textAreaRef.current) {
+      textAreaRef.current.blur();
+    }
+  };
+
+  const handleStartAmend = () => {
+    setIsAmending(true);
+  };
+
+  useEffect(() => {
+    if (isAmending) {
+      textAreaRef.current?.focus();
+      textAreaRef.current?.select();
+    }
+  }, [isAmending]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        handleCancelAmend();
+      }
+    };
+
+    if (isAmending) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isAmending]);
+
+  const handleUpdateMessage = async () => {
+    if (!repoPath || !selectedCommit) return;
+    // Potentially show a loader inside the button
+    try {
+      await core.invoke("amend_commit_message", {
+        path: repoPath,
+        sha: selectedCommit.sha,
+        newMessage: message,
+      });
+      // Refresh commit list after amending
+      // This part depends on how you fetch commits.
+      // For now, just exit amending mode.
+      setIsAmending(false);
+      // You might want to update the selectedCommit message in the parent component
+    } catch (err) {
+      console.error(err);
+      // Show error to user
+    }
+  };
+
   if (!selectedCommit) {
     return (
-      <div className="p-4 text-center text-zinc-500">
+      <div className="p-4 text-center text-zinc-500 h-full flex items-center justify-center">
         Selecciona un commit para ver los cambios
       </div>
     );
   }
 
-  const handleUpdateMessage = async () => {
-    if (!repoPath || !selectedCommit) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await core.invoke("amend_commit_message", {
-        path: repoPath,
-        sha: selectedCommit.sha,
-        newMessage: editingMessage,
-      });
-      // Optionally, refresh data or show success message
-      alert("Commit message updated successfully!");
-    } catch (err) {
-      setError(String(err));
-      alert(`Error updating commit message: ${String(err)}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="p-4">
-      <h2 className="text-lg font-bold mb-2">
-        Commit: {selectedCommit.sha.substring(0, 7)}
-      </h2>
-      <textarea
-        value={editingMessage}
-        onChange={(e) => setEditingMessage(e.target.value)}
-        className="w-full bg-zinc-800 border border-zinc-600 rounded-md p-2 mb-2 text-white"
-        rows={4}
-      />
-      <div className="flex gap-2 mb-4">
-        <button
-          onClick={handleUpdateMessage}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-          Update Message
-        </button>
-        <button
-          onClick={() => setEditingMessage(selectedCommit.message)}
-          className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
-          Cancel Amend
-        </button>
-      </div>
+    <div
+      ref={containerRef}
+      className="bg-zinc-950 h-full border-l border-zinc-800 flex flex-col text-sm">
+      <Split
+        orientation="horizontal"
+        className="h-full w-full border-none">
+        <Split.Pane initialWidth="50%">
+          <div className="p-4 h-full w-full flex flex-col">
+            <div className="mb-4">
+              <p>
+                Commit:{" "}
+                <span className="font-mono text-blue-400">
+                  {selectedCommit.sha.substring(0, 7)}
+                </span>
+              </p>
+            </div>
 
-      {loading && <p>Cargando cambios...</p>}
-      {error && <p className="text-red-500">Error: {error}</p>}
-
-      {diff && (
-        <div>
-          <h3 className="font-bold mb-2">
-            Archivos cambiados ({diff.changes.length})
-          </h3>
-          <ul>
-            {diff.changes.map((file, index) => (
-              <li
-                key={index}
-                className="flex justify-between items-center p-1 hover:bg-zinc-800/50 rounded">
-                <span>{file.path}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">+{file.insertions}</span>
-                  <span className="text-red-500">-{file.deletions}</span>
+            <div className="flex-grow flex flex-col">
+              <textarea
+                ref={textAreaRef}
+                className={`w-full bg-zinc-900 border rounded p-2 mb-2 flex-grow resize-none ${
+                  isAmending
+                    ? "border-zinc-600 cursor-text"
+                    : "border-transparent cursor-default"
+                }`}
+                value={message}
+                onFocus={handleStartAmend}
+                onChange={(e) => setMessage(e.target.value)}
+                readOnly={!isAmending}
+                rows={4}
+              />
+              {isAmending && (
+                <div className="flex justify-start space-x-2">
+                  <button
+                    onClick={handleUpdateMessage}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">
+                    Update Message
+                  </button>
+                  <button
+                    onClick={handleCancelAmend}
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm">
+                    Cancel Amend
+                  </button>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+              )}
+            </div>
+          </div>
+        </Split.Pane>
+        <Split.Resizer />
+        <Split.Pane grow>
+          <div className="p-4 h-full w-full overflow-auto">
+            {loading && <p>Cargando cambios...</p>}
+            {error && <p className="text-red-500">Error: {error}</p>}
+
+            {diff && (
+              <div>
+                <h3 className="font-bold mb-2">
+                  Archivos cambiados ({diff.changes.length})
+                </h3>
+                <ul className="text-sm">
+                  {diff.changes.map((file, index) => (
+                    <li
+                      key={index}
+                      className="flex justify-between items-center p-1 hover:bg-zinc-800/50 rounded font-mono">
+                      <span>{file.path}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-500">
+                          +{file.insertions}
+                        </span>
+                        <span className="text-red-500">-{file.deletions}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Split.Pane>
+      </Split>
     </div>
   );
 };
