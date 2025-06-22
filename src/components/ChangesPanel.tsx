@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitDiff, CommitListItem } from "../types/git";
 import FileListItem from "./FileListItem";
+import TextArea from "./form/TextArea";
 
 type ChangesPanelProps = {
   selectedCommit: CommitListItem | null;
@@ -126,7 +127,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
   return (
     <div
       ref={containerRef}
-      className="bg-zinc-950 h-full border-l border-zinc-800 flex flex-col text-sm">
+      className="bg-zinc-800 h-full border-l border-zinc-900 flex flex-col text-sm">
       <Split
         orientation="horizontal"
         className="h-full w-full border-none">
@@ -142,16 +143,18 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
             </div>
 
             <div className="flex-grow flex flex-col">
-              <textarea
+              <TextArea
                 ref={textAreaRef}
-                className={`w-full bg-zinc-900 border rounded p-2 mb-2 flex-grow resize-none ${
+                className={`flex-grow mb-2 ${
                   isAmending
-                    ? "border-zinc-600 cursor-text"
+                    ? "cursor-text"
                     : "border-transparent cursor-default"
                 }`}
                 value={message}
                 onFocus={handleStartAmend}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setMessage(e.target.value)
+                }
                 readOnly={!isAmending}
                 rows={4}
               />
