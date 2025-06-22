@@ -1,58 +1,25 @@
-import { Box, Button, Group, Text, TextInput } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  Button,
+  Group,
+  Menu,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
-import React, { useEffect, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { openLocalRepoDialog } from "../utils/openRepo";
-import { IconFolder, IconPlug, IconSearch } from "./icons";
-
-const mockRepos = [
-  {
-    name: "efectoled-backend",
-    user: "dg-admin",
-    branch: "feature/OYS-24721_CC_BACKOFFICE_...",
-    stats: "+1 -55",
-  },
-  {
-    name: "microservices",
-    user: "dg-admin",
-    branch: "feature/OYS-24721_CC_BACKOFFICE_...",
-    stats: "+1",
-  },
-  {
-    name: "Intro",
-    user: "dg-admin",
-    branch: "main",
-    stats: "+221",
-  },
-];
-
-const exampleCommits = [
-  {
-    hash: "a1b2c3d4",
-    parents: [],
-    branch: "main",
-  },
-  {
-    hash: "e5f6g7h8",
-    parents: ["a1b2c3d4"],
-    branch: "main",
-  },
-  {
-    hash: "i9j0k1l2",
-    parents: ["e5f6g7h8"],
-    branch: "feature",
-  },
-  {
-    hash: "m3n4o5p6",
-    parents: ["e5f6g7h8"],
-    branch: "main",
-  },
-  {
-    hash: "q7r8s9t0",
-    parents: ["i9j0k1l2", "m3n4o5p6"],
-    branch: "main",
-  },
-];
+import {
+  IconDotsVertical,
+  IconFolder,
+  IconFolderPlus,
+  IconPlug,
+  IconSearch,
+  IconStar,
+} from "./icons";
 
 const Section = ({
   title,
@@ -85,9 +52,17 @@ interface RepoInfo {
 const RepoRow = ({
   repoInfo,
   onClick,
+  onToggleFavorite,
+  onRemove,
+  onOpenFolder,
+  isFavorite,
 }: {
   repoInfo: RepoInfo;
   onClick: () => void;
+  onToggleFavorite: () => void;
+  onRemove: () => void;
+  onOpenFolder: () => void;
+  isFavorite: boolean;
 }) => {
   return (
     <Group
@@ -98,12 +73,17 @@ const RepoRow = ({
       <Group
         gap={8}
         wrap="nowrap"
-        align="center">
+        align="center"
+        style={{ flex: 1, overflow: "hidden" }}>
         <IconFolder
           size={16}
           className="text-blue-400"
         />
-        <Text className="text-zinc-100 font-medium">{repoInfo.name}</Text>
+        <Text
+          className="text-zinc-100 font-medium"
+          truncate>
+          {repoInfo.name}
+        </Text>
         {repoInfo.loading ? (
           <Text className="text-zinc-400 text-xs">Cargando...</Text>
         ) : repoInfo.error ? (
@@ -116,217 +96,205 @@ const RepoRow = ({
           <Text className="text-zinc-500 text-xs">Sin rama</Text>
         )}
       </Group>
+      <Group
+        gap={0}
+        wrap="nowrap"
+        onClick={(e) => e.stopPropagation()}>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          onClick={onToggleFavorite}>
+          <IconStar
+            size={16}
+            className={isFavorite ? "text-yellow-400" : "text-zinc-400"}
+            fill={isFavorite ? "currentColor" : "none"}
+          />
+        </ActionIcon>
+        <Menu
+          shadow="md"
+          width={200}
+          withinPortal
+          position="bottom-end">
+          <Menu.Target>
+            <ActionIcon
+              variant="subtle"
+              color="gray">
+              <IconDotsVertical size={16} />
+            </ActionIcon>
+          </Menu.Target>
+
+          <Menu.Dropdown>
+            <Menu.Item onClick={onClick}>Abrir</Menu.Item>
+            <Menu.Item onClick={onToggleFavorite}>
+              {isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+            </Menu.Item>
+            <Menu.Item onClick={onOpenFolder}>Abrir en el explorador</Menu.Item>
+            <Menu.Divider />
+            <Menu.Item
+              color="red"
+              onClick={onRemove}>
+              Quitar de la lista
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
     </Group>
   );
 };
 
-interface HomePageProps {
-  onRepoOpened?: (repoPath: string) => void;
-}
-
-const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
-  const recentRepos = useRepoStore((s) => s.recentRepos);
-  const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
+export const HomePage = ({
+  onRepoOpened,
+}: {
+  onRepoOpened?: (path: string) => void;
+}) => {
+  const { recentRepos, favoriteRepos, toggleFavoriteRepo, removeRepo } =
+    useRepoStore();
   const [repoInfos, setRepoInfos] = useState<RepoInfo[]>([]);
 
-  // Función para cargar la rama de un repositorio
-  const loadRepoBranch = async (repoPath: string): Promise<string | null> => {
-    try {
-      const branch = await invoke<string>("get_current_branch", {
-        path: repoPath,
-      });
-      return branch;
-    } catch (error) {
-      console.error(`Error loading branch for ${repoPath}:`, error);
-      return null;
-    }
-  };
-
-  // Función para cargar todas las ramas de los repositorios recientes
-  const loadAllRepoBranches = async () => {
-    const newRepoInfos: RepoInfo[] = recentRepos.map((repoPath) => ({
-      path: repoPath,
-      name: repoPath.split("/").pop() || repoPath,
-      branch: null,
-      loading: true,
-      error: null,
-    }));
-
-    setRepoInfos(newRepoInfos);
-
-    // Cargar las ramas de forma individual y concurrente
-    const branchPromises = newRepoInfos.map(async (repoInfo, index) => {
-      try {
-        const branch = await loadRepoBranch(repoInfo.path);
-        setRepoInfos((prev) =>
-          prev.map((info, i) =>
-            i === index
-              ? { ...info, branch, loading: false, error: null }
-              : info
-          )
-        );
-      } catch (error) {
-        setRepoInfos((prev) =>
-          prev.map((info, i) =>
-            i === index
-              ? {
-                  ...info,
-                  loading: false,
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Error desconocido",
-                }
-              : info
-          )
-        );
-      }
-    });
-
-    await Promise.all(branchPromises);
-  };
-
-  // Cargar las ramas cuando cambien los repositorios recientes
   useEffect(() => {
+    const fetchBranches = async () => {
+      const infos = await Promise.all(
+        recentRepos.map(async (path) => {
+          try {
+            const branch = await invoke<string>("get_current_branch", {
+              path,
+            });
+            const name = path.split("/").pop() || path;
+            return {
+              path,
+              name,
+              branch,
+              loading: false,
+              error: null,
+            };
+          } catch (error) {
+            const name = path.split("/").pop() || path;
+            console.error(`Failed to get branch for ${path}:`, error);
+            return {
+              path,
+              name,
+              branch: null,
+              loading: false,
+              error: "Failed to load branch",
+            };
+          }
+        })
+      );
+      setRepoInfos(infos);
+    };
+
     if (recentRepos.length > 0) {
-      loadAllRepoBranches();
+      fetchBranches();
     } else {
       setRepoInfos([]);
     }
   }, [recentRepos]);
 
-  const handleOpenRepo = async () => {
-    const repoPath = await openLocalRepoDialog();
-    if (repoPath) {
-      setCurrentRepo(repoPath);
-      // The onRepoOpened prop might now be redundant since the logic is in the store
-      onRepoOpened?.(repoPath);
+  const { favoriteRepoInfos, otherRepoInfos } = useMemo(() => {
+    const sorted = [...repoInfos].sort((a, b) => a.name.localeCompare(b.name));
+    const favoriteRepoInfos = sorted.filter((r) =>
+      favoriteRepos.includes(r.path)
+    );
+    const otherRepoInfos = sorted.filter(
+      (r) => !favoriteRepos.includes(r.path)
+    );
+    return { favoriteRepoInfos, otherRepoInfos };
+  }, [repoInfos, favoriteRepos]);
+
+  const handleOpenFolder = async (path: string) => {
+    try {
+      await revealItemInDir(path);
+    } catch (error) {
+      console.error(`Failed to open folder for ${path}:`, error);
     }
   };
 
   return (
-    <Box className="w-full h-full bg-zinc-900 text-zinc-100 p-8 overflow-auto">
-      <Box className="flex items-center justify-between mb-6">
-        <Text className="text-xl font-bold tracking-tight">
-          Repository Management
-        </Text>
-        <Group gap={8}>
+    <Box className="p-4 h-full text-zinc-300">
+      <Group
+        justify="space-between"
+        className="mb-6">
+        <Text className="text-xl font-bold text-zinc-100">Lanzamiento</Text>
+        <Group>
+          <Button
+            variant="default"
+            size="xs">
+            <IconPlug
+              size={16}
+              className="mr-2"
+            />
+            Connect
+          </Button>
           <Button
             size="xs"
-            variant="filled"
-            color="blue"
-            onClick={handleOpenRepo}>
+            onClick={openLocalRepoDialog}>
+            <IconFolderPlus
+              size={16}
+              className="mr-2"
+            />
             Browse
           </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            color="blue">
-            Clone
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            color="blue">
-            Init
-          </Button>
-          <Button
-            size="xs"
-            variant="default"
-            color="gray">
-            New Workspace
-          </Button>
-          <Button
-            size="xs"
-            variant="default"
-            color="gray">
-            <IconPlug
-              size={14}
-              className="mr-1"
-            />
-            Integrations
-          </Button>
         </Group>
-      </Box>
-      <Group
-        className="mb-4"
-        gap={8}>
-        <Button
-          size="xs"
-          variant="subtle"
-          color="gray">
-          Collapse
-        </Button>
-        <Button
-          size="xs"
-          variant="subtle"
-          color="gray">
-          Expand
-        </Button>
-        <TextInput
-          placeholder="Search repositories"
-          leftSection={
-            <IconSearch
-              size={16}
-              className="text-zinc-400"
-            />
-          }
-          leftSectionPointerEvents="none"
-          leftSectionWidth={28}
-          size="xs"
-          classNames={{
-            input: "bg-zinc-800 text-zinc-200 placeholder-zinc-400 pl-8 w-72",
-          }}
-        />
-        <Button
-          size="xs"
-          variant="subtle"
-          color="gray">
-          WIP summary
-        </Button>
       </Group>
-      <Box className="bg-zinc-800 rounded-lg p-6">
-        {repoInfos.length > 0 && (
-          <Section
-            title="Recent repositories"
-            actions={
-              <Text className="text-xs text-zinc-400">{repoInfos.length}</Text>
-            }>
-            {repoInfos.map((repoInfo) => (
-              <RepoRow
-                key={repoInfo.path}
-                repoInfo={repoInfo}
-                onClick={() => onRepoOpened?.(repoInfo.path)}
-              />
-            ))}
-          </Section>
-        )}
+
+      <TextInput
+        placeholder="Filter repositories..."
+        leftSection={<IconSearch size={16} />}
+        className="mb-6"
+      />
+
+      {favoriteRepoInfos.length > 0 && (
         <Section
           title="Favorites"
-          actions={null}>
-          <Text className="text-zinc-500 text-xs px-2 py-1">No matches</Text>
-        </Section>
-        <Section
-          title="All repositories"
-          actions={<Text className="text-xs text-zinc-400">4</Text>}>
-          {mockRepos.map((repo) => (
+          actions={
+            <Text className="text-xs text-zinc-400">
+              {favoriteRepoInfos.length}
+            </Text>
+          }>
+          {favoriteRepoInfos.map((repoInfo) => (
             <RepoRow
-              key={repo.name + "-all"}
-              repoInfo={{
-                path: repo.name,
-                name: repo.name,
-                branch: repo.branch,
-                loading: false,
-                error: null,
-              }}
-              onClick={() => onRepoOpened?.(repo.name)}
+              key={repoInfo.path}
+              repoInfo={repoInfo}
+              onClick={() => onRepoOpened?.(repoInfo.path)}
+              onToggleFavorite={() => toggleFavoriteRepo(repoInfo.path)}
+              onRemove={() => removeRepo(repoInfo.path)}
+              onOpenFolder={() => handleOpenFolder(repoInfo.path)}
+              isFavorite={true}
             />
           ))}
         </Section>
-      </Box>
-      <Text className="text-xs text-zinc-500 text-center mt-6">
-        No Pull Requests
-      </Text>
+      )}
+
+      {otherRepoInfos.length > 0 && (
+        <Section
+          title="All Repositories"
+          actions={
+            <Text className="text-xs text-zinc-400">
+              {otherRepoInfos.length}
+            </Text>
+          }>
+          {otherRepoInfos.map((repoInfo) => (
+            <RepoRow
+              key={repoInfo.path}
+              repoInfo={repoInfo}
+              onClick={() => onRepoOpened?.(repoInfo.path)}
+              onToggleFavorite={() => toggleFavoriteRepo(repoInfo.path)}
+              onRemove={() => removeRepo(repoInfo.path)}
+              onOpenFolder={() => handleOpenFolder(repoInfo.path)}
+              isFavorite={false}
+            />
+          ))}
+        </Section>
+      )}
+
+      {repoInfos.length === 0 && (
+        <Box className="text-center py-10">
+          <Text>No repositories found.</Text>
+          <Text className="text-zinc-500 text-sm">
+            Use the "Browse" button to add your local repositories.
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 };

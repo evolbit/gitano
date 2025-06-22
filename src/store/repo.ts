@@ -4,7 +4,10 @@ import { tauriStorage } from "./tauriStorage";
 
 interface RepoState {
   recentRepos: string[];
+  favoriteRepos: string[];
   addRecentRepo: (repo: string) => void;
+  removeRepo: (repo: string) => void;
+  toggleFavoriteRepo: (repo: string) => void;
   currentRepo: string | null;
   setCurrentRepo: (repo: string | null) => void;
   selectedBranch: string | null;
@@ -15,6 +18,7 @@ export const useRepoStore = create<RepoState>()(
   persist(
     (set, get) => ({
       recentRepos: [],
+      favoriteRepos: [],
       addRecentRepo: (repo) => {
         const { recentRepos } = get();
         const newRecentRepos = [
@@ -22,6 +26,20 @@ export const useRepoStore = create<RepoState>()(
           ...recentRepos.filter((r) => r !== repo),
         ].slice(0, 10);
         set({ recentRepos: newRecentRepos });
+      },
+      removeRepo: (repo) => {
+        const { recentRepos, favoriteRepos } = get();
+        set({
+          recentRepos: recentRepos.filter((r) => r !== repo),
+          favoriteRepos: favoriteRepos.filter((r) => r !== repo),
+        });
+      },
+      toggleFavoriteRepo: (repo) => {
+        const { favoriteRepos } = get();
+        const newFavoriteRepos = favoriteRepos.includes(repo)
+          ? favoriteRepos.filter((r) => r !== repo)
+          : [...favoriteRepos, repo];
+        set({ favoriteRepos: newFavoriteRepos });
       },
       currentRepo: null,
       setCurrentRepo: (repo) => {
@@ -36,7 +54,10 @@ export const useRepoStore = create<RepoState>()(
     {
       name: "repo-storage",
       storage: createJSONStorage(() => tauriStorage),
-      partialize: (state) => ({ recentRepos: state.recentRepos }),
+      partialize: (state) => ({
+        recentRepos: state.recentRepos,
+        favoriteRepos: state.favoriteRepos,
+      }),
     }
   )
 );
