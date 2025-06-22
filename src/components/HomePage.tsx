@@ -296,7 +296,7 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
               <RepoRow
                 key={repoInfo.path}
                 repoInfo={repoInfo}
-                onClick={() => setCurrentRepo(repoInfo.path)}
+                onClick={() => onRepoOpened?.(repoInfo.path)}
               />
             ))}
           </Section>
@@ -319,7 +319,7 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
                 loading: false,
                 error: null,
               }}
-              onClick={() => setCurrentRepo(repo.name)}
+              onClick={() => onRepoOpened?.(repo.name)}
             />
           ))}
         </Section>

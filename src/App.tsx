@@ -198,96 +198,84 @@ export default function App() {
         <div className="sticky top-[42px] z-20">
           <TopToolbar bg="!bg-zinc-700" />
         </div>
-        {tabs.map((tab) => (
-          <Tabs.Panel
-            key={tab.id}
-            value={tab.id}
-            p={0}
-            className="flex-1 min-h-0 w-full p-0 m-0 bg-zinc-800 text-white flex flex-col">
-            {tab.id === "home" ? (
-              <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 overflow-auto">
+          {tabs.map((tab) => (
+            <Tabs.Panel
+              key={tab.id}
+              value={tab.id}
+              className="h-full w-full">
+              {tab.id === "home" ? (
                 <HomePage onRepoOpened={handleRepoOpened} />
-              </div>
-            ) : (
-              <Split className="h-full min-h-0 flex-1">
-                {/* Sidebar izquierdo */}
-                <Split.Pane
-                  initialWidth={240}
-                  minWidth={300}
-                  maxWidth={350}
-                  className="!h-full !min-h-0">
-                  <Box className="!h-full border-r border-zinc-900 text-zinc-200">
-                    <Accordion
-                      defaultValue="branches"
-                      variant="contained"
-                      chevronPosition="left"
-                      classNames={{
-                        root: "bg-zinc-800 text-zinc-200",
-                        item: "bg-zinc-800 text-zinc-200 p-2 border-b border-zinc-900",
-                        control: "bg-zinc-800 text-zinc-200",
-                        panel: "bg-zinc-800 text-zinc-200",
-                        icon: "mr-2",
-                      }}>
-                      <Accordion.Item value="branches">
-                        <Accordion.Control>
-                          <div className="flex flex-row items-center w-full justify-between">
-                            <span className="flex items-center gap-2">
-                              <span className="inline-flex items-center justify-center w-5 h-5">
-                                <IconGitBranch size={18} />
+              ) : (
+                <Split className="h-full min-h-0 flex-1">
+                  {/* Sidebar izquierdo */}
+                  <Split.Pane
+                    initialWidth={240}
+                    minWidth={300}
+                    maxWidth={350}
+                    className="!h-full !min-h-0">
+                    <Box className="!h-full border-r border-zinc-900 text-zinc-200">
+                      <Accordion
+                        defaultValue="branches"
+                        variant="contained"
+                        chevronPosition="left"
+                        classNames={{
+                          root: "bg-zinc-800 text-zinc-200",
+                          item: "bg-zinc-800 text-zinc-200 p-2 border-b border-zinc-900",
+                          control: "bg-zinc-800 text-zinc-200",
+                          panel: "bg-zinc-800 text-zinc-200",
+                          icon: "mr-2",
+                        }}>
+                        <Accordion.Item value="branches">
+                          <Accordion.Control>
+                            <div className="flex flex-row items-center w-full justify-between">
+                              <span className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5">
+                                  <IconGitBranch size={18} />
+                                </span>
+                                Ramas
                               </span>
-                              Ramas
-                            </span>
-                            <span
-                              className="ml-2 p-1 rounded hover:bg-lime-400 transition-colors hover:text-zinc-900"
-                              title="Nueva rama"
-                              onClick={(e) => {
-                                e.stopPropagation(); /* lógica para crear rama */
-                              }}>
-                              <IconPlus size={16} />
-                            </span>
-                          </div>
-                        </Accordion.Control>
-                        <Accordion.Panel>
-                          <BranchList />
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                      <Accordion.Item value="section2">
-                        <Accordion.Control icon={<IconFolder size={18} />}>
-                          Sección 2
-                        </Accordion.Control>
-                        <Accordion.Panel>
-                          Contenido de la sección 2
-                        </Accordion.Panel>
-                      </Accordion.Item>
-                    </Accordion>
-                  </Box>
-                </Split.Pane>
-                <Split.Resizer
-                  size={2}
-                  variant="transparent"
-                  radius="xs"
-                  className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
-                />
-                {/* Contenido principal */}
-                <Split.Pane className="!h-full !min-h-0 flex-1">
-                  <CommitList onCommitSelected={setSelectedCommit} />
-                </Split.Pane>
-                <Split.Resizer
-                  size={2}
-                  variant="transparent"
-                  radius="xs"
-                  className="border-r border-zinc-900 bg-transparent p-0 m-0 w-px cursor-col-resize"
-                />
-                {/* Sidebar derecho */}
-                <Split.Pane
-                  initialWidth={450}
-                  className="!h-full !min-h-0">
-                  <ChangesPanel selectedCommit={selectedCommit} />
-                </Split.Pane>
-              </Split>
-            )}
-          </Tabs.Panel>
-        ))}
+                            </div>
+                          </Accordion.Control>
+                          <Accordion.Panel>
+                            <BranchList />
+                          </Accordion.Panel>
+                        </Accordion.Item>
+                        <Accordion.Item value="folders">
+                          <Accordion.Control>
+                            <div className="flex flex-row items-center w-full justify-between">
+                              <span className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5">
+                                  <IconFolder size={18} />
+                                </span>
+                                Carpetas
+                              </span>
+                            </div>
+                          </Accordion.Control>
+                          <Accordion.Panel>
+                            {/* Aquí va la lista de carpetas */}
+                          </Accordion.Panel>
+                        </Accordion.Item>
+                      </Accordion>
+                    </Box>
+                  </Split.Pane>
+                  <Split.Pane className="!h-full !min-h-0">
+                    <Split orientation="vertical">
+                      <Split.Pane>
+                        <CommitList onCommitSelected={setSelectedCommit} />
+                      </Split.Pane>
+                      <Split.Pane>
+                        {selectedCommit && (
+                          <ChangesPanel selectedCommit={selectedCommit} />
+                        )}
+                      </Split.Pane>
+                    </Split>
+                  </Split.Pane>
+                </Split>
+              )}
+            </Tabs.Panel>
+          ))}
+        </div>
       </Tabs>
     </div>
   );
