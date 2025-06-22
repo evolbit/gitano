@@ -7,6 +7,8 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import React, { useState } from "react";
+import { HiChevronDown } from "react-icons/hi2";
 import {
   IconArrowBackUp,
   IconArrowBarToUp,
@@ -18,9 +20,7 @@ import {
   IconSearch,
   IconStack2,
   IconTerminal2,
-} from "@tabler/icons-react";
-import React, { useState } from "react";
-import { HiChevronDown } from "react-icons/hi2";
+} from "./icons";
 
 const REPOS = ["efectoled-backend", "microservices", "Launchpad"];
 const BRANCHES = [

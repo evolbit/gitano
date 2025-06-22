@@ -1,4 +1,7 @@
 import { ActionIcon, Box, Button, Group, Text, TextInput } from "@mantine/core";
+import React from "react";
+import { useRepoStore } from "../store/repo";
+import { openLocalRepoDialog } from "../utils/openRepo";
 import {
   IconChevronDown,
   IconFolder,
@@ -6,10 +9,7 @@ import {
   IconPlug,
   IconSearch,
   IconStar,
-} from "@tabler/icons-react";
-import React from "react";
-import { useRepoStore } from "../store/repo";
-import { openLocalRepoDialog } from "../utils/openRepo";
+} from "./icons";
 
 const mockRepos = [
   {

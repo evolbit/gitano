@@ -1,15 +1,10 @@
 import { Tooltip } from "@mantine/core";
-import {
-  IconFilter,
-  IconGitBranch,
-  IconPlus,
-  IconSearch,
-} from "@tabler/icons-react";
 import { core } from "@tauri-apps/api";
 import { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitListItem } from "../types/git";
 import InputText from "./form/InputText";
+import { IconFilter, IconGitBranch, IconPlus, IconSearch } from "./icons";
 import TableVirtualResizable, {
   TableColumn,
 } from "./tables/TableVirtualResizable";

@@ -1,8 +1,8 @@
-import { IconFolderPlus } from "@tabler/icons-react";
 import { core } from "@tauri-apps/api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { useRepoStore } from "../store/repo";
+import { IconFolderPlus } from "./icons";
 
 export function OpenRepoButton() {
   const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
@@ -38,7 +38,7 @@ export function OpenRepoButton() {
         <IconFolderPlus className="w-5 h-5" />
         {loading ? "Abriendo..." : "Abrir repositorio local"}
       </button>
-      {result && <div className="mt-2 text-xs text-zinc-300">{result}</div>}
+      {result && <div className="mt-2 text-xs text-gray-300">{result}</div>}
     </div>
   );
 }

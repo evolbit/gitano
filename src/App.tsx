@@ -1,13 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import "@gfazioli/mantine-split-pane/styles.css";
 import { Accordion, ActionIcon, Box, Tabs } from "@mantine/core";
-import {
-  IconFolder,
-  IconGitBranch,
-  IconHome,
-  IconPlus,
-  IconX,
-} from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +8,13 @@ import { BranchList } from "./components/BranchList";
 import ChangesPanel from "./components/ChangesPanel";
 import CommitList from "./components/CommitList";
 import HomePage from "./components/HomePage";
+import {
+  IconFolder,
+  IconGitBranch,
+  IconHome,
+  IconPlus,
+  IconX,
+} from "./components/icons";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
 import { useRepoStore } from "./store/repo";

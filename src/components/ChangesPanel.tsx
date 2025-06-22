@@ -3,6 +3,7 @@ import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitDiff, CommitListItem } from "../types/git";
+import FileListItem from "./FileListItem";
 
 type ChangesPanelProps = {
   selectedCommit: CommitListItem | null;
@@ -183,18 +184,11 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
                   Archivos cambiados ({diff.changes.length})
                 </h3>
                 <ul className="text-sm">
-                  {diff.changes.map((file, index) => (
-                    <li
-                      key={index}
-                      className="flex justify-between items-center p-1 hover:bg-zinc-800/50 rounded font-mono">
-                      <span>{file.path}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-500">
-                          +{file.insertions}
-                        </span>
-                        <span className="text-red-500">-{file.deletions}</span>
-                      </div>
-                    </li>
+                  {diff.changes.map((file) => (
+                    <FileListItem
+                      key={file.path}
+                      file={file}
+                    />
                   ))}
                 </ul>
               </div>

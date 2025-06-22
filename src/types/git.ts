@@ -65,12 +65,18 @@ export enum ChangeType {
 
 export interface FileChange {
   path: string;
-  status: ChangeType;
+  status:
+    | "added"
+    | "deleted"
+    | "modified"
+    | "renamed"
+    | "copied"
+    | "typeChanged";
   insertions: number;
   deletions: number;
 }
 
 export interface CommitDiff {
-  commit_sha: string;
+  commitSha: string;
   changes: FileChange[];
 }

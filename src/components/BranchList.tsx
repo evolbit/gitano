@@ -1,3 +1,7 @@
+import { core } from "@tauri-apps/api";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import ReactDOM from "react-dom";
+import { useRepoStore } from "../store/repo";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -7,11 +11,7 @@ import {
   IconFolder,
   IconGitBranch,
   IconGitMerge,
-} from "@tabler/icons-react";
-import { core } from "@tauri-apps/api";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import ReactDOM from "react-dom";
-import { useRepoStore } from "../store/repo";
+} from "./icons";
 
 // Helper para agrupar ramas por prefijo
 function groupBranches(branches: string[]): any[] {
