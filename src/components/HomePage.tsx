@@ -1,15 +1,8 @@
-import { ActionIcon, Box, Button, Group, Text, TextInput } from "@mantine/core";
+import { Box, Button, Group, Text, TextInput } from "@mantine/core";
 import React from "react";
 import { useRepoStore } from "../store/repo";
 import { openLocalRepoDialog } from "../utils/openRepo";
-import {
-  IconChevronDown,
-  IconFolder,
-  IconGitBranch,
-  IconPlug,
-  IconSearch,
-  IconStar,
-} from "./icons";
+import { IconFolder, IconPlug, IconSearch } from "./icons";
 
 const mockRepos = [
   {
@@ -80,55 +73,50 @@ const Section = ({
   </Box>
 );
 
-const RepoRow = ({ repo }: { repo: (typeof mockRepos)[0] }) => (
-  <Group
-    className="py-1 px-2 hover:bg-zinc-800 rounded cursor-pointer text-sm"
-    justify="space-between"
-    wrap="nowrap">
+const RepoRow = ({
+  repoPath,
+  onClick,
+}: {
+  repoPath: string;
+  onClick: () => void;
+}) => {
+  // Extraer el nombre del repositorio de la ruta
+  const repoName = repoPath.split("/").pop() || repoPath;
+
+  return (
     <Group
-      gap={8}
-      wrap="nowrap">
-      <IconFolder
-        size={16}
-        className="text-blue-400"
-      />
-      <Text className="text-zinc-100 font-medium">{repo.name}</Text>
-      <Text className="text-zinc-400">{repo.user}</Text>
-      <Box className="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded text-xs">
-        <IconGitBranch
-          size={14}
-          className="text-lime-400"
+      className="py-1 px-2 hover:bg-zinc-800 rounded cursor-pointer text-sm"
+      justify="space-between"
+      wrap="nowrap"
+      onClick={onClick}>
+      <Group
+        gap={8}
+        wrap="nowrap">
+        <IconFolder
+          size={16}
+          className="text-blue-400"
         />
-        <span className="text-zinc-200">{repo.branch}</span>
-      </Box>
-      <Box className="ml-2 bg-zinc-900 px-2 py-0.5 rounded text-xs text-green-400">
-        {repo.stats}
-      </Box>
+        <Text className="text-zinc-100 font-medium">{repoName}</Text>
+      </Group>
     </Group>
-    <Group
-      gap={4}
-      wrap="nowrap">
-      <ActionIcon
-        variant="subtle"
-        color="gray"
-        size="sm">
-        <IconStar size={16} />
-      </ActionIcon>
-      <ActionIcon
-        variant="subtle"
-        color="gray"
-        size="sm">
-        <IconChevronDown size={16} />
-      </ActionIcon>
-    </Group>
-  </Group>
-);
+  );
+};
 
 interface HomePageProps {
   onRepoOpened?: (repoPath: string) => void;
 }
 const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
+  const recentRepos = useRepoStore((s) => s.recentRepos);
   const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
+
+  const handleOpenRepo = async () => {
+    const repoPath = await openLocalRepoDialog();
+    if (repoPath) {
+      setCurrentRepo(repoPath);
+      // The onRepoOpened prop might now be redundant since the logic is in the store
+      onRepoOpened?.(repoPath);
+    }
+  };
 
   return (
     <Box className="w-full h-full bg-zinc-900 text-zinc-100 p-8 overflow-auto">
@@ -141,10 +129,7 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
             size="xs"
             variant="filled"
             color="blue"
-            onClick={async () => {
-              const repoPath = await openLocalRepoDialog();
-              if (repoPath && onRepoOpened) onRepoOpened(repoPath);
-            }}>
+            onClick={handleOpenRepo}>
             Browse
           </Button>
           <Button
@@ -215,30 +200,27 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
         </Button>
       </Group>
       <Box className="bg-zinc-800 rounded-lg p-6">
-        <Section
-          title="Open repositories"
-          actions={<Text className="text-xs text-zinc-400">2</Text>}>
-          {mockRepos.slice(0, 2).map((repo) => (
-            <RepoRow
-              key={repo.name}
-              repo={repo}
-            />
-          ))}
-        </Section>
+        {recentRepos.length > 0 && (
+          <Section
+            title="Recent repositories"
+            actions={
+              <Text className="text-xs text-zinc-400">
+                {recentRepos.length}
+              </Text>
+            }>
+            {recentRepos.map((repoPath) => (
+              <RepoRow
+                key={repoPath}
+                repoPath={repoPath}
+                onClick={() => setCurrentRepo(repoPath)}
+              />
+            ))}
+          </Section>
+        )}
         <Section
           title="Favorites"
           actions={null}>
           <Text className="text-zinc-500 text-xs px-2 py-1">No matches</Text>
-        </Section>
-        <Section
-          title="Recent repositories"
-          actions={<Text className="text-xs text-zinc-400">4</Text>}>
-          {mockRepos.map((repo) => (
-            <RepoRow
-              key={repo.name + "-recent"}
-              repo={repo}
-            />
-          ))}
         </Section>
         <Section
           title="All repositories"
@@ -246,7 +228,8 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
           {mockRepos.map((repo) => (
             <RepoRow
               key={repo.name + "-all"}
-              repo={repo}
+              repoPath={repo.name}
+              onClick={() => setCurrentRepo(repo.name)}
             />
           ))}
         </Section>

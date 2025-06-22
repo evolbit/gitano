@@ -529,29 +529,13 @@ fn get_merge_source_branch(message: &str) -> Option<String> {
 }
 
 fn get_main_branch_tip(repo: &Repository) -> Result<Option<Oid>, git2::Error> {
-    if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
-        if let Ok(resolved_ref) = reference.resolve() {
-            if let Some(oid) = resolved_ref.target() {
-                return Ok(Some(oid));
+    for branch_name in &["main", "master"] {
+        if let Ok(branch) = repo.find_branch(branch_name, BranchType::Local) {
+            if let Some(tip) = branch.get().target() {
+                return Ok(Some(tip));
             }
         }
     }
-
-    let refs_to_try = [
-        "refs/heads/main",
-        "refs/remotes/origin/main",
-        "refs/heads/master",
-        "refs/remotes/origin/master",
-    ];
-
-    for ref_name in &refs_to_try {
-        if let Ok(reference) = repo.find_reference(ref_name) {
-            if let Some(oid) = reference.target() {
-                return Ok(Some(oid));
-            }
-        }
-    }
-
     Ok(None)
 }
 
@@ -559,7 +543,7 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
     let mut commit_branch_map: HashMap<Oid, String> = HashMap::new();
     let mut branches_to_process = Vec::new();
 
-    let develop_branch_tip = repo
+    let _develop_branch_tip = repo
         .find_branch("develop", BranchType::Local)
         .and_then(|b| {
             b.get()
@@ -576,7 +560,7 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
         })
         .ok();
 
-    let main_branch_tip = get_main_branch_tip(repo)?;
+    let _main_branch_tip = get_main_branch_tip(repo)?;
 
     let all_branches: Vec<_> = repo.branches(None)?.filter_map(Result::ok).collect();
 
@@ -591,14 +575,13 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
             })
             .to_string();
 
-            let priority = if branch_name_short.starts_with("feature/")
-                || branch_name_short.starts_with("release/")
-                || branch_name_short.starts_with("hotfix/")
-                || branch_name_short.starts_with("bugfix/")
-            {
-                1
-            } else {
-                0
+            let priority = match branch_name_short.as_str() {
+                "main" | "master" => 0,
+                "develop" => 1,
+                s if s.starts_with("release/") => 2,
+                s if s.starts_with("hotfix/") => 3,
+                s if s.starts_with("feature/") => 4,
+                _ => 5,
             };
 
             if let Ok(commit) = repo.find_commit(branch_tip) {
@@ -631,12 +614,8 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
             if revwalk.push(branch_tip).is_ok() {
                 // Limit the depth to avoid processing too many commits
                 let mut commit_count = 0;
-                const MAX_COMMITS_PER_BRANCH: usize = 1000;
-
-                for oid_res in revwalk {
-                    if commit_count >= MAX_COMMITS_PER_BRANCH {
-                        break;
-                    }
+                const MAX_COMMITS_PER_BRANCH: usize = 500;
+                for oid_res in revwalk.take(MAX_COMMITS_PER_BRANCH) {
                     if let Ok(oid) = oid_res {
                         // Only insert if this commit hasn't been assigned to a higher priority branch
                         commit_branch_map
@@ -645,6 +624,10 @@ fn build_commit_branch_map(repo: &Repository) -> Result<HashMap<Oid, String>, gi
                         commit_count += 1;
                     }
                 }
+                println!(
+                    "Processed {} commits for branch {}",
+                    commit_count, branch_name_full
+                );
             }
         }
     }

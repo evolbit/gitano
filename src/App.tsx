@@ -145,7 +145,7 @@ export default function App() {
         variant="none"
         className="flex flex-col h-full">
         <Tabs.List
-          className="bg-zinc-800 flex w-full sticky top-0 z-30"
+          className="bg-zinc-800 flex w-full sticky top-0 z-30 h-14"
           style={{ borderBottom: "1px solid #27272a" }}>
           {tabs.map((tab, idx) => (
             <Tabs.Tab
@@ -153,12 +153,13 @@ export default function App() {
               value={tab.id}
               classNames={{
                 tab: classNames(
-                  "flex items-center gap-1 px-5 py-2 font-medium border-b-0",
+                  "px-5 py-2 font-medium border-b-0",
                   activeTab === tab.id
                     ? "!bg-zinc-700 !text-white"
                     : "!bg-zinc-800 !text-zinc-400 hover:!bg-zinc-700",
                   idx < tabs.length - 1 ? "border-r-1 border-r-zinc-900" : ""
                 ),
+                tabLabel: "flex items-center gap-1",
               }}
               style={{ borderRadius: 0 }}>
               {/* Git branch icon on the left for all tabs except home */}
