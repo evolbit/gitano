@@ -199,6 +199,7 @@ export const HomePage = ({
     const path = await openLocalRepoDialog();
     if (path) {
       useRepoStore.getState().addRecentRepo(path);
+      onRepoOpened?.(path);
     }
   };
 
