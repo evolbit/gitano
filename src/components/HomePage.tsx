@@ -1,5 +1,6 @@
 import { Box, Button, Group, Text, TextInput } from "@mantine/core";
-import React from "react";
+import { invoke } from "@tauri-apps/api/core";
+import React, { useEffect, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { openLocalRepoDialog } from "../utils/openRepo";
 import { IconFolder, IconPlug, IconSearch } from "./icons";
@@ -73,16 +74,21 @@ const Section = ({
   </Box>
 );
 
+interface RepoInfo {
+  path: string;
+  name: string;
+  branch: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
 const RepoRow = ({
-  repoPath,
+  repoInfo,
   onClick,
 }: {
-  repoPath: string;
+  repoInfo: RepoInfo;
   onClick: () => void;
 }) => {
-  // Extraer el nombre del repositorio de la ruta
-  const repoName = repoPath.split("/").pop() || repoPath;
-
   return (
     <Group
       className="py-1 px-2 hover:bg-zinc-800 rounded cursor-pointer text-sm"
@@ -91,12 +97,24 @@ const RepoRow = ({
       onClick={onClick}>
       <Group
         gap={8}
-        wrap="nowrap">
+        wrap="nowrap"
+        align="center">
         <IconFolder
           size={16}
           className="text-blue-400"
         />
-        <Text className="text-zinc-100 font-medium">{repoName}</Text>
+        <Text className="text-zinc-100 font-medium">{repoInfo.name}</Text>
+        {repoInfo.loading ? (
+          <Text className="text-zinc-400 text-xs">Cargando...</Text>
+        ) : repoInfo.error ? (
+          <Text className="text-red-400 text-xs">Error</Text>
+        ) : repoInfo.branch ? (
+          <Text className="text-zinc-400 text-xs bg-zinc-700 px-2 py-1 rounded">
+            {repoInfo.branch}
+          </Text>
+        ) : (
+          <Text className="text-zinc-500 text-xs">Sin rama</Text>
+        )}
       </Group>
     </Group>
   );
@@ -105,9 +123,77 @@ const RepoRow = ({
 interface HomePageProps {
   onRepoOpened?: (repoPath: string) => void;
 }
+
 const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
   const recentRepos = useRepoStore((s) => s.recentRepos);
   const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
+  const [repoInfos, setRepoInfos] = useState<RepoInfo[]>([]);
+
+  // Función para cargar la rama de un repositorio
+  const loadRepoBranch = async (repoPath: string): Promise<string | null> => {
+    try {
+      const branch = await invoke<string>("get_current_branch", {
+        path: repoPath,
+      });
+      return branch;
+    } catch (error) {
+      console.error(`Error loading branch for ${repoPath}:`, error);
+      return null;
+    }
+  };
+
+  // Función para cargar todas las ramas de los repositorios recientes
+  const loadAllRepoBranches = async () => {
+    const newRepoInfos: RepoInfo[] = recentRepos.map((repoPath) => ({
+      path: repoPath,
+      name: repoPath.split("/").pop() || repoPath,
+      branch: null,
+      loading: true,
+      error: null,
+    }));
+
+    setRepoInfos(newRepoInfos);
+
+    // Cargar las ramas de forma individual y concurrente
+    const branchPromises = newRepoInfos.map(async (repoInfo, index) => {
+      try {
+        const branch = await loadRepoBranch(repoInfo.path);
+        setRepoInfos((prev) =>
+          prev.map((info, i) =>
+            i === index
+              ? { ...info, branch, loading: false, error: null }
+              : info
+          )
+        );
+      } catch (error) {
+        setRepoInfos((prev) =>
+          prev.map((info, i) =>
+            i === index
+              ? {
+                  ...info,
+                  loading: false,
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Error desconocido",
+                }
+              : info
+          )
+        );
+      }
+    });
+
+    await Promise.all(branchPromises);
+  };
+
+  // Cargar las ramas cuando cambien los repositorios recientes
+  useEffect(() => {
+    if (recentRepos.length > 0) {
+      loadAllRepoBranches();
+    } else {
+      setRepoInfos([]);
+    }
+  }, [recentRepos]);
 
   const handleOpenRepo = async () => {
     const repoPath = await openLocalRepoDialog();
@@ -200,19 +286,17 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
         </Button>
       </Group>
       <Box className="bg-zinc-800 rounded-lg p-6">
-        {recentRepos.length > 0 && (
+        {repoInfos.length > 0 && (
           <Section
             title="Recent repositories"
             actions={
-              <Text className="text-xs text-zinc-400">
-                {recentRepos.length}
-              </Text>
+              <Text className="text-xs text-zinc-400">{repoInfos.length}</Text>
             }>
-            {recentRepos.map((repoPath) => (
+            {repoInfos.map((repoInfo) => (
               <RepoRow
-                key={repoPath}
-                repoPath={repoPath}
-                onClick={() => setCurrentRepo(repoPath)}
+                key={repoInfo.path}
+                repoInfo={repoInfo}
+                onClick={() => setCurrentRepo(repoInfo.path)}
               />
             ))}
           </Section>
@@ -228,7 +312,13 @@ const HomePage: React.FC<HomePageProps> = ({ onRepoOpened }) => {
           {mockRepos.map((repo) => (
             <RepoRow
               key={repo.name + "-all"}
-              repoPath={repo.name}
+              repoInfo={{
+                path: repo.name,
+                name: repo.name,
+                branch: repo.branch,
+                loading: false,
+                error: null,
+              }}
               onClick={() => setCurrentRepo(repo.name)}
             />
           ))}

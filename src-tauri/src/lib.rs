@@ -94,6 +94,7 @@ pub fn run() {
             git::get_commits_list_paginated,
             git::get_commit_diff,
             git::amend_commit_message,
+            git::get_current_branch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
