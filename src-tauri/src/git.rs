@@ -981,3 +981,16 @@ pub fn amend_commit_message(path: String, sha: String, new_message: String) -> R
 
     Ok(())
 }
+
+#[command]
+pub fn get_current_branch(path: String) -> Result<String, String> {
+    let repo = Repository::open(path).map_err(|e| e.to_string())?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    if head.is_branch() {
+        head.shorthand()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "Could not get branch shorthand".to_string())
+    } else {
+        Ok("Detached HEAD".to_string())
+    }
+}
