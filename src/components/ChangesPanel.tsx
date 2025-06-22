@@ -162,12 +162,12 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
                 <div className="flex justify-start space-x-2">
                   <button
                     onClick={handleUpdateMessage}
-                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">
+                    className="bg-green-600 hover:bg-green-700 text-zinc-400 font-bold py-1 px-3 rounded text-sm">
                     Update Message
                   </button>
                   <button
                     onClick={handleCancelAmend}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm">
+                    className="bg-red-600 hover:bg-red-700 text-zinc-400 font-bold py-1 px-3 rounded text-sm">
                     Cancel Amend
                   </button>
                 </div>

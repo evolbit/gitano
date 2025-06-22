@@ -32,7 +32,7 @@ export function OpenRepoButton() {
   return (
     <div className="p-4">
       <button
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-zinc-400 disabled:opacity-50"
         onClick={handleOpenRepo}
         disabled={loading}>
         <IconFolderPlus className="w-5 h-5" />

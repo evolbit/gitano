@@ -133,7 +133,7 @@ export default function App() {
   }, [tabs]);
 
   return (
-    <div className="h-screen w-screen bg-zinc-900 text-white flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-zinc-900 text-zinc-400 flex flex-col overflow-hidden">
       <Tabs
         value={activeTab}
         onChange={(value) => {
@@ -143,7 +143,7 @@ export default function App() {
         }}
         keepMounted={false}
         variant="none"
-        className="flex flex-col h-full">
+        className="flex flex-col h-full w-full">
         <Tabs.List
           className="bg-zinc-800 flex w-full sticky top-0 z-30 h-14"
           style={{ borderBottom: "1px solid #27272a" }}>
@@ -155,7 +155,7 @@ export default function App() {
                 tab: classNames(
                   "px-5 py-2 font-medium border-b-0",
                   activeTab === tab.id
-                    ? "!bg-zinc-700 !text-white"
+                    ? "!bg-zinc-700 !text-zinc-400"
                     : "!bg-zinc-800 !text-zinc-400 hover:!bg-zinc-700",
                   idx < tabs.length - 1 ? "border-r-1 border-r-zinc-900" : ""
                 ),
@@ -203,11 +203,11 @@ export default function App() {
             <Tabs.Panel
               key={tab.id}
               value={tab.id}
-              className="h-full w-full">
+              className={`h-full w-full ${tab.id !== "home" ? "flex" : ""}`}>
               {tab.id === "home" ? (
                 <HomePage onRepoOpened={handleRepoOpened} />
               ) : (
-                <Split className="h-full min-h-0 flex-1">
+                <Split className="h-full w-full min-h-0 flex-1">
                   {/* Sidebar izquierdo */}
                   <Split.Pane
                     initialWidth={240}
@@ -259,15 +259,17 @@ export default function App() {
                       </Accordion>
                     </Box>
                   </Split.Pane>
+                  <Split.Resizer />
                   <Split.Pane className="!h-full !min-h-0">
-                    <Split orientation="vertical">
+                    <Split
+                      orientation="vertical"
+                      className="h-full w-full">
                       <Split.Pane>
                         <CommitList onCommitSelected={setSelectedCommit} />
                       </Split.Pane>
+                      <Split.Resizer />
                       <Split.Pane>
-                        {selectedCommit && (
-                          <ChangesPanel selectedCommit={selectedCommit} />
-                        )}
+                        <ChangesPanel selectedCommit={selectedCommit} />
                       </Split.Pane>
                     </Split>
                   </Split.Pane>

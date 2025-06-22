@@ -544,10 +544,8 @@ export function BranchList() {
       <div className="font-bold mb-2 flex items-center gap-2 text-sm">
         <div className="flex gap-1">
           <button
-            className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
-              type === "local"
-                ? "bg-blue-600 text-white"
-                : "bg-zinc-800 text-zinc-400"
+            className={`px-2 py-1 rounded flex items-center gap-1 text-sm text-zinc-400 ${
+              type === "local" ? "bg-blue-600 !text-zinc-100" : "bg-zinc-800"
             }`}
             onClick={() => setType("local")}
             title="Locales"
@@ -563,7 +561,7 @@ export function BranchList() {
           <button
             className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
               type === "remote"
-                ? "bg-blue-600 text-white"
+                ? "bg-blue-600 text-zinc-400"
                 : "bg-zinc-800 text-zinc-400"
             }`}
             onClick={() => setType("remote")}

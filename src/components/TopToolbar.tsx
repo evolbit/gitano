@@ -77,14 +77,14 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 className="text-xs text-zinc-400 px-3 pt-1 group-hover:bg-zinc-800 w-full transition-colors">
                 Repository
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-zinc-400 px-3 py-0.5 cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
                 <IconBrandGit
                   size={16}
                   className="text-blue-400"
                 />
                 <Text
                   size="sm"
-                  className="text-sm text-white font-medium">
+                  className="text-sm text-zinc-400 font-medium">
                   efectoled-backend
                 </Text>
                 <span className="flex-1" />
@@ -148,14 +148,14 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "!bg-zinc-700" }) => {
                 className="text-xs text-zinc-400 group-hover:bg-zinc-800 w-full px-3 pt-1 transition-colors">
                 Branch
               </Text>
-              <Box className="flex items-center gap-1.5 bg-zinc-700 text-white px-3 py-0.5 min-w-[120px] cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
+              <Box className="flex items-center gap-1.5 bg-zinc-700 text-zinc-400 px-3 py-0.5 min-w-[120px] cursor-pointer transition-colors w-full group-hover:bg-zinc-800">
                 <IconGitBranch
                   size={16}
                   className="text-lime-400"
                 />
                 <Text
                   size="sm"
-                  className="text-sm text-white font-medium truncate">
+                  className="text-sm text-zinc-400 font-medium truncate">
                   feature/OYS-24721_CC_BACKOFFICE...
                 </Text>
                 <span className="flex-1" />

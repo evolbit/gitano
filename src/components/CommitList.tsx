@@ -91,7 +91,7 @@ export default function CommitList({ onCommitSelected }: CommitListProps) {
             {history.map((branch, index) => (
               <span
                 key={`${branch}-${index}`}
-                className="inline-flex items-center gap-1 bg-blue-600 text-white rounded-full px-2 py-0.5 text-xs font-medium">
+                className="inline-flex items-center gap-1 bg-blue-600 text-zinc-400 rounded-full px-2 py-0.5 text-xs font-medium">
                 <IconGitBranch
                   size={12}
                   className="flex-shrink-0"
@@ -206,14 +206,14 @@ export default function CommitList({ onCommitSelected }: CommitListProps) {
             />
           }
         />
-        <button className="flex items-center bg-zinc-800 text-white border-none rounded-lg px-3 h-9 mr-2 cursor-pointer font-medium text-[15px]">
+        <button className="flex items-center bg-zinc-800 text-zinc-400 border-none rounded-lg px-3 h-9 mr-2 cursor-pointer font-medium text-[15px]">
           <IconFilter
             size={18}
             className="mr-1.5"
           />
           Filtros
         </button>
-        <button className="flex items-center bg-indigo-500 text-white border-none rounded-lg px-4 h-9 cursor-pointer font-medium text-[15px]">
+        <button className="flex items-center bg-indigo-500 text-zinc-400 border-none rounded-lg px-4 h-9 cursor-pointer font-medium text-[15px]">
           <IconPlus
             size={18}
             className="mr-1.5"
