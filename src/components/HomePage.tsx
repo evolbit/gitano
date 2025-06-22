@@ -1,17 +1,10 @@
-import {
-  ActionIcon,
-  Box,
-  Button,
-  Group,
-  Menu,
-  Text,
-  TextInput,
-} from "@mantine/core";
+import { ActionIcon, Box, Button, Group, Menu, Text } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import React, { useEffect, useMemo, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { openLocalRepoDialog } from "../utils/openRepo";
+import InputText from "./form/InputText";
 import {
   IconDotsVertical,
   IconFolder,
@@ -150,6 +143,7 @@ export const HomePage = ({
   const { recentRepos, favoriteRepos, toggleFavoriteRepo, removeRepo } =
     useRepoStore();
   const [repoInfos, setRepoInfos] = useState<RepoInfo[]>([]);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -190,16 +184,23 @@ export const HomePage = ({
     }
   }, [recentRepos]);
 
-  const { favoriteRepoInfos, otherRepoInfos } = useMemo(() => {
-    const sorted = [...repoInfos].sort((a, b) => a.name.localeCompare(b.name));
-    const favoriteRepoInfos = sorted.filter((r) =>
-      favoriteRepos.includes(r.path)
-    );
-    const otherRepoInfos = sorted.filter(
-      (r) => !favoriteRepos.includes(r.path)
-    );
-    return { favoriteRepoInfos, otherRepoInfos };
-  }, [repoInfos, favoriteRepos]);
+  const sortedRepoInfos = useMemo(() => {
+    return [...repoInfos]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()));
+  }, [repoInfos, filter]);
+
+  const favoriteRepoInfos = useMemo(
+    () => sortedRepoInfos.filter((r) => favoriteRepos.includes(r.path)),
+    [sortedRepoInfos, favoriteRepos]
+  );
+
+  const handleBrowse = async () => {
+    const path = await openLocalRepoDialog();
+    if (path) {
+      useRepoStore.getState().addRecentRepo(path);
+    }
+  };
 
   const handleOpenFolder = async (path: string) => {
     try {
@@ -227,7 +228,7 @@ export const HomePage = ({
           </Button>
           <Button
             size="xs"
-            onClick={openLocalRepoDialog}>
+            onClick={handleBrowse}>
             <IconFolderPlus
               size={16}
               className="mr-2"
@@ -237,10 +238,14 @@ export const HomePage = ({
         </Group>
       </Group>
 
-      <TextInput
+      <InputText
         placeholder="Filter repositories..."
-        leftSection={<IconSearch size={16} />}
+        leftIcon={<IconSearch size={16} />}
         className="mb-6"
+        value={filter}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+          setFilter(e.currentTarget.value)
+        }
       />
 
       {favoriteRepoInfos.length > 0 && (
@@ -265,15 +270,15 @@ export const HomePage = ({
         </Section>
       )}
 
-      {otherRepoInfos.length > 0 && (
+      {sortedRepoInfos.length > 0 && (
         <Section
           title="All Repositories"
           actions={
             <Text className="text-xs text-zinc-400">
-              {otherRepoInfos.length}
+              {sortedRepoInfos.length}
             </Text>
           }>
-          {otherRepoInfos.map((repoInfo) => (
+          {sortedRepoInfos.map((repoInfo) => (
             <RepoRow
               key={repoInfo.path}
               repoInfo={repoInfo}
@@ -281,7 +286,7 @@ export const HomePage = ({
               onToggleFavorite={() => toggleFavoriteRepo(repoInfo.path)}
               onRemove={() => removeRepo(repoInfo.path)}
               onOpenFolder={() => handleOpenFolder(repoInfo.path)}
-              isFavorite={false}
+              isFavorite={favoriteRepos.includes(repoInfo.path)}
             />
           ))}
         </Section>
