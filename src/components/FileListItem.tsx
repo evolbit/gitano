@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { FileChange } from "../types/git";
-import { IconCircleDot, IconMinus, IconPlus, IconQuestionMark } from "./icons";
+import {
+  IconCircleDot,
+  IconCopy,
+  IconExchange,
+  IconMinus,
+  IconPencil,
+  IconPlus,
+  IconQuestionMark,
+} from "./icons";
 
 interface FileListItemProps {
   file: FileChange;
@@ -30,6 +38,27 @@ const FileListItem = ({ file }: FileListItemProps) => {
           <IconCircleDot
             size={16}
             className="text-yellow-500"
+          />
+        );
+      case "renamed":
+        return (
+          <IconPencil
+            size={16}
+            className="text-blue-500"
+          />
+        );
+      case "copied":
+        return (
+          <IconCopy
+            size={16}
+            className="text-purple-500"
+          />
+        );
+      case "typeChanged":
+        return (
+          <IconExchange
+            size={16}
+            className="text-orange-500"
           />
         );
       default:

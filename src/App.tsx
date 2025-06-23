@@ -156,18 +156,20 @@ export default function App() {
                       initialWidth={240}
                       minWidth={300}
                       maxWidth={350}
-                      className="!h-full !min-h-0">
-                      <Box className="!h-full text-foreground flex flex-col">
+                      className="!h-full !min-h-0 flex flex-col">
+                      <Box className="flex-1 text-foreground flex flex-col min-h-0">
                         <Accordion
                           defaultValue="branches"
                           variant="contained"
                           chevronPosition="left"
                           classNames={{
-                            root: "bg-background text-foreground flex-1 flex flex-col justify-start",
-                            item: "bg-background text-foreground flex flex-col",
-                            control: "bg-background text-foreground p-2",
+                            root: "bg-background text-foreground flex-1 flex flex-col min-h-0",
+                            item: "group bg-background text-foreground flex flex-col data-[active]:flex-1 data-[active]:min-h-0",
+                            control:
+                              "bg-background text-foreground p-2 transition-colors hover:bg-background-emphasis",
                             panel:
-                              "bg-background text-foreground flex-1 min-h-0",
+                              "text-foreground flex-1 flex flex-col min-h-0",
+                            content: "flex-1 min-h-0",
                             icon: "mr-2",
                           }}>
                           <Accordion.Item value="branches">

@@ -187,7 +187,7 @@ export function BranchList() {
                 key={node.full}
                 className="mb-0.5 group">
                 <div
-                  className="flex items-center gap-1 cursor-pointer hover:bg-zinc-700 rounded px-1 py-0.5 text-xs text-zinc-300"
+                  className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300"
                   style={{ fontSize: "13px", fontWeight: 500 }}
                   onClick={() =>
                     setExpanded((exp) => ({ ...exp, [node.full]: !isOpen }))
@@ -333,7 +333,7 @@ export function BranchList() {
         className="flex"
         onMouseLeave={handleMenuMouseLeave}>
         {/* Menú principal */}
-        <div className="bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none backdrop-blur z-[99999] min-w-[320px]">
+        <div className="bg-background-emphasis border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none backdrop-blur z-[99999] min-w-[320px]">
           {/* Remote actions, Branch operations, Worktree, Branching, Danger zone */}
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Remote actions

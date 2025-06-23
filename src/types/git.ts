@@ -55,12 +55,12 @@ export interface CommitListItem {
 }
 
 export enum ChangeType {
-  Added = "Added",
-  Deleted = "Deleted",
-  Modified = "Modified",
-  Renamed = "Renamed",
-  Copied = "Copied",
-  TypeChanged = "TypeChanged",
+  Added = "added",
+  Deleted = "deleted",
+  Modified = "modified",
+  Renamed = "renamed",
+  Copied = "copied",
+  TypeChanged = "typeChanged",
 }
 
 export interface FileChange {
