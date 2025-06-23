@@ -34,7 +34,7 @@ function StatusBadge({ status }: { status: string }) {
 const PAGE_SIZE = 50;
 
 type CommitListProps = {
-  onCommitSelected: (commit: CommitListItem) => void;
+  onCommitSelected?: (commit: CommitListItem) => void;
 };
 
 export default function CommitList({ onCommitSelected }: CommitListProps) {

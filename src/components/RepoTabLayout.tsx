@@ -53,13 +53,7 @@ const RepoTabLayout: React.FC = () => {
                     </div>
                   </Accordion.Control>
                   <Accordion.Panel className="min-w-0">
-                    <BranchList
-                      repoPath={tab.repoPath}
-                      selectedBranch={tab.selectedBranch}
-                      onSelectBranch={(branch) =>
-                        useRepoStore.getState().setTabBranch(tab.id, branch)
-                      }
-                    />
+                    <BranchList />
                   </Accordion.Panel>
                 </Accordion.Item>
                 <Accordion.Item value="folders">
@@ -88,15 +82,11 @@ const RepoTabLayout: React.FC = () => {
               orientation="vertical"
               className="h-full w-full">
               <Split.Pane initialWidth="60%">
-                <CommitList
-                  repoPath={tab.repoPath}
-                  selectedBranch={tab.selectedBranch}
-                  onCommitSelected={(commit) => setTabCommit(tab.id, commit)}
-                />
+                <CommitList />
               </Split.Pane>
               <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
               <Split.Pane grow>
-                <ChangesPanel selectedCommit={tab.selectedCommit} />
+                <ChangesPanel />
               </Split.Pane>
             </Split>
           </Split.Pane>

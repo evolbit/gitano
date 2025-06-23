@@ -41,7 +41,7 @@ const TabBar: React.FC<TabBarProps> = ({
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1",
-              activeTab === tab.id ? "text-white" : "text-foreground"
+              activeTab === tab.id ? "text-white" : "text-muted-foreground"
             ),
             tab: "border-r !border-r-border",
           }}
