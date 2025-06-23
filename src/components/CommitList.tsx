@@ -38,8 +38,11 @@ type CommitListProps = {
 };
 
 export default function CommitList({ onCommitSelected }: CommitListProps) {
-  const repoPath = useRepoStore((s) => s.currentRepo);
-  const selectedBranch = useRepoStore((s) => s.selectedBranch);
+  const activeTabId = useRepoStore((s) => s.activeTabId);
+  const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
+  const repoPath = tab?.repoPath;
+  const selectedBranch = tab?.selectedBranch;
+  const setTabCommit = useRepoStore((s) => s.setTabCommit);
   const [search, setSearch] = useState("");
   const [commits, setCommits] = useState<any[]>([]);
   const [offset, setOffset] = useState(0);
@@ -237,7 +240,12 @@ export default function CommitList({ onCommitSelected }: CommitListProps) {
           columns={columns}
           data={commits}
           loading={loading}
-          onRowClick={(row: CommitListItem) => onCommitSelected(row)}
+          onRowClick={(row: CommitListItem) => {
+            if (activeTabId) setTabCommit(activeTabId, row);
+            if (onCommitSelected) {
+              onCommitSelected(row);
+            }
+          }}
         />
         {hasMore && !loading && (
           <div className="text-center p-4">Cargando más commits...</div>

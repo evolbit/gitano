@@ -64,8 +64,11 @@ function BranchIcon({ name, selected }: { name: string; selected: boolean }) {
 }
 
 export function BranchList() {
-  const repoPath = useRepoStore((s) => s.currentRepo);
-  const setSelectedBranch = useRepoStore((s) => s.setSelectedBranch);
+  const activeTabId = useRepoStore((s) => s.activeTabId);
+  const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
+  const repoPath = tab?.repoPath;
+  const selectedBranch = tab?.selectedBranch;
+  const setTabBranch = useRepoStore((s) => s.setTabBranch);
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -254,7 +257,9 @@ export function BranchList() {
                 }`}
                 style={{ fontSize: "13px" }}
                 tabIndex={0}
-                onClick={() => setSelectedBranch(node.full)}
+                onClick={() => {
+                  if (activeTabId) setTabBranch(activeTabId, node.full);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setContextMenu({ x: e.clientX, y: e.clientY, node });

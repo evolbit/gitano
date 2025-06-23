@@ -1,7 +1,7 @@
 import { ActionIcon, Tabs } from "@mantine/core";
 import { ReactNode } from "react";
 import { classNames } from "../utils/ui";
-import { IconGitBranch, IconPlus, IconX } from "./icons";
+import { IconGitBranch, IconHome, IconPlus, IconX } from "./icons";
 
 type TabType = {
   id: string;
@@ -41,7 +41,7 @@ const TabBar: React.FC<TabBarProps> = ({
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1",
-              activeTab === tab.id ? "text-white" : "text-background"
+              activeTab === tab.id ? "text-white" : "text-foreground"
             ),
             tab: "border-r !border-r-border",
           }}
@@ -49,9 +49,20 @@ const TabBar: React.FC<TabBarProps> = ({
           {/* Git branch icon on the left for all tabs except home */}
           {tab.id !== "home" && branchIcon}
           {/* Home icon for home tab */}
-          {tab.id === "home" && tab.icon}
-          {tab.label && (
-            <span style={{ marginLeft: tab.icon ? 0 : 0 }}>{tab.label}</span>
+          {tab.id === "home" && (
+            <IconHome
+              size={18}
+              style={{ marginRight: 4 }}
+            />
+          )}
+          {tab.id === "home" ? (
+            <span style={{ marginLeft: 0 }}>Launchpad</span>
+          ) : (
+            <span style={{ marginLeft: 0 }}>
+              {tab.repoPath
+                ? tab.repoPath.split("/").filter(Boolean).pop()
+                : ""}
+            </span>
           )}
           {/* Close icon on the right for all tabs except home */}
           {tab.id !== "home" && (

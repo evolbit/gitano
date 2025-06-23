@@ -2,17 +2,16 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
-import { CommitDiff, CommitListItem, FileChange } from "../types/git";
+import { CommitDiff, FileChange } from "../types/git";
 import DiffModal from "./DiffModal";
 import FileListItem from "./FileListItem";
 import TextArea from "./form/TextArea";
 
-type ChangesPanelProps = {
-  selectedCommit: CommitListItem | null;
-};
-
-const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
-  const repoPath = useRepoStore((s) => s.currentRepo);
+const ChangesPanel: React.FC = () => {
+  const activeTabId = useRepoStore((s) => s.activeTabId);
+  const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
+  const selectedCommit = tab?.selectedCommit;
+  const repoPath = tab?.repoPath;
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

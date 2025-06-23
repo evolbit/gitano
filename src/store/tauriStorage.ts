@@ -1,7 +1,7 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { StateStorage } from "zustand/middleware";
 
-const store = new LazyStore(".settings.json");
+const store = new LazyStore(".storage.json");
 
 export const tauriStorage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
