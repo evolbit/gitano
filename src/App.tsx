@@ -163,12 +163,12 @@ export default function App() {
                           variant="contained"
                           chevronPosition="left"
                           classNames={{
-                            root: "bg-background text-foreground flex-1 flex flex-col min-h-0",
+                            root: "bg-background-emphasis text-foreground flex-1 flex flex-col min-h-0",
                             item: "group bg-background text-foreground flex flex-col data-[active]:flex-1 data-[active]:min-h-0",
                             control:
-                              "bg-background text-foreground p-2 transition-colors hover:bg-background-emphasis",
+                              "bg-background-emphasis text-foreground p-2 transition-colors hover:bg-background-emphasis",
                             panel:
-                              "text-foreground flex-1 flex flex-col min-h-0",
+                              "text-foreground flex-1 flex flex-col min-h-0 bg-background-emphasis",
                             content: "flex-1 min-h-0",
                             icon: "mr-2",
                           }}>
@@ -205,7 +205,7 @@ export default function App() {
                         </Accordion>
                       </Box>
                     </Split.Pane>
-                    <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+                    <Split.Resizer className="!bg-background-emphasis hover:!bg-foreground [--split-resizer-size:1px] m-0 border-r border-border rounded-none" />
                     <Split.Pane
                       grow
                       className="!h-full !min-h-0">

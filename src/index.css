@@ -1,44 +1,42 @@
 @import "@mantine/core/styles.layer.css";
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: hsl(240 5.9% 10%); /* zinc-900 */
-    --background-emphasis: hsl(240 5.1% 9.1%); /* zinc-950 */
-    --foreground: hsl(240 5% 52%); /* zinc-500 */
+@theme {
+  --color-background: oklch(0.24 0 0); /* gris oscuro (oklch) */
+  --color-background-emphasis: oklch(0.2 0 0); /* gris más oscuro (oklch) */
+  --color-foreground: oklch(0.85 0 0); /* gris claro (oklch) */
 
-    --card: hsl(240 5.9% 10%); /* zinc-900 */
-    --card-foreground: hsl(240 5% 52%);
+  --color-card: oklch(0.22 0 0);
+  --color-card-foreground: oklch(0.85 0 0);
 
-    --popover: hsl(240 5.9% 10%); /* zinc-900 */
-    --popover-foreground: hsl(240 5% 52%);
+  --color-popover: oklch(0.22 0 0);
+  --color-popover-foreground: oklch(0.85 0 0);
 
-    --primary: hsl(210 40% 98%);
-    --primary-foreground: hsl(222.2 47.4% 11.2%);
+  --color-primary: oklch(0.98 0.03 264); /* azul claro (oklch) */
+  --color-primary-foreground: oklch(0.18 0.01 264); /* azul oscuro (oklch) */
 
-    --secondary: hsl(240 3.7% 15.9%); /* zinc-800 */
-    --secondary-foreground: hsl(240 5% 52%);
+  --color-secondary: oklch(0.28 0 0); /* gris medio (oklch) */
+  --color-secondary-foreground: oklch(0.85 0 0);
 
-    --muted: hsl(240 3.7% 15.9%); /* zinc-800 */
-    --muted-foreground: hsl(240 5% 52%);
+  --color-muted: oklch(0.28 0 0);
+  --color-muted-foreground: oklch(0.85 0 0);
 
-    --accent: hsl(240 3.7% 15.9%); /* zinc-800 */
-    --accent-foreground: hsl(240 5% 52%);
+  --color-accent: oklch(0.28 0.05 264); /* azul acento (oklch) */
+  --color-accent-foreground: oklch(0.85 0 0);
 
-    --destructive: hsl(0 62.8% 30.6%);
-    --destructive-foreground: hsl(210 40% 98%);
+  --color-destructive: oklch(0.55 0.18 29); /* rojo (oklch) */
+  --color-destructive-foreground: oklch(0.98 0 0);
 
-    --border: #ff0000; /* zinc-700 */
-    --input: hsl(240 3.7% 15.9%); /* zinc-800 */
-    --ring: hsl(212.7 26.8% 83.9%);
-  }
+  --color-border: oklch(0.3 0 0); /* gris oscuro (oklch) */
+  --color-input: oklch(0.28 0 0);
+  --color-ring: oklch(0.85 0 0);
 }
 
 html,
 body,
 #root {
-  background-color: var(--background);
-  color: var(--foreground);
+  /* background-color: hsl(var(--color-background)); */
+  /* color: hsl(var(--color-foreground)); */
   height: 100%;
   width: 100%;
 }

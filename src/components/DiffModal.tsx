@@ -51,7 +51,7 @@ const DiffModal = ({ open, files, initialFile, onClose }: DiffModalProps) => {
       {/* Modal principal */}
       <div
         ref={modalRef}
-        className="relative w-[96vw] h-[92vh] mx-auto my-6 bg-black border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-[96vw] h-[92vh] mx-auto my-6 bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
         style={{ zIndex: 1 }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background-emphasis">

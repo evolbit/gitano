@@ -32,7 +32,7 @@ const TabBar: React.FC<TabBarProps> = ({
   onAddTab,
 }) => {
   return (
-    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-14 border-b !border-border">
+    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-14 border-b border-border">
       {tabs.map((tab, idx) => (
         <Tabs.Tab
           key={tab.id}
@@ -41,11 +41,9 @@ const TabBar: React.FC<TabBarProps> = ({
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1",
-              activeTab === tab.id
-                ? "text-white"
-                : "!text-muted-foreground hover:!bg-background-emphasis"
+              activeTab === tab.id ? "text-white" : "text-background"
             ),
-            tab: "border-r !border-border",
+            tab: "border-r !border-r-border",
           }}
           style={{ borderRadius: 0 }}>
           {/* Git branch icon on the left for all tabs except home */}
@@ -61,7 +59,9 @@ const TabBar: React.FC<TabBarProps> = ({
               size={18}
               variant="subtle"
               component="span"
-              className="text-foreground"
+              className={
+                activeTab === tab.id ? "text-white" : "text-background"
+              }
               onClick={(e) => onTabClose(tab.id, e)}
               style={{ marginLeft: 6 }}>
               <IconX size={12} />

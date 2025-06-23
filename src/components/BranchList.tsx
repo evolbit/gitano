@@ -335,7 +335,7 @@ export function BranchList() {
         className="flex"
         onMouseLeave={handleMenuMouseLeave}>
         {/* Menú principal */}
-        <div className="bg-background-emphasis bg-zinc-950 border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none z-[99999] min-w-[320px]">
+        <div className="bg-background-emphasis border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none z-[99999] min-w-[320px]">
           {/* Remote actions, Branch operations, Worktree, Branching, Danger zone */}
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Remote actions
