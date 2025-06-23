@@ -11,7 +11,6 @@ import TopToolbar from "./TopToolbar";
 const RepoTabLayout: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
-  const setTabCommit = useRepoStore((s) => s.setTabCommit);
 
   if (!tab) return null;
 
