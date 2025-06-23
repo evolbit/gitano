@@ -183,7 +183,7 @@ export default function App() {
                                 </span>
                               </div>
                             </Accordion.Control>
-                            <Accordion.Panel>
+                            <Accordion.Panel className="min-w-0">
                               <BranchList />
                             </Accordion.Panel>
                           </Accordion.Item>

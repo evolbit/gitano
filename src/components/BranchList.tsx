@@ -178,7 +178,7 @@ export function BranchList() {
 
   function renderTree(nodes: any[], level = 0) {
     return (
-      <ul className={`select-none`}>
+      <ul className={`select-none min-w-0`}>
         {nodes.map((node) => {
           if (node.type === "group") {
             const isOpen = expanded[node.full] ?? true;
@@ -187,7 +187,7 @@ export function BranchList() {
                 key={node.full}
                 className="mb-0.5 group">
                 <div
-                  className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300"
+                  className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300 min-w-0"
                   style={{ fontSize: "13px", fontWeight: 500 }}
                   onClick={() =>
                     setExpanded((exp) => ({ ...exp, [node.full]: !isOpen }))
@@ -216,7 +216,9 @@ export function BranchList() {
                       className="text-blue-300"
                     />
                   </span>
-                  <span>{node.name}</span>
+                  <span className="truncate min-w-0 flex-1 w-0">
+                    {node.name}
+                  </span>
                   <button
                     className="ml-auto p-1 rounded hover:bg-zinc-600 transition-colors invisible group-hover:visible"
                     title="Más acciones"
@@ -245,7 +247,7 @@ export function BranchList() {
             return (
               <li
                 key={node.full}
-                className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-xs group ${
+                className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-xs group min-w-0 ${
                   selected
                     ? "bg-blue-400 text-zinc-900 font-bold"
                     : "hover:bg-zinc-700 text-zinc-200"
@@ -264,7 +266,7 @@ export function BranchList() {
                     name={node.name}
                   />
                 </span>
-                <span className="truncate">{node.name}</span>
+                <span className="truncate min-w-0 flex-1 w-0">{node.name}</span>
                 <button
                   className="ml-auto p-1 rounded hover:bg-zinc-600 transition-colors invisible group-hover:visible"
                   title="Más acciones"
@@ -540,7 +542,7 @@ export function BranchList() {
   if (!repoPath) return null;
 
   return (
-    <div className="p-1 my-2 h-full flex flex-col relative">
+    <div className="p-1 my-2 h-full flex flex-col relative min-w-0">
       <div className="font-bold mb-2 flex items-center gap-2 text-sm">
         <div className="flex gap-1">
           <button
