@@ -196,9 +196,9 @@ export default function TableVirtualResizable<
       <div
         ref={parentRef}
         data-virtualizer-scroll
-        className="flex-1 w-full overflow-auto relative bg-zinc-900">
+        className="flex-1 w-full overflow-auto relative bg-background">
         {/* Cabecera de la tabla - normal, sin sticky */}
-        <div className="flex items-center bg-zinc-700 border-b border-zinc-800 h-11 font-semibold text-zinc-200 text-sm select-none">
+        <div className="flex items-center bg-background-emphasis h-12 font-semibold text-foreground text-sm select-none">
           {columns.map((col) => (
             <div
               key={col.key}
@@ -207,10 +207,10 @@ export default function TableVirtualResizable<
               {col.label}
               {/* Resizer */}
               <div
-                className="absolute top-0 right-0 h-full w-2 z-20 cursor-col-resize bg-zinc-700 transition"
+                className="absolute top-0 right-0 h-full w-2 z-20 cursor-col-resize bg-border transition"
                 onMouseDown={(e) => onMouseDown(e, col.key)}
                 style={{ touchAction: "none" }}>
-                <div className="w-1 h-5 mx-auto bg-zinc-400/60 rounded" />
+                <div className="w-1 h-5 mx-auto bg-border rounded" />
               </div>
             </div>
           ))}
@@ -228,14 +228,14 @@ export default function TableVirtualResizable<
               <div
                 key={row.id || virtualRow.index}
                 className={
-                  "absolute top-0 left-0 w-full h-11 flex items-center text-zinc-200 text-sm border-b border-zinc-800 cursor-pointer transition-colors duration-150 bg-zinc-800 hover:bg-zinc-700"
+                  "absolute top-0 left-0 w-full h-12 flex items-center text-foreground text-sm border-b border-border cursor-pointer transition-colors duration-150 bg-background hover:bg-background-emphasis"
                 }
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                 onClick={() => onRowClick && onRowClick(row)}>
                 {columns.map((col) => (
                   <div
                     key={col.key}
-                    className="px-2 truncate"
+                    className="px-4 truncate"
                     style={{ width: colWidths[col.key] }}>
                     {col.render ? col.render(row[col.key], row) : row[col.key]}
                   </div>

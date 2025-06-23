@@ -45,6 +45,10 @@ export default {
           foreground: "var(--card-foreground)",
         },
       },
+      borderColor: {
+        DEFAULT: "var(--border)",
+        border: "var(--border)",
+      },
     },
   },
   plugins: [],

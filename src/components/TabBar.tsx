@@ -37,7 +37,7 @@ const TabBar: React.FC<TabBarProps> = ({
         <Tabs.Tab
           key={tab.id}
           value={tab.id}
-          className={classNames("px-5 py-2 font-medium border-0")}
+          className={classNames("px-5 py-2 font-medium")}
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1",
@@ -45,7 +45,7 @@ const TabBar: React.FC<TabBarProps> = ({
                 ? "text-white"
                 : "!text-muted-foreground hover:!bg-background-emphasis"
             ),
-            tab: "border-r",
+            tab: "border-r !border-border",
           }}
           style={{ borderRadius: 0 }}>
           {/* Git branch icon on the left for all tabs except home */}
