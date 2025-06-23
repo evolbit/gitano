@@ -23,6 +23,7 @@ export {
   IconPencil,
   IconPlug,
   IconPlus,
+  IconPoint,
   IconQuestionMark,
   IconSearch,
   IconStack2,
