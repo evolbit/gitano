@@ -24,9 +24,11 @@ const InputText: React.FC<InputTextProps> = ({
 }) => {
   return (
     <div
-      className={`flex items-center bg-gray-800 border border-gray-600 rounded-lg px-3 h-9 ${className}`}>
+      className={`flex items-center bg-secondary border border-border rounded-lg px-3 h-9 ${className}`}>
       {leftIcon && (
-        <span className="mr-2 flex items-center text-gray-400">{leftIcon}</span>
+        <span className="mr-2 flex items-center text-muted-foreground">
+          {leftIcon}
+        </span>
       )}
       <input
         type={type}
@@ -36,11 +38,11 @@ const InputText: React.FC<InputTextProps> = ({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
-        className="bg-transparent border-none outline-none text-zinc-400 w-full text-[15px] placeholder-gray-400"
+        className="bg-transparent border-none outline-none text-foreground w-full text-[15px] placeholder-muted-foreground"
         {...rest}
       />
       {rightIcon && (
-        <span className="ml-2 flex items-center text-gray-400">
+        <span className="ml-2 flex items-center text-muted-foreground">
           {rightIcon}
         </span>
       )}

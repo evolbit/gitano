@@ -1,13 +1,46 @@
 @import "@mantine/core/styles.layer.css";
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: hsl(240 5.9% 10%); /* zinc-900 */
+    --background-emphasis: hsl(240 5.1% 9.1%); /* zinc-950 */
+    --foreground: hsl(240 5% 52%); /* zinc-500 */
+
+    --card: hsl(240 5.9% 10%); /* zinc-900 */
+    --card-foreground: hsl(240 5% 52%);
+
+    --popover: hsl(240 5.9% 10%); /* zinc-900 */
+    --popover-foreground: hsl(240 5% 52%);
+
+    --primary: hsl(210 40% 98%);
+    --primary-foreground: hsl(222.2 47.4% 11.2%);
+
+    --secondary: hsl(240 3.7% 15.9%); /* zinc-800 */
+    --secondary-foreground: hsl(240 5% 52%);
+
+    --muted: hsl(240 3.7% 15.9%); /* zinc-800 */
+    --muted-foreground: hsl(240 5% 52%);
+
+    --accent: hsl(240 3.7% 15.9%); /* zinc-800 */
+    --accent-foreground: hsl(240 5% 52%);
+
+    --destructive: hsl(0 62.8% 30.6%);
+    --destructive-foreground: hsl(210 40% 98%);
+
+    --border: hsl(240 3.7% 15.9%); /* zinc-800 */
+    --input: hsl(240 3.7% 15.9%); /* zinc-800 */
+    --ring: hsl(212.7 26.8% 83.9%);
+  }
+}
 
 html,
 body,
 #root {
+  background-color: var(--background);
+  color: var(--foreground);
   height: 100%;
+  width: 100%;
 }
 
 html {

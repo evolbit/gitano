@@ -579,13 +579,9 @@ export function BranchList() {
       </div>
       {loading && <div className="text-sm text-zinc-400">Cargando...</div>}
       {error && <div className="text-sm text-red-400">{error}</div>}
-      <div className="flex-1 min-h-0 mt-2">
-        <div
-          className="overflow-y-auto max-h-[55vh] pr-1"
-          style={{ height: "100%" }}>
-          {renderTree(grouped)}
-          {renderContextMenu()}
-        </div>
+      <div className="flex-1 min-h-0 mt-2 overflow-y-auto pr-1">
+        {renderTree(grouped)}
+        {renderContextMenu()}
       </div>
     </div>
   );

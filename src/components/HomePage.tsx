@@ -59,7 +59,7 @@ const RepoRow = ({
 }) => {
   return (
     <Group
-      className="py-1 px-2 hover:bg-zinc-800 rounded cursor-pointer text-sm"
+      className="py-1 px-2 hover:bg-accent rounded cursor-pointer text-sm"
       justify="space-between"
       wrap="nowrap"
       onClick={onClick}>
@@ -70,23 +70,23 @@ const RepoRow = ({
         style={{ flex: 1, overflow: "hidden" }}>
         <IconFolder
           size={16}
-          className="text-blue-400"
+          className="text-blue-500"
         />
         <Text
-          className="text-zinc-100 font-medium"
+          className="text-foreground font-medium"
           truncate>
           {repoInfo.name}
         </Text>
         {repoInfo.loading ? (
-          <Text className="text-zinc-400 text-xs">Cargando...</Text>
+          <Text className="text-muted-foreground text-xs">Cargando...</Text>
         ) : repoInfo.error ? (
-          <Text className="text-red-400 text-xs">Error</Text>
+          <Text className="text-red-500 text-xs">Error</Text>
         ) : repoInfo.branch ? (
-          <Text className="text-zinc-400 text-xs bg-zinc-700 px-2 py-1 rounded">
+          <Text className="text-muted-foreground text-xs bg-secondary px-2 py-1 rounded">
             {repoInfo.branch}
           </Text>
         ) : (
-          <Text className="text-zinc-500 text-xs">Sin rama</Text>
+          <Text className="text-muted-foreground text-xs">Sin rama</Text>
         )}
       </Group>
       <Group
@@ -99,7 +99,7 @@ const RepoRow = ({
           onClick={onToggleFavorite}>
           <IconStar
             size={16}
-            className={isFavorite ? "text-yellow-400" : "text-zinc-400"}
+            className={isFavorite ? "text-yellow-400" : "text-muted-foreground"}
             fill={isFavorite ? "currentColor" : "none"}
           />
         </ActionIcon>
@@ -212,11 +212,11 @@ export const HomePage = ({
   };
 
   return (
-    <Box className="p-4 h-full text-zinc-300">
+    <Box className="p-4 h-full text-foreground">
       <Group
         justify="space-between"
         className="mb-6">
-        <Text className="text-xl font-bold text-zinc-100">Lanzamiento</Text>
+        <Text className="text-xl font-bold text-foreground">Lanzamiento</Text>
         <Group>
           <Button
             variant="default"
@@ -253,7 +253,7 @@ export const HomePage = ({
         <Section
           title="Favorites"
           actions={
-            <Text className="text-xs text-zinc-400">
+            <Text className="text-xs text-muted-foreground">
               {favoriteRepoInfos.length}
             </Text>
           }>
@@ -275,7 +275,7 @@ export const HomePage = ({
         <Section
           title="All Repositories"
           actions={
-            <Text className="text-xs text-zinc-400">
+            <Text className="text-xs text-muted-foreground">
               {sortedRepoInfos.length}
             </Text>
           }>
@@ -296,7 +296,7 @@ export const HomePage = ({
       {repoInfos.length === 0 && (
         <Box className="text-center py-10">
           <Text>No repositories found.</Text>
-          <Text className="text-zinc-500 text-sm">
+          <Text className="text-muted-foreground text-sm">
             Use the "Browse" button to add your local repositories.
           </Text>
         </Box>

@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import "@gfazioli/mantine-split-pane/styles.css";
-import { Accordion, ActionIcon, Box, Tabs } from "@mantine/core";
+import { Accordion, Box, Tabs } from "@mantine/core";
 import { listen } from "@tauri-apps/api/event";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,18 +8,12 @@ import { BranchList } from "./components/BranchList";
 import ChangesPanel from "./components/ChangesPanel";
 import CommitList from "./components/CommitList";
 import HomePage from "./components/HomePage";
-import {
-  IconFolder,
-  IconGitBranch,
-  IconHome,
-  IconPlus,
-  IconX,
-} from "./components/icons";
+import { IconFolder, IconGitBranch, IconHome } from "./components/icons";
+import TabBar from "./components/TabBar";
 import TopToolbar from "./components/TopToolbar";
 import "./index.css";
 import { useRepoStore } from "./store/repo";
 import { CommitListItem } from "./types/git";
-import { classNames } from "./utils/ui";
 
 type TabType = {
   id: string;
@@ -28,13 +22,6 @@ type TabType = {
 };
 
 type RepoTabType = TabType & { repoPath?: string };
-
-const branchIcon = (
-  <IconGitBranch
-    size={16}
-    style={{ marginRight: 6, verticalAlign: "middle" }}
-  />
-);
 
 const TABS_INITIAL: RepoTabType[] = [
   {
@@ -82,6 +69,12 @@ export default function App() {
     if (activeTab === id && tabs.length > 1) {
       setActiveTab(tabs[0].id);
     }
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    const tab = tabs.find((t) => t.id === value);
+    setCurrentRepo(tab?.repoPath || null);
   };
 
   useEffect(() => {
@@ -133,151 +126,105 @@ export default function App() {
   }, [tabs]);
 
   return (
-    <div className="h-screen w-screen bg-zinc-900 text-zinc-400 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-background-emphasis text-foreground flex flex-col overflow-hidden">
       <Tabs
         value={activeTab}
-        onChange={(value) => {
-          setActiveTab(value || "");
-          const tab = tabs.find((t) => t.id === value);
-          setCurrentRepo(tab?.repoPath || null);
-        }}
+        onChange={(value) => handleTabChange(value || "")}
         keepMounted={false}
         variant="none"
         className="flex flex-col h-full w-full">
-        <Tabs.List
-          className="bg-zinc-800 flex w-full sticky top-0 z-30 h-14"
-          style={{ borderBottom: "1px solid #27272a" }}>
-          {tabs.map((tab, idx) => (
-            <Tabs.Tab
-              key={tab.id}
-              value={tab.id}
-              classNames={{
-                tab: classNames(
-                  "px-5 py-2 font-medium border-b-0",
-                  activeTab === tab.id
-                    ? "!bg-zinc-700 !text-zinc-400"
-                    : "!bg-zinc-800 !text-zinc-400 hover:!bg-zinc-700",
-                  idx < tabs.length - 1 ? "border-r-1 border-r-zinc-900" : ""
-                ),
-                tabLabel: "flex items-center gap-1",
-              }}
-              style={{ borderRadius: 0 }}>
-              {/* Git branch icon on the left for all tabs except home */}
-              {tab.id !== "home" && branchIcon}
-              {/* Home icon for home tab */}
-              {tab.id === "home" && tab.icon}
-              {tab.label && (
-                <span style={{ marginLeft: tab.icon ? 0 : 0 }}>
-                  {tab.label}
-                </span>
-              )}
-              {/* Close icon on the right for all tabs except home */}
-              {tab.id !== "home" && (
-                <ActionIcon
-                  size={18}
-                  variant="subtle"
-                  component="span"
-                  color="gray"
-                  onClick={(e) => closeTab(tab.id, e)}
-                  style={{ marginLeft: 6 }}>
-                  <IconX size={12} />
-                </ActionIcon>
-              )}
-            </Tabs.Tab>
-          ))}
-          <div className="flex-1" />
-          <ActionIcon
-            onClick={addTab}
-            variant="subtle"
-            color="gray"
-            ml="xs"
-            size="lg">
-            <IconPlus size={18} />
-          </ActionIcon>
-        </Tabs.List>
-        <div className="sticky top-[42px] z-20">
-          <TopToolbar bg="!bg-zinc-700" />
-        </div>
-        <div className="flex-1 overflow-auto">
-          {tabs.map((tab) => (
-            <Tabs.Panel
-              key={tab.id}
-              value={tab.id}
-              className={`h-full w-full ${tab.id !== "home" ? "flex" : ""}`}>
-              {tab.id === "home" ? (
-                <HomePage onRepoOpened={handleRepoOpened} />
-              ) : (
-                <Split className="h-full w-full min-h-0 flex-1">
-                  {/* Sidebar izquierdo */}
-                  <Split.Pane
-                    initialWidth={240}
-                    minWidth={300}
-                    maxWidth={350}
-                    className="!h-full !min-h-0">
-                    <Box className="!h-full border-r border-zinc-900 text-zinc-200">
-                      <Accordion
-                        defaultValue="branches"
-                        variant="contained"
-                        chevronPosition="left"
-                        classNames={{
-                          root: "bg-zinc-800 text-zinc-200",
-                          item: "bg-zinc-800 text-zinc-200 p-2 border-b border-zinc-900",
-                          control: "bg-zinc-800 text-zinc-200",
-                          panel: "bg-zinc-800 text-zinc-200",
-                          icon: "mr-2",
-                        }}>
-                        <Accordion.Item value="branches">
-                          <Accordion.Control>
-                            <div className="flex flex-row items-center w-full justify-between">
-                              <span className="flex items-center gap-2">
-                                <span className="inline-flex items-center justify-center w-5 h-5">
-                                  <IconGitBranch size={18} />
+        <TabBar
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabClose={closeTab}
+          onAddTab={addTab}
+        />
+        {tabs.map((tab) => (
+          <Tabs.Panel
+            key={tab.id}
+            value={tab.id}
+            className="flex-1 overflow-y-auto">
+            {tab.id === "home" ? (
+              <HomePage onRepoOpened={handleRepoOpened} />
+            ) : (
+              <div className="flex h-full w-full flex-col">
+                <TopToolbar />
+                <div className="flex-1">
+                  <Split className="h-full w-full min-h-0 flex-1">
+                    {/* Sidebar izquierdo */}
+                    <Split.Pane
+                      initialWidth={240}
+                      minWidth={300}
+                      maxWidth={350}
+                      className="!h-full !min-h-0">
+                      <Box className="!h-full text-foreground flex flex-col">
+                        <Accordion
+                          defaultValue="branches"
+                          variant="contained"
+                          chevronPosition="left"
+                          classNames={{
+                            root: "bg-background text-foreground flex-1 flex flex-col justify-start",
+                            item: "bg-background text-foreground flex flex-col",
+                            control: "bg-background text-foreground p-2",
+                            panel:
+                              "bg-background text-foreground flex-1 min-h-0",
+                            icon: "mr-2",
+                          }}>
+                          <Accordion.Item value="branches">
+                            <Accordion.Control>
+                              <div className="flex flex-row items-center w-full justify-between">
+                                <span className="flex items-center gap-2">
+                                  <span className="inline-flex items-center justify-center w-5 h-5">
+                                    <IconGitBranch size={18} />
+                                  </span>
+                                  Ramas
                                 </span>
-                                Ramas
-                              </span>
-                            </div>
-                          </Accordion.Control>
-                          <Accordion.Panel>
-                            <BranchList />
-                          </Accordion.Panel>
-                        </Accordion.Item>
-                        <Accordion.Item value="folders">
-                          <Accordion.Control>
-                            <div className="flex flex-row items-center w-full justify-between">
-                              <span className="flex items-center gap-2">
-                                <span className="inline-flex items-center justify-center w-5 h-5">
-                                  <IconFolder size={18} />
+                              </div>
+                            </Accordion.Control>
+                            <Accordion.Panel>
+                              <BranchList />
+                            </Accordion.Panel>
+                          </Accordion.Item>
+                          <Accordion.Item value="folders">
+                            <Accordion.Control>
+                              <div className="flex flex-row items-center w-full justify-between">
+                                <span className="flex items-center gap-2">
+                                  <span className="inline-flex items-center justify-center w-5 h-5">
+                                    <IconFolder size={18} />
+                                  </span>
+                                  Carpetas
                                 </span>
-                                Carpetas
-                              </span>
-                            </div>
-                          </Accordion.Control>
-                          <Accordion.Panel>
-                            {/* Aquí va la lista de carpetas */}
-                          </Accordion.Panel>
-                        </Accordion.Item>
-                      </Accordion>
-                    </Box>
-                  </Split.Pane>
-                  <Split.Resizer />
-                  <Split.Pane className="!h-full !min-h-0">
-                    <Split
-                      orientation="vertical"
-                      className="h-full w-full">
-                      <Split.Pane>
-                        <CommitList onCommitSelected={setSelectedCommit} />
-                      </Split.Pane>
-                      <Split.Resizer />
-                      <Split.Pane>
-                        <ChangesPanel selectedCommit={selectedCommit} />
-                      </Split.Pane>
-                    </Split>
-                  </Split.Pane>
-                </Split>
-              )}
-            </Tabs.Panel>
-          ))}
-        </div>
+                              </div>
+                            </Accordion.Control>
+                            <Accordion.Panel>
+                              {/* Aquí va la lista de carpetas */}
+                            </Accordion.Panel>
+                          </Accordion.Item>
+                        </Accordion>
+                      </Box>
+                    </Split.Pane>
+                    <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+                    <Split.Pane
+                      grow
+                      className="!h-full !min-h-0">
+                      <Split
+                        orientation="vertical"
+                        className="h-full w-full">
+                        <Split.Pane initialWidth="60%">
+                          <CommitList onCommitSelected={setSelectedCommit} />
+                        </Split.Pane>
+                        <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+                        <Split.Pane grow>
+                          <ChangesPanel selectedCommit={selectedCommit} />
+                        </Split.Pane>
+                      </Split>
+                    </Split.Pane>
+                  </Split>
+                </div>
+              </div>
+            )}
+          </Tabs.Panel>
+        ))}
       </Tabs>
     </div>
   );

@@ -7,13 +7,13 @@ const Launchpad: React.FC = () => {
   return (
     <div className="flex h-full">
       {/* Main list */}
-      <div className="flex-1 flex flex-col border-r border-zinc-800 bg-zinc-900">
-        <div className="flex gap-2 px-4 pt-4 pb-2 border-b border-zinc-800">
+      <div className="flex-1 flex flex-col border-r border-gray-800 bg-gray-900">
+        <div className="flex gap-2 px-4 pt-4 pb-2 border-b border-gray-800">
           <button
             className={`px-3 py-1 rounded-t ${
               tab === "prs"
                 ? "font-bold border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400"
+                : "text-gray-400"
             }`}
             onClick={() => setTab("prs")}>
             {t("launchpad.pullRequests")}
@@ -22,7 +22,7 @@ const Launchpad: React.FC = () => {
             className={`px-3 py-1 rounded-t ${
               tab === "issues"
                 ? "font-bold border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400"
+                : "text-gray-400"
             }`}
             onClick={() => setTab("issues")}>
             {t("launchpad.issues")}
@@ -31,7 +31,7 @@ const Launchpad: React.FC = () => {
             className={`px-3 py-1 rounded-t ${
               tab === "workspaces"
                 ? "font-bold border-b-2 border-blue-500 text-blue-400"
-                : "text-zinc-400"
+                : "text-gray-400"
             }`}
             onClick={() => setTab("workspaces")}>
             {t("launchpad.workspaces")}
@@ -44,8 +44,8 @@ const Launchpad: React.FC = () => {
         </div>
       </div>
       {/* Details panel */}
-      <div className="w-96 bg-zinc-950 p-4 border-l border-zinc-800">
-        <div className="text-zinc-400">{t("launchpad.detailsPanel")}</div>
+      <div className="w-96 bg-gray-950 p-4 border-l border-gray-800">
+        <div className="text-gray-400">{t("launchpad.detailsPanel")}</div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ export { default as HomePage } from "./HomePage";
 export { default as Launchpad } from "./Launchpad";
 export { OpenRepoButton } from "./OpenRepoButton";
 export { default as Sidebar } from "./Sidebar";
+export { default as TabBar } from "./TabBar";
 export { default as TopToolbar } from "./TopToolbar";
 
 export { default as InputText } from "./form/InputText";

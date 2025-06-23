@@ -185,7 +185,7 @@ export default function CommitList({ onCommitSelected }: CommitListProps) {
   }, [repoPath, selectedBranch]);
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-full w-full flex flex-col p-4">
       {/* Barra superior - con comportamiento de scroll */}
       <div
         className={`flex items-center pb-4 transition-transform duration-300 ease-in-out ${

@@ -118,7 +118,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
 
   if (!selectedCommit) {
     return (
-      <div className="p-4 text-center text-zinc-500 h-full flex items-center justify-center">
+      <div className="p-4 text-center text-muted-foreground h-full flex items-center justify-center">
         Selecciona un commit para ver los cambios
       </div>
     );
@@ -127,7 +127,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
   return (
     <div
       ref={containerRef}
-      className="bg-zinc-800 h-full border-l border-zinc-900 flex flex-col text-sm">
+      className="bg-background h-full flex flex-col text-sm">
       <Split
         orientation="horizontal"
         className="h-full w-full border-none">
@@ -162,12 +162,12 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
                 <div className="flex justify-start space-x-2">
                   <button
                     onClick={handleUpdateMessage}
-                    className="bg-green-600 hover:bg-green-700 text-zinc-400 font-bold py-1 px-3 rounded text-sm">
+                    className="bg-green-600 hover:bg-green-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm">
                     Update Message
                   </button>
                   <button
                     onClick={handleCancelAmend}
-                    className="bg-red-600 hover:bg-red-700 text-zinc-400 font-bold py-1 px-3 rounded text-sm">
+                    className="bg-red-600 hover:bg-red-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm">
                     Cancel Amend
                   </button>
                 </div>
@@ -175,7 +175,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
             </div>
           </div>
         </Split.Pane>
-        <Split.Resizer />
+        <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
         <Split.Pane grow>
           <div className="p-4 h-full w-full overflow-auto">
             {loading && <p>Cargando cambios...</p>}
