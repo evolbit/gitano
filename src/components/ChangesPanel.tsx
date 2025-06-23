@@ -2,7 +2,8 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
-import { CommitDiff, CommitListItem } from "../types/git";
+import { CommitDiff, CommitListItem, FileChange } from "../types/git";
+import DiffModal from "./DiffModal";
 import FileListItem from "./FileListItem";
 import TextArea from "./form/TextArea";
 
@@ -20,6 +21,9 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
   const [message, setMessage] = useState("");
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
 
   useEffect(() => {
     if (selectedCommit) {
@@ -116,6 +120,12 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
     }
   };
 
+  // Handler para abrir el modal de diff
+  const handleOpenDiffModal = (file: FileChange) => {
+    setDiffModalFile(file);
+    setDiffModalOpen(true);
+  };
+
   if (!selectedCommit) {
     return (
       <div className="p-4 text-center text-muted-foreground h-full flex items-center justify-center">
@@ -188,10 +198,11 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
                 </h3>
                 <ul className="text-sm">
                   {diff.changes.map((file) => (
-                    <FileListItem
+                    <div
                       key={file.path}
-                      file={file}
-                    />
+                      onClick={() => handleOpenDiffModal(file)}>
+                      <FileListItem file={file} />
+                    </div>
                   ))}
                 </ul>
               </div>
@@ -199,6 +210,16 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({ selectedCommit }) => {
           </div>
         </Split.Pane>
       </Split>
+
+      {/* Modal de diff de archivos */}
+      {diffModalOpen && diffModalFile && diff && (
+        <DiffModal
+          open={diffModalOpen}
+          files={diff.changes}
+          initialFile={diffModalFile}
+          onClose={() => setDiffModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
