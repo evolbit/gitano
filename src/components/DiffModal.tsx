@@ -1,6 +1,8 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import { useRepoStore } from "../store/repo";
+import DiffViewer from "./DiffViewer";
 import { IconSearch, IconX } from "./icons";
 
 interface FileChange {
@@ -15,12 +17,28 @@ interface DiffModalProps {
   files: FileChange[];
   initialFile: FileChange;
   onClose: () => void;
+  repoPath?: string;
+  sha?: string;
 }
 
-const DiffModal = ({ open, files, initialFile, onClose }: DiffModalProps) => {
+const DiffModal = ({
+  open,
+  files,
+  initialFile,
+  onClose,
+  repoPath,
+  sha,
+}: DiffModalProps) => {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<FileChange>(initialFile);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // Si no recibimos repoPath como prop, lo obtenemos del store (tab activo)
+  const storeRepoPath = useRepoStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    return tab?.repoPath;
+  });
+  const effectiveRepoPath = repoPath || storeRepoPath;
 
   // Cerrar con ESC
   useEffect(() => {
@@ -112,15 +130,16 @@ const DiffModal = ({ open, files, initialFile, onClose }: DiffModalProps) => {
             grow
             className="h-full min-h-0 bg-background flex flex-col">
             <div className="flex-1 overflow-auto p-6">
-              {/* Aquí irá el diff real, por ahora solo placeholder */}
-              <div className="font-mono text-sm bg-background-emphasis rounded p-4 border border-border min-h-[300px]">
-                <div className="mb-2 text-lg font-bold text-blue-300">
-                  {selected.path}
-                </div>
-                <pre className="whitespace-pre-wrap text-foreground">
-                  [Aquí irá el diff del archivo]
-                </pre>
-              </div>
+              {/* Diff real del archivo seleccionado */}
+              {effectiveRepoPath ? (
+                <DiffViewer
+                  repoPath={effectiveRepoPath}
+                  filePath={selected.path}
+                  sha={sha}
+                />
+              ) : (
+                <div className="text-red-400">No se encontró el repoPath</div>
+              )}
             </div>
           </Split.Pane>
         </Split>

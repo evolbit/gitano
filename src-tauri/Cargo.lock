@@ -1353,6 +1353,7 @@ dependencies = [
  "git2",
  "once_cell",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

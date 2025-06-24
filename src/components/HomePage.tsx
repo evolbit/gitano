@@ -76,6 +76,7 @@ const RepoRow = ({
           className="text-foreground font-medium"
           truncate>
           {repoInfo.name}
+          dsd
         </Text>
         {repoInfo.loading ? (
           <Text className="text-muted-foreground text-xs">Cargando...</Text>

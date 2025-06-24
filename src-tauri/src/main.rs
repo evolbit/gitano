@@ -18,7 +18,10 @@ fn main() {
             git::get_commits_list_paginated,
             git::get_commit_diff,
             git::amend_commit_message,
-            git::get_current_branch
+            git::get_current_branch,
+            git::get_file_diff_hunks,
+            git::get_diff_context,
+            git::get_commit_file_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

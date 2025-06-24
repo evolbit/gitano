@@ -994,3 +994,205 @@ pub fn get_current_branch(path: String) -> Result<String, String> {
         Ok("Detached HEAD".to_string())
     }
 }
+
+#[derive(Serialize, Debug)]
+pub struct DiffHunk {
+    pub header: String,
+    pub old_start: usize,
+    pub old_lines: usize,
+    pub new_start: usize,
+    pub new_lines: usize,
+    pub lines: Vec<DiffLine>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub content: String,
+    pub old_lineno: Option<usize>,
+    pub new_lineno: Option<usize>,
+}
+
+#[derive(Serialize, Debug, Clone, Copy)]
+pub enum DiffLineKind {
+    Add,
+    Del,
+    Context,
+}
+
+fn parse_unified_diff(diff: &str) -> Vec<DiffHunk> {
+    use regex::Regex;
+    let hunk_re = Regex::new(r"^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@").unwrap();
+    let mut hunks = Vec::new();
+    let mut lines = diff.lines().peekable();
+
+    while let Some(line) = lines.next() {
+        if let Some(cap) = hunk_re.captures(line) {
+            let old_start = cap[1].parse::<usize>().unwrap();
+            let old_lines = cap.get(2).map_or(1, |m| m.as_str().parse().unwrap_or(1));
+            let new_start = cap[3].parse::<usize>().unwrap();
+            let new_lines = cap.get(4).map_or(1, |m| m.as_str().parse().unwrap_or(1));
+            let mut hunk_lines = Vec::new();
+            let mut old_lineno = old_start;
+            let mut new_lineno = new_start;
+            while let Some(&next_line) = lines.peek() {
+                if next_line.starts_with("@@") {
+                    break;
+                }
+                let (kind, content, old_num, new_num) = if next_line.starts_with('+') {
+                    (DiffLineKind::Add, &next_line[1..], None, Some(new_lineno))
+                } else if next_line.starts_with('-') {
+                    (DiffLineKind::Del, &next_line[1..], Some(old_lineno), None)
+                } else {
+                    (
+                        DiffLineKind::Context,
+                        if next_line.starts_with(' ') {
+                            &next_line[1..]
+                        } else {
+                            next_line
+                        },
+                        Some(old_lineno),
+                        Some(new_lineno),
+                    )
+                };
+                hunk_lines.push(DiffLine {
+                    kind,
+                    content: content.to_string(),
+                    old_lineno: old_num,
+                    new_lineno: new_num,
+                });
+                match kind {
+                    DiffLineKind::Add => new_lineno += 1,
+                    DiffLineKind::Del => old_lineno += 1,
+                    DiffLineKind::Context => {
+                        old_lineno += 1;
+                        new_lineno += 1;
+                    }
+                }
+                lines.next();
+            }
+            hunks.push(DiffHunk {
+                header: line.to_string(),
+                old_start,
+                old_lines,
+                new_start,
+                new_lines,
+                lines: hunk_lines,
+            });
+        }
+    }
+    hunks
+}
+
+#[tauri::command]
+pub fn get_file_diff_hunks(
+    path: String,
+    file_path: String,
+    context: usize,
+) -> Result<Vec<DiffHunk>, String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("diff")
+        .arg(format!("-U{}", context))
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diff = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_unified_diff(&diff))
+}
+
+#[derive(Deserialize)]
+pub enum ContextDirection {
+    Above,
+    Below,
+}
+
+#[tauri::command]
+pub fn get_diff_context(
+    path: String,
+    file_path: String,
+    hunk_index: usize,
+    direction: ContextDirection,
+    lines: usize,
+    context: usize,
+) -> Result<Vec<DiffLine>, String> {
+    // 1. Obtener los hunks actuales
+    let hunks = get_file_diff_hunks(path.clone(), file_path.clone(), context)?;
+    if hunk_index >= hunks.len() {
+        return Err("Hunk index out of range".to_string());
+    }
+    let hunk = &hunks[hunk_index];
+    // 2. Leer el archivo original
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+    let file = File::open(format!("{}/{}", path, file_path)).map_err(|e| e.to_string())?;
+    let reader = BufReader::new(file);
+    let all_lines: Vec<String> = reader.lines().filter_map(Result::ok).collect();
+    let mut result = Vec::new();
+    match direction {
+        ContextDirection::Above => {
+            let start = if hunk.old_start > lines {
+                hunk.old_start - lines - 1
+            } else {
+                0
+            };
+            let end = hunk.old_start - 1;
+            for i in start..end {
+                result.push(DiffLine {
+                    kind: DiffLineKind::Context,
+                    content: all_lines.get(i).cloned().unwrap_or_default(),
+                    old_lineno: Some(i + 1),
+                    new_lineno: Some(i + 1),
+                });
+            }
+        }
+        ContextDirection::Below => {
+            let start = hunk.old_start + hunk.old_lines - 1;
+            let end = std::cmp::min(start + lines, all_lines.len());
+            for i in start..end {
+                result.push(DiffLine {
+                    kind: DiffLineKind::Context,
+                    content: all_lines.get(i).cloned().unwrap_or_default(),
+                    old_lineno: Some(i + 1),
+                    new_lineno: Some(i + 1),
+                });
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn get_commit_file_diff(
+    path: String,
+    sha: String,
+    file_path: String,
+    context: usize,
+) -> Result<Vec<DiffHunk>, String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("show")
+        .arg(format!("{}:./{}", sha, file_path))
+        .output()
+        .map_err(|e| e.to_string())?;
+    let file_content = String::from_utf8_lossy(&output.stdout);
+    // Para obtener el diff, comparamos el archivo en el commit con el archivo en el padre
+    let diff_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("diff")
+        .arg(format!("-U{}", context))
+        .arg(format!("{}^", sha))
+        .arg(&sha)
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diff = String::from_utf8_lossy(&diff_output.stdout);
+    Ok(parse_unified_diff(&diff))
+}

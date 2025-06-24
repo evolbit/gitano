@@ -217,6 +217,7 @@ const ChangesPanel: React.FC = () => {
           files={diff.changes}
           initialFile={diffModalFile}
           onClose={() => setDiffModalOpen(false)}
+          sha={selectedCommit.sha}
         />
       )}
     </div>
