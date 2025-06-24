@@ -33,11 +33,7 @@ function StatusBadge({ status }: { status: string }) {
 
 const PAGE_SIZE = 50;
 
-type CommitListProps = {
-  onCommitSelected?: (commit: CommitListItem) => void;
-};
-
-export default function CommitList({ onCommitSelected }: CommitListProps) {
+export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
@@ -242,9 +238,6 @@ export default function CommitList({ onCommitSelected }: CommitListProps) {
           loading={loading}
           onRowClick={(row: CommitListItem) => {
             if (activeTabId) setTabCommit(activeTabId, row);
-            if (onCommitSelected) {
-              onCommitSelected(row);
-            }
           }}
         />
         {hasMore && !loading && (
