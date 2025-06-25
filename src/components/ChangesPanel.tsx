@@ -197,11 +197,11 @@ const ChangesPanel: React.FC = () => {
                 </h3>
                 <ul className="text-sm">
                   {diff.changes.map((file) => (
-                    <div
+                    <li
                       key={file.path}
                       onClick={() => handleOpenDiffModal(file)}>
                       <FileListItem file={file} />
-                    </div>
+                    </li>
                   ))}
                 </ul>
               </div>

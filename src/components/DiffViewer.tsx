@@ -177,13 +177,13 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = ({ line }) => {
     <div
       className={`flex items-center px-4 py-0.5 ${color} text-xs font-mono`}
       style={{ fontVariantNumeric: "tabular-nums" }}>
-      <span className="w-10 text-right pr-2 text-zinc-500 select-none">
+      <span className="w-10 text-right pr-2 text-zinc-500 select-none block">
         {line.old_lineno ?? ""}
       </span>
-      <span className="w-10 text-right pr-2 text-zinc-500 select-none">
+      <span className="w-10 text-right pr-2 text-zinc-500 select-none block">
         {line.new_lineno ?? ""}
       </span>
-      <span className="flex-1 whitespace-pre-wrap">{line.content}</span>
+      <span className="flex-1 min-w-0 whitespace-pre-wrap">{line.content}</span>
     </div>
   );
 };

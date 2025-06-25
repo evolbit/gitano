@@ -74,34 +74,38 @@ const FileListItem = ({ file }: FileListItemProps) => {
   };
 
   return (
-    <li
-      className="flex items-center p-1 hover:bg-zinc-800/50 rounded"
+    <div
+      className="flex items-center p-1 rounded min-w-0 flex-1"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}>
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        {getStatusIcon()}
+      {getStatusIcon()}
+      <span className="flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
         {(() => {
           const lastSlash = file.path.lastIndexOf("/");
+          if (lastSlash === -1) return file.path;
+          const dir = file.path.substring(0, lastSlash + 1);
+          const name = file.path.substring(lastSlash + 1);
           if (lastSlash === -1) {
             return <span className="truncate">{file.path}</span>;
           }
-          const dir = file.path.substring(0, lastSlash + 1);
-          const name = file.path.substring(lastSlash + 1);
+
           return (
-            <div
-              className="flex items-baseline min-w-0"
-              title={file.path}>
+            <>
               <span className="truncate text-zinc-400">{dir}</span>
-              <span className="flex-shrink-0 text-zinc-100">{name}</span>
-            </div>
+              <span className="text-zinc-100 flex-shrink-0">{name}</span>
+            </>
           );
         })()}
-      </div>
-      <div className="flex items-center gap-2 text-xs text-zinc-400 ml-4 min-w-[56px] justify-end">
-        <span className="text-green-500">+{file.insertions}</span>
-        <span className="text-red-500">-{file.deletions}</span>
-      </div>
-    </li>
+      </span>
+      <span className="flex items-end gap-2 justify-between w-14 ml-3 text-xs text-zinc-400">
+        <span className="text-green-500 w-1/2 text-right block">
+          +{file.insertions}
+        </span>
+        <span className="text-red-500 w-1/2 text-right block">
+          -{file.deletions}
+        </span>
+      </span>
+    </div>
   );
 };
 

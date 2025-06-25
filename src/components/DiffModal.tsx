@@ -3,7 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useRepoStore } from "../store/repo";
 import DiffViewer from "./DiffViewer";
-import { IconSearch, IconX } from "./icons";
+import FileListItem from "./FileListItem";
+import {
+  IconCopy,
+  IconExchange,
+  IconMinus,
+  IconPencil,
+  IconPlus,
+  IconPoint,
+  IconQuestionMark,
+  IconSearch,
+  IconX,
+} from "./icons";
 
 interface FileChange {
   path: string;
@@ -62,6 +73,61 @@ const DiffModal = ({
     f.path.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Lógica para icono de estado (igual que en FileListItem)
+  const getStatusIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "added":
+        return (
+          <IconPlus
+            size={16}
+            className="text-green-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      case "deleted":
+        return (
+          <IconMinus
+            size={16}
+            className="text-red-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      case "modified":
+        return (
+          <IconPoint
+            size={16}
+            className="text-yellow-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      case "renamed":
+        return (
+          <IconPencil
+            size={16}
+            className="text-blue-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      case "copied":
+        return (
+          <IconCopy
+            size={16}
+            className="text-purple-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      case "typeChanged":
+        return (
+          <IconExchange
+            size={16}
+            className="text-orange-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+      default:
+        return (
+          <IconQuestionMark
+            size={16}
+            className="text-gray-500 w-4 h-4 flex-shrink-0"
+          />
+        );
+    }
+  };
+
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
       {/* Overlay oscuro */}
@@ -103,25 +169,39 @@ const DiffModal = ({
             maxWidth={500}
             className="h-full min-h-0 bg-background-emphasis border-r border-border">
             <ul className="overflow-y-auto h-full divide-y divide-border">
-              {filteredFiles.map((file) => (
-                <li
-                  key={file.path}
-                  className={`px-4 py-2 cursor-pointer flex items-center gap-2 text-sm transition-colors select-none ${
-                    selected.path === file.path
-                      ? "bg-blue-600/20 text-blue-300 font-semibold"
-                      : "hover:bg-background"
-                  }`}
-                  onClick={() => setSelected(file)}
-                  tabIndex={0}>
-                  <span className="truncate flex-1">{file.path}</span>
-                  <span className="text-green-500 text-xs">
-                    +{file.insertions}
-                  </span>
-                  <span className="text-red-500 text-xs">
-                    -{file.deletions}
-                  </span>
-                </li>
-              ))}
+              {filteredFiles.map((file) => {
+                // Normaliza el status a los valores permitidos
+                const allowedStatuses = [
+                  "added",
+                  "deleted",
+                  "modified",
+                  "renamed",
+                  "copied",
+                  "typeChanged",
+                ];
+                const normalizedStatus = allowedStatuses.includes(file.status)
+                  ? (file.status as import("../types/git").FileChange["status"])
+                  : ("modified" as import("../types/git").FileChange["status"]);
+                const fileForList: import("../types/git").FileChange = {
+                  ...file,
+                  status: normalizedStatus,
+                };
+                return (
+                  <li
+                    key={file.path}
+                    className={`px-4 py-1 cursor-pointer transition-colors select-none text-sm ${
+                      selected.path === file.path
+                        ? "bg-blue-600/20 text-blue-300 font-semibold"
+                        : "hover:bg-background"
+                    }`}
+                    onClick={() => setSelected(file)}
+                    tabIndex={0}>
+                    <div className="flex items-center min-w-0 gap-2">
+                      <FileListItem file={fileForList} />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
