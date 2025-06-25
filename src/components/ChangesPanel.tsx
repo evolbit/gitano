@@ -198,6 +198,9 @@ const ChangesPanel: React.FC = () => {
                 <ul className="text-sm">
                   {diff.changes.map((file) => (
                     <li
+                      className={
+                        "-ml-2 py-1 cursor-pointer transition-colors select-none text-sm"
+                      }
                       key={file.path}
                       onClick={() => handleOpenDiffModal(file)}>
                       <FileListItem file={file} />

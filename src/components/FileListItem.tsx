@@ -79,7 +79,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}>
       {getStatusIcon()}
-      <span className="flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
+      <span className="ml-2 flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
         {(() => {
           const lastSlash = file.path.lastIndexOf("/");
           if (lastSlash === -1) return file.path;
