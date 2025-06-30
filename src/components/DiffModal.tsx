@@ -2,8 +2,8 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useRepoStore } from "../store/repo";
+import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
-import FileListItem from "./FileListItem";
 import {
   IconCopy,
   IconExchange,
@@ -12,7 +12,6 @@ import {
   IconPlus,
   IconPoint,
   IconQuestionMark,
-  IconSearch,
   IconX,
 } from "./icons";
 
@@ -187,6 +186,22 @@ const DiffModal = ({
     }
   };
 
+  // Normalizar archivos para DiffFileList
+  const allowedStatuses = [
+    "added",
+    "deleted",
+    "modified",
+    "renamed",
+    "copied",
+    "typeChanged",
+  ];
+  const normalizedFiles = files.map((file) => ({
+    ...file,
+    status: allowedStatuses.includes(file.status)
+      ? (file.status as import("../types/git").FileChange["status"])
+      : "modified",
+  }));
+
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
       {/* Overlay oscuro */}
@@ -216,64 +231,15 @@ const DiffModal = ({
             initialWidth={340}
             minWidth={220}
             maxWidth={500}>
-            <div className="flex flex-col h-full min-h-0 bg-background-emphasis border-r border-border flex-1">
-              {/* Caja de búsqueda dentro de la columna */}
-              <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
-                <div className="relative w-full h-12">
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    className="w-full bg-background border border-border rounded px-3 py-1.5 pl-9 text-foreground placeholder:text-muted-foreground focus:outline-none"
-                    placeholder="Buscar archivo..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  <IconSearch className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
-                </div>
-              </div>
-              <ul
-                ref={listRef}
-                className="overflow-y-auto h-full min-h-0 divide-y w-full divide-border">
-                {filteredFiles.map((file, idx) => {
-                  // Normaliza el status a los valores permitidos
-                  const allowedStatuses = [
-                    "added",
-                    "deleted",
-                    "modified",
-                    "renamed",
-                    "copied",
-                    "typeChanged",
-                  ];
-
-                  const normalizedStatus = allowedStatuses.includes(file.status)
-                    ? (file.status as import("../types/git").FileChange["status"])
-                    : ("modified" as import("../types/git").FileChange["status"]);
-
-                  const fileForList: import("../types/git").FileChange = {
-                    ...file,
-                    status: normalizedStatus,
-                  };
-                  return (
-                    <li
-                      key={file.path}
-                      data-file-index={idx}
-                      className={`px-4 py-1 cursor-pointer transition-colors select-none text-sm focus:outline-none ${
-                        selectedIndex === idx
-                          ? "bg-blue-600/20 text-blue-300 font-semibold"
-                          : "hover:bg-background"
-                      }`}
-                      onClick={() => {
-                        setSelected(file);
-                        setSelectedIndex(idx);
-                      }}>
-                      <div className="flex items-center min-w-0 gap-2">
-                        <FileListItem file={fileForList} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            <DiffFileList
+              files={normalizedFiles}
+              selectedIndex={selectedIndex}
+              onSelect={(file, idx) => {
+                setSelected(file);
+                setSelectedIndex(idx);
+              }}
+              autoFocusSearch={true}
+            />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
           {/* Panel derecho: diff */}
