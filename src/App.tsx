@@ -24,6 +24,7 @@ export default function App() {
   const addTab = useRepoStore((s) => s.addTab);
   const closeTab = useRepoStore((s) => s.closeTab);
   const setActiveTab = useRepoStore((s) => s.setActiveTab);
+  const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
 
   // Home tab definition
   const HOME_TAB = {
@@ -98,6 +99,9 @@ export default function App() {
 
   // Handler to open repo in a new tab
   const handleRepoOpened = (repoPath: string) => {
+    // Agregar el repositorio a la lista de recientes
+    addRecentRepo(repoPath);
+
     // Check if a tab for this repo already exists
     const existingTab = tabs.find((t) => t.repoPath === repoPath);
     if (existingTab) {
