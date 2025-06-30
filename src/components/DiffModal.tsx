@@ -71,6 +71,12 @@ const DiffModal = ({
     }
   }, [open, initialFile]);
 
+  useEffect(() => {
+    if (open && listRef.current) {
+      listRef.current.focus();
+    }
+  }, [open]);
+
   if (!open) return null;
 
   // Filtrado de archivos
@@ -232,6 +238,7 @@ const DiffModal = ({
             minWidth={220}
             maxWidth={500}>
             <DiffFileList
+              ref={listRef}
               files={normalizedFiles}
               selectedIndex={selectedIndex}
               onSelect={(file, idx) => {
