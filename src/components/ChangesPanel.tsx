@@ -203,6 +203,11 @@ const ChangesPanel: React.FC = () => {
                     // Solo selección, no acción
                   }}
                   onAction={(file) => handleOpenDiffModal(file)}
+                  rowBgColor="bg-background"
+                  rowTextColor="text-foreground"
+                  highlightSelected={false}
+                  rowDividerColor="divide-transparent"
+                  rowPadding="px-0 py-1"
                 />
               </div>
             )}

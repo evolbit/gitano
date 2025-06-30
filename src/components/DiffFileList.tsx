@@ -10,6 +10,12 @@ interface DiffFileListProps {
   selectedIndex: number;
   autoFocusSearch?: boolean;
   showSearch?: boolean;
+  rowBgColor?: string; // color de fondo de fila
+  rowHighlightColor?: string; // color de resaltado
+  rowTextColor?: string; // color de texto
+  highlightSelected?: boolean; // activar/desactivar resaltado
+  rowDividerColor?: string; // color de la línea de separación
+  rowPadding?: string; // padding de los li
 }
 
 const DiffFileList = ({
@@ -19,6 +25,12 @@ const DiffFileList = ({
   selectedIndex,
   autoFocusSearch,
   showSearch = true,
+  rowBgColor = "bg-background-emphasis",
+  rowHighlightColor = "bg-blue-600/20 text-blue-300 font-semibold",
+  rowTextColor = "text-foreground",
+  highlightSelected = true,
+  rowDividerColor = "divide-border",
+  rowPadding = "px-4 py-1",
 }: DiffFileListProps) => {
   const [search, setSearch] = useState("");
   const [internalSelectedIndex, setInternalSelectedIndex] =
@@ -91,7 +103,8 @@ const DiffFileList = ({
   }, [autoFocusSearch]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-background-emphasis border-r border-border flex-1">
+    <div
+      className={`flex flex-col h-full min-h-0 border-r border-border flex-1 ${rowBgColor}`}>
       {/* Caja de búsqueda dentro de la columna */}
       {showSearch && (
         <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
@@ -110,7 +123,7 @@ const DiffFileList = ({
       )}
       <ul
         ref={listRef}
-        className="overflow-y-auto h-full min-h-0 divide-y w-full divide-border flex-1">
+        className={`overflow-y-auto h-full min-h-0 divide-y w-full flex-1 ${rowDividerColor}`}>
         {filteredFiles.length === 0 ? (
           <li className="text-center text-muted-foreground py-4">
             No se encontraron archivos
@@ -133,15 +146,16 @@ const DiffFileList = ({
               ...file,
               status: normalizedStatus,
             };
+            // Determinar clases de fila
+            let rowClass = `${rowTextColor} ${rowBgColor}`;
+            if (highlightSelected && internalSelectedIndex === idx) {
+              rowClass = `${rowHighlightColor}`;
+            }
             return (
               <li
                 key={file.path}
                 data-file-index={idx}
-                className={`px-4 py-1 cursor-pointer transition-colors select-none text-sm focus:outline-none ${
-                  internalSelectedIndex === idx
-                    ? "bg-blue-600/20 text-blue-300 font-semibold"
-                    : "hover:bg-background"
-                }`}
+                className={`${rowPadding} cursor-pointer transition-colors select-none text-sm focus:outline-none ${rowClass}`}
                 onClick={() => {
                   setInternalSelectedIndex(idx);
                   if (onAction) {
