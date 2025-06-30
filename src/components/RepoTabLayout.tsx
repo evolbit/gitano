@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useRepoStore } from "../store/repo";
 import { FileChange } from "../types/git";
@@ -8,7 +8,7 @@ import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
 import DiffFileList from "./DiffFileList";
-import DiffModal from "./DiffModal";
+import DiffViewer from "./DiffViewer";
 import { IconFolder, IconGitBranch, IconStack2 } from "./icons";
 import TopToolbar from "./TopToolbar";
 
@@ -20,14 +20,27 @@ const RepoTabLayout: React.FC = () => {
   // Hook para obtener los archivos modificados del working directory
   const { changes, loading, error } = useWorkingDirectoryChanges(repoPath);
 
-  // Estado para el modal de diff
+  // Estado para el modal de diff (ya no se usará para Changes)
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
 
-  // Handler para abrir el modal de diff
-  const handleOpenDiffModal = (file: FileChange) => {
-    setDiffModalFile(file);
-    setDiffModalOpen(true);
+  // Estado para archivo seleccionado desde Changes
+  const [selectedWorkingFile, setSelectedWorkingFile] =
+    useState<FileChange | null>(null);
+
+  // Cierra el DiffViewer si cambia la rama activa
+  useEffect(() => {
+    setSelectedWorkingFile(null);
+  }, [tab?.selectedBranch]);
+
+  // Handler para abrir el diff de un archivo del working directory
+  const handleSelectWorkingFile = (file: FileChange) => {
+    setSelectedWorkingFile(file);
+  };
+
+  // Handler para volver al layout normal
+  const handleCloseDiffViewer = () => {
+    setSelectedWorkingFile(null);
   };
 
   if (!tab) return null;
@@ -88,12 +101,16 @@ const RepoTabLayout: React.FC = () => {
                     {!loading && !error && changes.length > 0 && (
                       <DiffFileList
                         files={changes}
-                        selectedIndex={0}
+                        selectedIndex={
+                          selectedWorkingFile
+                            ? changes.findIndex(
+                                (f) => f.path === selectedWorkingFile.path
+                              )
+                            : 0
+                        }
                         showSearch={true}
-                        onSelect={(file) => {
-                          // Solo selección, no acción
-                        }}
-                        onAction={(file) => handleOpenDiffModal(file)}
+                        onSelect={(file) => handleSelectWorkingFile(file)}
+                        onAction={(file) => handleSelectWorkingFile(file)}
                         rowBgColor="bg-background"
                         rowTextColor="text-foreground"
                         highlightSelected={true}
@@ -137,34 +154,46 @@ const RepoTabLayout: React.FC = () => {
             </Box>
           </Split.Pane>
           <Split.Resizer className="!bg-background-emphasis hover:!bg-foreground [--split-resizer-size:1px] m-0 border-r border-border rounded-none" />
+          {/* Panel derecho: cambia según selección */}
           <Split.Pane
             grow
             className="!h-full !min-h-0">
-            <Split
-              orientation="vertical"
-              className="h-full w-full">
-              <Split.Pane initialWidth="60%">
-                <CommitList />
-              </Split.Pane>
-              <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
-              <Split.Pane grow>
-                <ChangesPanel />
-              </Split.Pane>
-            </Split>
+            {selectedWorkingFile ? (
+              <div className="h-full w-full flex flex-col">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background-emphasis">
+                  <span className="font-bold text-lg">
+                    Diff: {selectedWorkingFile.path}
+                  </span>
+                  <button
+                    className="ml-4 p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
+                    onClick={handleCloseDiffViewer}
+                    aria-label="Cerrar diff">
+                    ×
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <DiffViewer
+                    repoPath={repoPath || ""}
+                    filePath={selectedWorkingFile.path}
+                  />
+                </div>
+              </div>
+            ) : (
+              <Split
+                orientation="vertical"
+                className="h-full w-full">
+                <Split.Pane initialWidth="60%">
+                  <CommitList />
+                </Split.Pane>
+                <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+                <Split.Pane grow>
+                  <ChangesPanel />
+                </Split.Pane>
+              </Split>
+            )}
           </Split.Pane>
         </Split>
       </div>
-
-      {/* Modal de diff de archivos */}
-      {diffModalOpen && diffModalFile && (
-        <DiffModal
-          open={diffModalOpen}
-          files={changes}
-          initialFile={diffModalFile}
-          onClose={() => setDiffModalOpen(false)}
-          repoPath={repoPath}
-        />
-      )}
     </div>
   );
 };
