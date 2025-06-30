@@ -81,21 +81,6 @@ pub fn run() {
 
             Ok(())
         })
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            greet,
-            git::open_local_repo,
-            git::get_branches,
-            git::get_commits,
-            git::get_commit_graph,
-            git::get_remote_branches,
-            git::get_formatted_commits,
-            git::get_commits_list_paginated,
-            git::get_commit_diff,
-            git::amend_commit_message,
-            git::get_current_branch
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

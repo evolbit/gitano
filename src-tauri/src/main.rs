@@ -22,6 +22,7 @@ fn main() {
             git::get_file_diff_hunks,
             git::get_diff_context,
             git::get_commit_file_diff,
+            git::get_working_directory_changes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

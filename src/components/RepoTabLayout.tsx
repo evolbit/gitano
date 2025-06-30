@@ -1,16 +1,34 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React from "react";
+import React, { useState } from "react";
+import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useRepoStore } from "../store/repo";
+import { FileChange } from "../types/git";
 import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
-import { IconFolder, IconGitBranch } from "./icons";
+import DiffFileList from "./DiffFileList";
+import DiffModal from "./DiffModal";
+import { IconFolder, IconGitBranch, IconStack2 } from "./icons";
 import TopToolbar from "./TopToolbar";
 
 const RepoTabLayout: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
+  const repoPath = tab?.repoPath;
+
+  // Hook para obtener los archivos modificados del working directory
+  const { changes, loading, error } = useWorkingDirectoryChanges(repoPath);
+
+  // Estado para el modal de diff
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
+
+  // Handler para abrir el modal de diff
+  const handleOpenDiffModal = (file: FileChange) => {
+    setDiffModalFile(file);
+    setDiffModalOpen(true);
+  };
 
   if (!tab) return null;
 
@@ -27,7 +45,7 @@ const RepoTabLayout: React.FC = () => {
             className="!h-full !min-h-0 flex flex-col">
             <Box className="flex-1 text-foreground flex flex-col min-h-0">
               <Accordion
-                defaultValue="branches"
+                defaultValue="changes"
                 variant="contained"
                 chevronPosition="left"
                 classNames={{
@@ -40,6 +58,51 @@ const RepoTabLayout: React.FC = () => {
                   content: "flex-1 min-h-0",
                   icon: "mr-2",
                 }}>
+                <Accordion.Item value="changes">
+                  <Accordion.Control>
+                    <div className="flex flex-row items-center w-full justify-between">
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center w-5 h-5">
+                          <IconStack2 size={18} />
+                        </span>
+                        Changes ({changes.length})
+                      </span>
+                    </div>
+                  </Accordion.Control>
+                  <Accordion.Panel className="min-w-0">
+                    {loading && (
+                      <div className="p-4 text-center text-muted-foreground">
+                        Cargando cambios...
+                      </div>
+                    )}
+                    {error && (
+                      <div className="p-4 text-center text-red-500">
+                        Error: {error}
+                      </div>
+                    )}
+                    {!loading && !error && changes.length === 0 && (
+                      <div className="p-4 text-center text-muted-foreground">
+                        No hay cambios en el working directory
+                      </div>
+                    )}
+                    {!loading && !error && changes.length > 0 && (
+                      <DiffFileList
+                        files={changes}
+                        selectedIndex={0}
+                        showSearch={true}
+                        onSelect={(file) => {
+                          // Solo selección, no acción
+                        }}
+                        onAction={(file) => handleOpenDiffModal(file)}
+                        rowBgColor="bg-background"
+                        rowTextColor="text-foreground"
+                        highlightSelected={true}
+                        rowDividerColor="divide-border"
+                        rowPadding="px-2 py-1"
+                      />
+                    )}
+                  </Accordion.Panel>
+                </Accordion.Item>
                 <Accordion.Item value="branches">
                   <Accordion.Control>
                     <div className="flex flex-row items-center w-full justify-between">
@@ -91,6 +154,17 @@ const RepoTabLayout: React.FC = () => {
           </Split.Pane>
         </Split>
       </div>
+
+      {/* Modal de diff de archivos */}
+      {diffModalOpen && diffModalFile && (
+        <DiffModal
+          open={diffModalOpen}
+          files={changes}
+          initialFile={diffModalFile}
+          onClose={() => setDiffModalOpen(false)}
+          repoPath={repoPath}
+        />
+      )}
     </div>
   );
 };

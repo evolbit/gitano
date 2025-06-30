@@ -1,3 +1,4 @@
+use git2::StatusOptions;
 use git2::{BranchType, Oid, Repository};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -1195,4 +1196,60 @@ pub fn get_commit_file_diff(
         .map_err(|e| e.to_string())?;
     let diff = String::from_utf8_lossy(&diff_output.stdout);
     Ok(parse_unified_diff(&diff))
+}
+
+#[tauri::command]
+pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, String> {
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let mut changes = Vec::new();
+
+    // Obtener el estado del working directory
+    let mut opts = StatusOptions::new();
+    opts.include_ignored(false)
+        .include_untracked(true)
+        .recurse_untracked_dirs(true);
+    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
+
+    for entry in statuses.iter() {
+        let status = entry.status();
+        let path = entry.path().unwrap_or("").to_string();
+
+        if path.is_empty() {
+            continue;
+        }
+
+        // Determinar el tipo de cambio basado en el status
+        let change_type = if status.is_wt_new() {
+            ChangeType::Added
+        } else if status.is_wt_deleted() {
+            ChangeType::Deleted
+        } else if status.is_wt_modified() {
+            ChangeType::Modified
+        } else if status.is_wt_renamed() {
+            ChangeType::Renamed
+        } else if status.is_wt_typechange() {
+            ChangeType::TypeChanged
+        } else if status.is_index_new() {
+            ChangeType::Added
+        } else if status.is_index_deleted() {
+            ChangeType::Deleted
+        } else if status.is_index_modified() {
+            ChangeType::Modified
+        } else if status.is_index_renamed() {
+            ChangeType::Renamed
+        } else if status.is_index_typechange() {
+            ChangeType::TypeChanged
+        } else {
+            ChangeType::Modified // Default
+        };
+
+        changes.push(FileChange {
+            path,
+            status: change_type,
+            insertions: 0, // No tenemos esta información para working directory
+            deletions: 0,  // No tenemos esta información para working directory
+        });
+    }
+
+    Ok(changes)
 }
