@@ -1,19 +1,11 @@
 import { Split } from "@gfazioli/mantine-split-pane";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import { useShallow } from "zustand/react/shallow";
 import { useRepoStore } from "../store/repo";
 import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
-import {
-  IconCopy,
-  IconExchange,
-  IconMinus,
-  IconPencil,
-  IconPlus,
-  IconPoint,
-  IconQuestionMark,
-  IconX,
-} from "./icons";
+import { IconX } from "./icons";
 
 interface FileChange {
   path: string;
@@ -40,18 +32,42 @@ const DiffModal = ({
   sha,
 }: DiffModalProps) => {
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<FileChange>(initialFile);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Calcular el índice inicial basado en initialFile
+  const getInitialIndex = () => {
+    if (!initialFile || !files.length) return 0;
+    const idx = files.findIndex(
+      (f) => f.path.toLowerCase() === initialFile.path.toLowerCase()
+    );
+    return idx !== -1 ? idx : 0;
+  };
+
+  const [selectedIndex, setSelectedIndex] = useState(getInitialIndex);
   const listRef = useRef<HTMLUListElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Si no recibimos repoPath como prop, lo obtenemos del store (tab activo)
-  const storeRepoPath = useRepoStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
-    return tab?.repoPath;
-  });
+  const storeRepoPath = useRepoStore(
+    useShallow((s) => {
+      const tab = s.tabs.find((t) => t.id === s.activeTabId);
+      return tab?.repoPath;
+    })
+  );
   const effectiveRepoPath = repoPath || storeRepoPath;
+
+  // Filtrado de archivos
+  const filteredFiles = useMemo(
+    () =>
+      files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase())),
+    [files, search]
+  );
+
+  // Al abrir el modal, limpiar búsqueda
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+    }
+  }, [open]);
 
   // Cerrar con ESC
   useEffect(() => {
@@ -63,49 +79,17 @@ const DiffModal = ({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  // Selección inicial
-  useEffect(() => {
-    if (open && initialFile) {
-      setSelected(initialFile);
-      setSelectedIndex(0);
-    }
-  }, [open, initialFile]);
-
+  // Foco en la lista al abrir el modal
   useEffect(() => {
     if (open && listRef.current) {
       listRef.current.focus();
     }
   }, [open]);
 
-  if (!open) return null;
-
-  // Filtrado de archivos
-  const filteredFiles = files.filter((f) =>
-    f.path.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Mantener el índice seleccionado dentro del rango
-  useEffect(() => {
-    if (selectedIndex >= filteredFiles.length) {
-      setSelectedIndex(filteredFiles.length - 1);
-    }
-    if (selectedIndex < 0 && filteredFiles.length > 0) {
-      setSelectedIndex(0);
-    }
-  }, [filteredFiles.length, selectedIndex]);
-
-  // Actualizar el archivo seleccionado cuando cambia el índice
-  useEffect(() => {
-    if (filteredFiles[selectedIndex]) {
-      setSelected(filteredFiles[selectedIndex]);
-    }
-  }, [selectedIndex, filteredFiles]);
-
   // Navegación por teclado en la lista de archivos
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (document.activeElement === searchInputRef.current) return;
       if (filteredFiles.length === 0) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -115,16 +99,11 @@ const DiffModal = ({
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (filteredFiles[selectedIndex]) {
-          setSelected(filteredFiles[selectedIndex]);
-        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, filteredFiles, selectedIndex]);
+  }, [open]);
 
   // Scroll automático para mantener visible la fila seleccionada
   useEffect(() => {
@@ -135,62 +114,7 @@ const DiffModal = ({
     if (el) {
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [selectedIndex, filteredFiles]);
-
-  // Lógica para icono de estado (igual que en FileListItem)
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "added":
-        return (
-          <IconPlus
-            size={16}
-            className="text-green-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      case "deleted":
-        return (
-          <IconMinus
-            size={16}
-            className="text-red-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      case "modified":
-        return (
-          <IconPoint
-            size={16}
-            className="text-yellow-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      case "renamed":
-        return (
-          <IconPencil
-            size={16}
-            className="text-blue-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      case "copied":
-        return (
-          <IconCopy
-            size={16}
-            className="text-purple-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      case "typeChanged":
-        return (
-          <IconExchange
-            size={16}
-            className="text-orange-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-      default:
-        return (
-          <IconQuestionMark
-            size={16}
-            className="text-gray-500 w-4 h-4 flex-shrink-0"
-          />
-        );
-    }
-  };
+  }, [selectedIndex]);
 
   // Normalizar archivos para DiffFileList
   const allowedStatuses = [
@@ -201,12 +125,18 @@ const DiffModal = ({
     "copied",
     "typeChanged",
   ];
-  const normalizedFiles = files.map((file) => ({
-    ...file,
-    status: allowedStatuses.includes(file.status)
-      ? (file.status as import("../types/git").FileChange["status"])
-      : "modified",
-  }));
+  const normalizedFiles = useMemo(
+    () =>
+      files.map((file) => ({
+        ...file,
+        status: allowedStatuses.includes(file.status)
+          ? (file.status as import("../types/git").FileChange["status"])
+          : "modified",
+      })),
+    [files]
+  );
+
+  const selected = filteredFiles[selectedIndex];
 
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
@@ -241,14 +171,8 @@ const DiffModal = ({
               ref={listRef}
               files={normalizedFiles}
               selectedIndex={selectedIndex}
-              onSelect={(file, idx) => {
-                setSelected(file);
-                setSelectedIndex(idx);
-              }}
-              onAction={(file, idx) => {
-                setSelected(file);
-                setSelectedIndex(idx);
-              }}
+              onSelect={(_, idx) => setSelectedIndex(idx)}
+              onAction={(_, idx) => setSelectedIndex(idx)}
               autoFocusSearch={true}
             />
           </Split.Pane>
@@ -259,14 +183,16 @@ const DiffModal = ({
             className="h-full min-h-0 bg-background flex flex-col">
             <div className="flex-1 overflow-auto p-6">
               {/* Diff real del archivo seleccionado */}
-              {effectiveRepoPath ? (
+              {effectiveRepoPath && selected ? (
                 <DiffViewer
                   repoPath={effectiveRepoPath}
                   filePath={selected.path}
                   sha={sha}
                 />
               ) : (
-                <div className="text-red-400">No se encontró el repoPath</div>
+                <div className="text-red-400">
+                  No se encontró el repoPath o archivo
+                </div>
               )}
             </div>
           </Split.Pane>

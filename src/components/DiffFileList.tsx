@@ -61,40 +61,10 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       }
     }, [filteredFiles.length, internalSelectedIndex]);
 
-    // Actualizar el archivo seleccionado cuando cambia el índice
+    // Sincronizar el índice seleccionado interno con el prop
     useEffect(() => {
-      if (filteredFiles[internalSelectedIndex]) {
-        onSelect(filteredFiles[internalSelectedIndex], internalSelectedIndex);
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [internalSelectedIndex, filteredFiles]);
-
-    // Navegación por teclado en la lista de archivos
-    useEffect(() => {
-      const handler = (e: KeyboardEvent) => {
-        if (document.activeElement === searchInputRef.current) return;
-        if (filteredFiles.length === 0) return;
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setInternalSelectedIndex((prev) =>
-            Math.min(prev + 1, filteredFiles.length - 1)
-          );
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setInternalSelectedIndex((prev) => Math.max(prev - 1, 0));
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          if (filteredFiles[internalSelectedIndex] && onAction) {
-            onAction(
-              filteredFiles[internalSelectedIndex],
-              internalSelectedIndex
-            );
-          }
-        }
-      };
-      window.addEventListener("keydown", handler);
-      return () => window.removeEventListener("keydown", handler);
-    }, [filteredFiles, internalSelectedIndex, onAction]);
+      setInternalSelectedIndex(selectedIndex);
+    }, [selectedIndex]);
 
     // Scroll automático para mantener visible la fila seleccionada
     useEffect(() => {
@@ -105,7 +75,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       if (el) {
         el.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }
-    }, [internalSelectedIndex, filteredFiles, ref]);
+    }, [internalSelectedIndex, ref]);
 
     useEffect(() => {
       if (autoFocusSearch && searchInputRef.current) {
@@ -169,7 +139,6 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                   data-file-index={idx}
                   className={`${rowPadding} cursor-pointer transition-colors select-none text-sm focus:outline-none ${rowClass}`}
                   onClick={() => {
-                    setInternalSelectedIndex(idx);
                     if (onAction) {
                       onAction(file, idx);
                     }

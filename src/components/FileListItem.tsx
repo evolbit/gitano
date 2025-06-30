@@ -17,8 +17,6 @@ interface FileListItemProps {
 const FileListItem = ({ file }: FileListItemProps) => {
   const [isHovered, setIsHovered] = useState(false);
 
-  console.log("File status:", file.status);
-
   const getStatusIcon = () => {
     switch (file.status.toLowerCase()) {
       case "added":
