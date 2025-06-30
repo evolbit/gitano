@@ -66,6 +66,44 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       setInternalSelectedIndex(selectedIndex);
     }, [selectedIndex]);
 
+    // Navegación por teclado en la lista de archivos
+    useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+        if (document.activeElement === searchInputRef.current) return;
+        if (filteredFiles.length === 0) return;
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const newIndex = Math.min(
+            internalSelectedIndex + 1,
+            filteredFiles.length - 1
+          );
+          setInternalSelectedIndex(newIndex);
+          // Notificar al padre solo si el índice cambió
+          if (newIndex !== internalSelectedIndex) {
+            onSelect(filteredFiles[newIndex], newIndex);
+          }
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const newIndex = Math.max(internalSelectedIndex - 1, 0);
+          setInternalSelectedIndex(newIndex);
+          // Notificar al padre solo si el índice cambió
+          if (newIndex !== internalSelectedIndex) {
+            onSelect(filteredFiles[newIndex], newIndex);
+          }
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (filteredFiles[internalSelectedIndex] && onAction) {
+            onAction(
+              filteredFiles[internalSelectedIndex],
+              internalSelectedIndex
+            );
+          }
+        }
+      };
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    }, [filteredFiles, internalSelectedIndex, onSelect, onAction]);
+
     // Scroll automático para mantener visible la fila seleccionada
     useEffect(() => {
       if (!isRefObject(ref) || !ref.current) return;
@@ -139,6 +177,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                   data-file-index={idx}
                   className={`${rowPadding} cursor-pointer transition-colors select-none text-sm focus:outline-none ${rowClass}`}
                   onClick={() => {
+                    setInternalSelectedIndex(idx);
                     if (onAction) {
                       onAction(file, idx);
                     }

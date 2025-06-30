@@ -86,25 +86,6 @@ const DiffModal = ({
     }
   }, [open]);
 
-  // Navegación por teclado en la lista de archivos
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (filteredFiles.length === 0) return;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedIndex((prev) =>
-          Math.min(prev + 1, filteredFiles.length - 1)
-        );
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.max(prev - 1, 0));
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open]);
-
   // Scroll automático para mantener visible la fila seleccionada
   useEffect(() => {
     if (!listRef.current) return;
@@ -200,6 +181,8 @@ const DiffModal = ({
       </div>
     </div>
   );
+
+  console.log("[DiffModal] selectedIndex:", selectedIndex);
 
   return ReactDOM.createPortal(modalContent, document.body);
 };
