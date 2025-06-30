@@ -1,6 +1,6 @@
 import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitListItem } from "../types/git";
 import InputText from "./form/InputText";
@@ -50,6 +50,20 @@ export default function CommitList() {
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
     null
   );
+
+  // Estado para navegación por teclado
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number>(-1);
+  const [isTableFocused, setIsTableFocused] = useState(false);
+  const [keyboardNavigation, setKeyboardNavigation] = useState(false);
+
+  // Callback para manejar el ref del contenedor
+  const setContainerRef = useCallback((el: HTMLDivElement | null) => {
+    setScrollContainer(el);
+  }, []);
+
+  // Debounce para el infinite scroll
+  const loadMoreTimeoutRef = useRef<number | null>(null);
+  const loadCommitsRef = useRef<() => Promise<void>>();
 
   // Definir columnas con render personalizado para CI y commit_history
   const columns: TableColumn<any>[] = [
@@ -158,9 +172,21 @@ export default function CommitList() {
       });
       console.log("Backend result:", result);
       const newCommits = result.commits || [];
+
+      // Preservar la posición de scroll antes de actualizar los datos
+      const currentScrollTop = scrollContainer?.scrollTop || 0;
+
       setCommits((prev) => (reset ? newCommits : [...prev, ...newCommits]));
       setHasMore(result.has_more);
       setOffset((prev) => (reset ? PAGE_SIZE : prev + PAGE_SIZE));
+
+      // Restaurar la posición de scroll después de actualizar los datos
+      if (!reset && scrollContainer) {
+        setTimeout(() => {
+          scrollContainer.scrollTop = currentScrollTop;
+        }, 0);
+      }
+
       console.log("Updated state", {
         newCommitsLength: newCommits.length,
         hasMore: result.has_more,
@@ -174,14 +200,145 @@ export default function CommitList() {
     }
   };
 
+  // Actualizar la referencia a loadCommits
+  useEffect(() => {
+    loadCommitsRef.current = loadCommits;
+  }, [loadCommits]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (
+      e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
+      e.currentTarget.clientHeight + 200
+    ) {
+      // Limpiar timeout anterior si existe
+      if (loadMoreTimeoutRef.current) {
+        clearTimeout(loadMoreTimeoutRef.current);
+      }
+
+      // Usar un debounce para evitar múltiples llamadas
+      loadMoreTimeoutRef.current = setTimeout(() => {
+        if (loadCommitsRef.current) {
+          loadCommitsRef.current();
+        }
+      }, 100);
+    }
+  }, []);
+
+  // Limpiar timeout al desmontar
+  useEffect(() => {
+    return () => {
+      if (loadMoreTimeoutRef.current) {
+        clearTimeout(loadMoreTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Reset when repoPath changes
   useEffect(() => {
     setCommits([]);
     setOffset(0);
     setHasMore(true);
+    setSelectedRowIndex(-1); // Reset selected row when repo changes
     loadCommits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoPath, selectedBranch]);
+
+  // Navegación por teclado
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!commits.length || !isTableFocused) return;
+
+      switch (event.key) {
+        case "ArrowDown":
+          event.preventDefault();
+          setKeyboardNavigation(true);
+          setSelectedRowIndex((prev) => {
+            const maxIndex = commits.length - 1;
+            const newIndex = Math.min(prev + 1, maxIndex);
+            return newIndex;
+          });
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          setKeyboardNavigation(true);
+          setSelectedRowIndex((prev) => {
+            const newIndex = Math.max(prev - 1, 0);
+            return newIndex;
+          });
+          break;
+        case "Home":
+          event.preventDefault();
+          setKeyboardNavigation(true);
+          setSelectedRowIndex(0);
+          break;
+        case "End":
+          event.preventDefault();
+          setKeyboardNavigation(true);
+          const lastIndex = commits.length - 1;
+          setSelectedRowIndex(lastIndex);
+          break;
+        case "Enter":
+          event.preventDefault();
+          if (selectedRowIndex >= 0 && selectedRowIndex < commits.length) {
+            const selectedCommit = commits[selectedRowIndex];
+            if (activeTabId) {
+              setTabCommit(activeTabId, selectedCommit);
+            }
+          }
+          break;
+      }
+    };
+
+    // Agregar event listener directamente al documento
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [commits, selectedRowIndex, activeTabId, setTabCommit, isTableFocused]);
+
+  // Manejar focus en el contenedor
+  useEffect(() => {
+    const handleFocus = () => {
+      setIsTableFocused(true);
+    };
+
+    const handleBlur = () => {
+      setIsTableFocused(false);
+    };
+
+    if (scrollContainer) {
+      scrollContainer.addEventListener("focus", handleFocus);
+      scrollContainer.addEventListener("blur", handleBlur);
+      scrollContainer.tabIndex = 0;
+    }
+
+    return () => {
+      if (scrollContainer) {
+        scrollContainer.removeEventListener("focus", handleFocus);
+        scrollContainer.removeEventListener("blur", handleBlur);
+      }
+    };
+  }, [scrollContainer]);
+
+  // Función para manejar el clic en una fila
+  const handleRowClick = (row: CommitListItem, index: number) => {
+    setSelectedRowIndex(index);
+    if (activeTabId) {
+      setTabCommit(activeTabId, row);
+    }
+  };
+
+  // Actualizar el commit seleccionado en el store cada vez que cambia la fila seleccionada
+  useEffect(() => {
+    if (
+      selectedRowIndex >= 0 &&
+      selectedRowIndex < commits.length &&
+      activeTabId
+    ) {
+      setTabCommit(activeTabId, commits[selectedRowIndex]);
+    }
+  }, [selectedRowIndex, commits, activeTabId, setTabCommit]);
 
   return (
     <div className="h-full w-full flex flex-col p-4">
@@ -222,23 +379,20 @@ export default function CommitList() {
       </div>
       {/* Tabla con infinite scroll integrado */}
       <div
-        ref={setScrollContainer}
-        className="flex-1 overflow-y-auto"
-        onScroll={(e) => {
-          if (
-            e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
-            e.currentTarget.clientHeight + 200
-          ) {
-            loadCommits();
-          }
-        }}>
+        ref={setContainerRef}
+        className="flex-1 overflow-y-auto focus:outline-none"
+        onScroll={handleScroll}>
         <TableVirtualResizable
           columns={columns}
           data={commits}
           loading={loading}
-          onRowClick={(row: CommitListItem) => {
-            if (activeTabId) setTabCommit(activeTabId, row);
-          }}
+          onRowClick={handleRowClick}
+          selectedRowIndex={selectedRowIndex}
+          enableInfiniteScroll={true}
+          hasMore={hasMore}
+          onLoadMore={loadCommits}
+          keyboardNavigation={keyboardNavigation}
+          setKeyboardNavigation={setKeyboardNavigation}
         />
         {hasMore && !loading && (
           <div className="text-center p-4">Cargando más commits...</div>

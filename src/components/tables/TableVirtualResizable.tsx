@@ -19,7 +19,10 @@ export interface TableVirtualResizableProps<T> {
   loading?: boolean;
   onLoadMore?: () => void;
   loadMoreThreshold?: number;
-  onRowClick?: (row: T) => void;
+  onRowClick?: (row: T, index: number) => void;
+  selectedRowIndex?: number;
+  keyboardNavigation?: boolean;
+  setKeyboardNavigation?: (v: boolean) => void;
 }
 
 export default function TableVirtualResizable<
@@ -35,6 +38,9 @@ export default function TableVirtualResizable<
   onLoadMore,
   loadMoreThreshold = 200,
   onRowClick,
+  selectedRowIndex = -1,
+  keyboardNavigation = false,
+  setKeyboardNavigation,
 }: TableVirtualResizableProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>(
@@ -52,6 +58,83 @@ export default function TableVirtualResizable<
     estimateSize: () => rowHeight,
     overscan: 5,
   });
+
+  // Preservar la posición de scroll cuando se cargan más datos
+  const lastScrollTop = useRef(0);
+  const isInitialLoad = useRef(true);
+  const isAddingData = useRef(false);
+
+  useEffect(() => {
+    if (parentRef.current && !isInitialLoad.current && isAddingData.current) {
+      // Restaurar la posición de scroll después de cargar más datos
+      const timeoutId = setTimeout(() => {
+        if (parentRef.current) {
+          parentRef.current.scrollTop = lastScrollTop.current;
+        }
+        isAddingData.current = false;
+      }, 10);
+
+      return () => clearTimeout(timeoutId);
+    }
+    isInitialLoad.current = false;
+  }, [data.length]);
+
+  // Detectar cuando se están agregando datos (no reseteando)
+  useEffect(() => {
+    if (!isInitialLoad.current && data.length > 0) {
+      isAddingData.current = true;
+    }
+  }, [data.length]);
+
+  // Guardar la posición de scroll antes de cargar más datos
+  useEffect(() => {
+    const handleScroll = () => {
+      if (parentRef.current) {
+        lastScrollTop.current = parentRef.current.scrollTop;
+      }
+    };
+
+    const scrollElement = parentRef.current;
+    if (scrollElement) {
+      scrollElement.addEventListener("scroll", handleScroll);
+    }
+
+    return () => {
+      if (scrollElement) {
+        scrollElement.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, []);
+
+  // Scroll automático cuando cambia selectedRowIndex
+  useEffect(() => {
+    if (
+      keyboardNavigation &&
+      selectedRowIndex >= 0 &&
+      selectedRowIndex < data.length
+    ) {
+      const visibleRows = Math.floor(
+        (parentRef.current?.clientHeight || 1) / rowHeight
+      );
+      const isLast = selectedRowIndex === data.length - 1;
+      const isNearEnd = selectedRowIndex >= data.length - visibleRows;
+      const timeoutId = setTimeout(() => {
+        rowVirtualizer.scrollToIndex(selectedRowIndex, {
+          align: isLast ? "start" : isNearEnd ? "end" : "auto",
+          behavior: "smooth",
+        });
+        if (setKeyboardNavigation) setKeyboardNavigation(false);
+      }, 50);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [
+    selectedRowIndex,
+    data.length,
+    rowVirtualizer,
+    rowHeight,
+    keyboardNavigation,
+    setKeyboardNavigation,
+  ]);
 
   // Infinite scroll handler - setup scroll listener
   useEffect(() => {
@@ -224,14 +307,18 @@ export default function TableVirtualResizable<
           }}>
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const row = data[virtualRow.index];
+            const isSelected = selectedRowIndex === virtualRow.index;
             return (
               <div
                 key={row.id || virtualRow.index}
-                className={
-                  "absolute top-0 left-0 w-full h-12 flex items-center text-foreground text-sm border-b border-border cursor-pointer transition-colors duration-150 bg-background hover:bg-background-emphasis"
-                }
+                data-row-index={virtualRow.index}
+                className={`absolute top-0 left-0 w-full h-12 flex items-center text-foreground text-sm border-b border-border cursor-pointer transition-colors duration-150 ${
+                  isSelected
+                    ? "bg-blue-600 text-white"
+                    : "bg-background hover:bg-background-emphasis"
+                }`}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
-                onClick={() => onRowClick && onRowClick(row)}>
+                onClick={() => onRowClick && onRowClick(row, virtualRow.index)}>
                 {columns.map((col) => (
                   <div
                     key={col.key}
@@ -243,6 +330,19 @@ export default function TableVirtualResizable<
               </div>
             );
           })}
+          {/* Relleno visual si hay espacio vacío */}
+          {parentRef.current &&
+            rowVirtualizer.getTotalSize() < parentRef.current.clientHeight && (
+              <div
+                style={{
+                  height:
+                    parentRef.current.clientHeight -
+                    rowVirtualizer.getTotalSize(),
+                  width: "100%",
+                  background: "transparent",
+                }}
+              />
+            )}
         </div>
         {/* Loading indicator for infinite scroll */}
         {enableInfiniteScroll && loading && (
