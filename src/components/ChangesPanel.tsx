@@ -3,8 +3,8 @@ import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitDiff, FileChange } from "../types/git";
+import DiffFileList from "./DiffFileList";
 import DiffModal from "./DiffModal";
-import FileListItem from "./FileListItem";
 import TextArea from "./form/TextArea";
 
 const ChangesPanel: React.FC = () => {
@@ -195,18 +195,15 @@ const ChangesPanel: React.FC = () => {
                 <h3 className="font-bold mb-2">
                   Archivos cambiados ({diff.changes.length})
                 </h3>
-                <ul className="text-sm">
-                  {diff.changes.map((file) => (
-                    <li
-                      className={
-                        "-ml-2 py-1 cursor-pointer transition-colors select-none text-sm"
-                      }
-                      key={file.path}
-                      onClick={() => handleOpenDiffModal(file)}>
-                      <FileListItem file={file} />
-                    </li>
-                  ))}
-                </ul>
+                <DiffFileList
+                  files={diff.changes}
+                  selectedIndex={0}
+                  showSearch={false}
+                  onSelect={(file) => {
+                    // Solo selección, no acción
+                  }}
+                  onAction={(file) => handleOpenDiffModal(file)}
+                />
               </div>
             )}
           </div>

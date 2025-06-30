@@ -238,6 +238,10 @@ const DiffModal = ({
                 setSelected(file);
                 setSelectedIndex(idx);
               }}
+              onAction={(file, idx) => {
+                setSelected(file);
+                setSelectedIndex(idx);
+              }}
               autoFocusSearch={true}
             />
           </Split.Pane>

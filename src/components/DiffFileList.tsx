@@ -6,15 +6,19 @@ import { IconSearch } from "./icons";
 interface DiffFileListProps {
   files: FileChange[];
   onSelect: (file: FileChange, idx: number) => void;
+  onAction?: (file: FileChange, idx: number) => void;
   selectedIndex: number;
   autoFocusSearch?: boolean;
+  showSearch?: boolean;
 }
 
 const DiffFileList = ({
   files,
   onSelect,
+  onAction,
   selectedIndex,
   autoFocusSearch,
+  showSearch = true,
 }: DiffFileListProps) => {
   const [search, setSearch] = useState("");
   const [internalSelectedIndex, setInternalSelectedIndex] =
@@ -60,14 +64,14 @@ const DiffFileList = ({
         setInternalSelectedIndex((prev) => Math.max(prev - 1, 0));
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (filteredFiles[internalSelectedIndex]) {
-          onSelect(filteredFiles[internalSelectedIndex], internalSelectedIndex);
+        if (filteredFiles[internalSelectedIndex] && onAction) {
+          onAction(filteredFiles[internalSelectedIndex], internalSelectedIndex);
         }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filteredFiles, internalSelectedIndex, onSelect]);
+  }, [filteredFiles, internalSelectedIndex, onAction]);
 
   // Scroll automático para mantener visible la fila seleccionada
   useEffect(() => {
@@ -89,19 +93,21 @@ const DiffFileList = ({
   return (
     <div className="flex flex-col h-full min-h-0 bg-background-emphasis border-r border-border flex-1">
       {/* Caja de búsqueda dentro de la columna */}
-      <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
-        <div className="relative w-full h-12">
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="w-full bg-background border border-border rounded px-3 py-1.5 pl-9 text-foreground placeholder:text-muted-foreground focus:outline-none"
-            placeholder="Buscar archivo..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <IconSearch className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+      {showSearch && (
+        <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
+          <div className="relative w-full h-12">
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="w-full bg-background border border-border rounded px-3 py-1.5 pl-9 text-foreground placeholder:text-muted-foreground focus:outline-none"
+              placeholder="Buscar archivo..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <IconSearch className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+          </div>
         </div>
-      </div>
+      )}
       <ul
         ref={listRef}
         className="overflow-y-auto h-full min-h-0 divide-y w-full divide-border flex-1">
@@ -138,7 +144,9 @@ const DiffFileList = ({
                 }`}
                 onClick={() => {
                   setInternalSelectedIndex(idx);
-                  onSelect(file, idx);
+                  if (onAction) {
+                    onAction(file, idx);
+                  }
                 }}>
                 <div className="flex items-center min-w-0 gap-2">
                   <FileListItem file={fileForList} />
