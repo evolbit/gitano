@@ -50,6 +50,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   );
   // Estado para hover de hunk
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
+  // Estado para selección múltiple por drag
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
+  const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
 
   // Cargar los hunks iniciales
   useEffect(() => {
@@ -58,6 +62,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setExtraContext({});
     setStagedLines({});
     setHoveredHunkIdx(null);
+    setIsDragging(false);
+    setDragHunkIdx(null);
+    setDragMode(null);
     const fn = async () => {
       try {
         let result: DiffHunk[];
@@ -152,6 +159,48 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
   };
 
+  // Handler para mouse up global (terminar drag)
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleUp = () => {
+      setIsDragging(false);
+      setDragHunkIdx(null);
+      setDragMode(null);
+    };
+    window.addEventListener("mouseup", handleUp);
+    return () => window.removeEventListener("mouseup", handleUp);
+  }, [isDragging]);
+
+  // Handler para mouse down en línea
+  const handleLineMouseDown = (
+    hunkIdx: number,
+    lineIdx: number,
+    isStageable: boolean,
+    isStaged: boolean
+  ) => {
+    if (!isStageable) return;
+    setIsDragging(true);
+    setDragHunkIdx(hunkIdx);
+    setDragMode(isStaged ? "remove" : "add");
+    // Marcar/desmarcar la línea inicial
+    handleToggleLineStage(hunkIdx, lineIdx);
+  };
+
+  // Handler para mouse enter en línea (durante drag)
+  const handleLineMouseEnter = (
+    hunkIdx: number,
+    lineIdx: number,
+    isStageable: boolean,
+    isStaged: boolean
+  ) => {
+    if (!isDragging || dragHunkIdx !== hunkIdx || !isStageable) return;
+    if (dragMode === "add" && !isStaged) {
+      handleToggleLineStage(hunkIdx, lineIdx);
+    } else if (dragMode === "remove" && isStaged) {
+      handleToggleLineStage(hunkIdx, lineIdx);
+    }
+  };
+
   return (
     <div className="p-4 bg-background-emphasis h-full flex-1 overflow-auto font-mono text-sm">
       <div className="font-bold mb-2 text-blue-300">{filePath}</div>
@@ -168,16 +217,30 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             }`}
             onMouseEnter={() => setHoveredHunkIdx(idx)}
             onMouseLeave={() => setHoveredHunkIdx(null)}>
-            {/* Cabecera del hunk con botón Stage Hunk */}
-            <div className="flex items-center justify-between px-4 py-1 bg-zinc-800">
+            {/* Cabecera del hunk con botones Select all y Stage */}
+            <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
               <span className="text-purple-300 text-xs font-mono">
                 {hunk.header}
               </span>
-              <button
-                className="ml-4 px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded"
-                onClick={() => handleStageHunk(idx)}>
-                Stage Hunk
-              </button>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
+                  onClick={() => handleStageHunk(idx)}>
+                  Select all
+                </button>
+                <button
+                  className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
+                  disabled={!(stagedLines[idx] && stagedLines[idx].size > 0)}
+                  onClick={() => {
+                    // Aquí iría la lógica real de stage, por ahora solo log
+                    const staged = stagedLines[idx]
+                      ? Array.from(stagedLines[idx])
+                      : [];
+                    console.log("Stage lines for hunk", idx, staged);
+                  }}>
+                  Stage
+                </button>
+              </div>
             </div>
             {/* Expandir contexto arriba */}
             <div className="flex justify-center py-1">
@@ -206,6 +269,13 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                   showChecks={isStageable}
                   isStaged={isStaged}
                   onCheck={() => handleToggleLineStage(idx, lineIdx)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleLineMouseDown(idx, lineIdx, isStageable, isStaged);
+                  }}
+                  onMouseEnter={() =>
+                    handleLineMouseEnter(idx, lineIdx, isStageable, isStaged)
+                  }
                 />
               );
             })}
@@ -238,7 +308,16 @@ const DiffLineRow: React.FC<{
   showChecks?: boolean;
   isStaged?: boolean;
   onCheck?: () => void;
-}> = ({ line, showChecks = false, isStaged = false, onCheck }) => {
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+}> = ({
+  line,
+  showChecks = false,
+  isStaged = false,
+  onCheck,
+  onMouseDown,
+  onMouseEnter,
+}) => {
   let baseColor = "";
   if (line.kind === "Add") baseColor = "text-green-400 bg-green-900/20";
   else if (line.kind === "Del") baseColor = "text-red-400 bg-red-900/20";
@@ -252,7 +331,8 @@ const DiffLineRow: React.FC<{
         fontVariantNumeric: "tabular-nums",
         cursor: showChecks ? "pointer" : undefined,
       }}
-      onClick={showChecks ? onCheck : undefined}>
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}>
       {/* Columna de check para old_lineno */}
       <span className="w-6 h-4 flex items-center justify-center select-none">
         {showChecks && line.old_lineno !== null && isStaged ? (
