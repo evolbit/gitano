@@ -21,12 +21,34 @@ interface DiffHunk {
 
 type ContextDirection = "Above" | "Below";
 
-// Props: path del repo, archivo, contexto inicial
+/**
+ * Para mover los controles a la barra superior externa:
+ * 1. Elimina la cabecera interna (nombre, contadores, botones) de este componente.
+ * 2. Expón una función getFileActionsData() que retorna los datos necesarios para la barra superior.
+ * 3. El padre debe llamar a getFileActionsData() y renderizar los controles donde corresponda.
+ * 4. Alternativamente, puedes pasar el bloque visual ya armado como 'fileActionsBar' y se renderizará arriba del diff.
+ */
 interface DiffViewerProps {
   repoPath: string;
   filePath: string;
   sha?: string;
   context?: number;
+  onFileActionsData?: (data: {
+    filePath: string;
+    insertions: number;
+    deletions: number;
+    canStage: boolean;
+    canDiscard: boolean;
+    canRemove: boolean;
+    onStage: () => void;
+    onDiscard: () => void;
+    onRemove: () => void;
+  }) => void;
+  /**
+   * Si se provee, este bloque visual se renderiza arriba del área scrolleable del diff.
+   * Ejemplo: <DiffViewer fileActionsBar={<MiBarra filePath=... ... />} ... />
+   */
+  fileActionsBar?: React.ReactNode;
 }
 
 const CONTEXT_DEFAULT = 3;
@@ -36,6 +58,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   filePath,
   sha,
   context = CONTEXT_DEFAULT,
+  onFileActionsData,
+  fileActionsBar,
 }) => {
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,6 +115,67 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     };
     fn();
   }, [repoPath, filePath, sha, context]);
+
+  // Lógica para exponer los datos de acciones al padre
+  useEffect(() => {
+    if (!onFileActionsData) return;
+    let insertions = 0;
+    let deletions = 0;
+    hunks.forEach((hunk) => {
+      hunk.lines.forEach((line) => {
+        if (line.kind === "Add") insertions++;
+        if (line.kind === "Del") deletions++;
+      });
+    });
+    let onlyAdd = hunks.length > 0;
+    let onlyDel = hunks.length > 0;
+    hunks.forEach((hunk) => {
+      hunk.lines.forEach((line) => {
+        if (line.kind !== "Add") onlyAdd = false;
+        if (line.kind !== "Del") onlyDel = false;
+      });
+    });
+    const canRemove = onlyAdd || onlyDel;
+    const canStage = Object.values(stagedLines).some(
+      (set) => set && set.size > 0
+    );
+    const canDiscard = hunks.length > 0;
+    onFileActionsData({
+      filePath,
+      insertions,
+      deletions,
+      canStage,
+      canDiscard,
+      canRemove,
+      onStage: () => {
+        const staged = Object.entries(stagedLines).flatMap(([hunkIdx, set]) =>
+          set
+            ? Array.from(set).map((lineIdx) => ({
+                hunkIdx: Number(hunkIdx),
+                lineIdx,
+              }))
+            : []
+        );
+        console.log("Stage file", filePath, staged);
+      },
+      onDiscard: () => {
+        console.log("Discard file", filePath);
+      },
+      onRemove: () => {
+        console.log("Remove file", filePath);
+      },
+    });
+  }, [filePath, hunks, stagedLines, onFileActionsData]);
+
+  // Calcular los números de modificaciones siempre
+  let insertions = 0;
+  let deletions = 0;
+  hunks.forEach((hunk) => {
+    hunk.lines.forEach((line) => {
+      if (line.kind === "Add") insertions++;
+      if (line.kind === "Del") deletions++;
+    });
+  });
 
   // Pedir más contexto arriba/abajo
   const handleExpandContext = async (
@@ -202,102 +287,104 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   };
 
   return (
-    <div className="p-4 bg-background-emphasis h-full flex-1 overflow-auto font-mono text-sm">
-      <div className="font-bold mb-2 text-blue-300">{filePath}</div>
-      {loading && <div className="text-zinc-400">Cargando diff...</div>}
-      {error && <div className="text-red-400">{error}</div>}
-      {!loading && !error && hunks.length === 0 && <div>No hay cambios.</div>}
-      {hunks.map((hunk, idx) => {
-        const isHovered = hoveredHunkIdx === idx;
-        return (
-          <div
-            key={idx}
-            className={`mb-6 border border-border rounded bg-background ${
-              isHovered ? "ring-2 ring-blue-400/40" : ""
-            }`}
-            onMouseEnter={() => setHoveredHunkIdx(idx)}
-            onMouseLeave={() => setHoveredHunkIdx(null)}>
-            {/* Cabecera del hunk con botones Select all y Stage */}
-            <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
-              <span className="text-purple-300 text-xs font-mono">
-                {hunk.header}
-              </span>
-              <div className="flex items-center gap-2 ml-auto">
+    <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
+      {/* Área scrolleable del diff */}
+      <div className="flex-1 overflow-auto px-4">
+        {loading && <div className="text-zinc-400">Cargando diff...</div>}
+        {error && <div className="text-red-400">{error}</div>}
+        {!loading && !error && hunks.length === 0 && <div>No hay cambios.</div>}
+        {hunks.map((hunk, idx) => {
+          const isHovered = hoveredHunkIdx === idx;
+          return (
+            <div
+              key={idx}
+              className={`mb-6 border border-border rounded bg-background ${
+                isHovered ? "ring-2 ring-blue-400/40" : ""
+              }`}
+              onMouseEnter={() => setHoveredHunkIdx(idx)}
+              onMouseLeave={() => setHoveredHunkIdx(null)}>
+              {/* Cabecera del hunk con botones Select all y Stage */}
+              <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
+                <span className="text-purple-300 text-xs font-mono">
+                  {hunk.header}
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
+                    onClick={() => handleStageHunk(idx)}>
+                    Select all
+                  </button>
+                  <button
+                    className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
+                    disabled={!(stagedLines[idx] && stagedLines[idx].size > 0)}
+                    onClick={() => {
+                      // Aquí iría la lógica real de stage, por ahora solo log
+                      const staged = stagedLines[idx]
+                        ? Array.from(stagedLines[idx])
+                        : [];
+                      console.log("Stage lines for hunk", idx, staged);
+                    }}>
+                    Stage
+                  </button>
+                </div>
+              </div>
+              {/* Expandir contexto arriba */}
+              <div className="flex justify-center py-1">
                 <button
-                  className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
-                  onClick={() => handleStageHunk(idx)}>
-                  Select all
+                  className="text-xs text-blue-400 hover:underline"
+                  onClick={() => handleExpandContext(idx, "Above", 10)}>
+                  Mostrar 10 líneas arriba
                 </button>
+              </div>
+              {/* Líneas extra arriba */}
+              {extraContext[idx]?.above?.map((line, i) => (
+                <DiffLineRow
+                  key={"above-" + i}
+                  line={line}
+                  showChecks={false}
+                />
+              ))}
+              {/* Líneas del hunk */}
+              {hunk.lines.map((line, lineIdx) => {
+                const isStageable = line.kind === "Add" || line.kind === "Del";
+                const isStaged = stagedLines[idx]?.has(lineIdx);
+                return (
+                  <DiffLineRow
+                    key={lineIdx}
+                    line={line}
+                    showChecks={isStageable}
+                    isStaged={isStaged}
+                    onCheck={() => handleToggleLineStage(idx, lineIdx)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleLineMouseDown(idx, lineIdx, isStageable, isStaged);
+                    }}
+                    onMouseEnter={() =>
+                      handleLineMouseEnter(idx, lineIdx, isStageable, isStaged)
+                    }
+                  />
+                );
+              })}
+              {/* Líneas extra abajo */}
+              {extraContext[idx]?.below?.map((line, i) => (
+                <DiffLineRow
+                  key={"below-" + i}
+                  line={line}
+                  showChecks={false}
+                />
+              ))}
+              {/* Expandir contexto abajo */}
+              <div className="flex justify-center py-1">
                 <button
-                  className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
-                  disabled={!(stagedLines[idx] && stagedLines[idx].size > 0)}
-                  onClick={() => {
-                    // Aquí iría la lógica real de stage, por ahora solo log
-                    const staged = stagedLines[idx]
-                      ? Array.from(stagedLines[idx])
-                      : [];
-                    console.log("Stage lines for hunk", idx, staged);
-                  }}>
-                  Stage
+                  className="text-xs text-blue-400 hover:underline"
+                  onClick={() => handleExpandContext(idx, "Below", 10)}>
+                  Mostrar 10 líneas abajo
                 </button>
               </div>
             </div>
-            {/* Expandir contexto arriba */}
-            <div className="flex justify-center py-1">
-              <button
-                className="text-xs text-blue-400 hover:underline"
-                onClick={() => handleExpandContext(idx, "Above", 10)}>
-                Mostrar 10 líneas arriba
-              </button>
-            </div>
-            {/* Líneas extra arriba */}
-            {extraContext[idx]?.above?.map((line, i) => (
-              <DiffLineRow
-                key={"above-" + i}
-                line={line}
-                showChecks={false}
-              />
-            ))}
-            {/* Líneas del hunk */}
-            {hunk.lines.map((line, lineIdx) => {
-              const isStageable = line.kind === "Add" || line.kind === "Del";
-              const isStaged = stagedLines[idx]?.has(lineIdx);
-              return (
-                <DiffLineRow
-                  key={lineIdx}
-                  line={line}
-                  showChecks={isStageable}
-                  isStaged={isStaged}
-                  onCheck={() => handleToggleLineStage(idx, lineIdx)}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleLineMouseDown(idx, lineIdx, isStageable, isStaged);
-                  }}
-                  onMouseEnter={() =>
-                    handleLineMouseEnter(idx, lineIdx, isStageable, isStaged)
-                  }
-                />
-              );
-            })}
-            {/* Líneas extra abajo */}
-            {extraContext[idx]?.below?.map((line, i) => (
-              <DiffLineRow
-                key={"below-" + i}
-                line={line}
-                showChecks={false}
-              />
-            ))}
-            {/* Expandir contexto abajo */}
-            <div className="flex justify-center py-1">
-              <button
-                className="text-xs text-blue-400 hover:underline"
-                onClick={() => handleExpandContext(idx, "Below", 10)}>
-                Mostrar 10 líneas abajo
-              </button>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 };
