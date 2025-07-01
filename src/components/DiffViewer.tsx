@@ -139,10 +139,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
               line={line}
             />
           ))}
-          {/* Header del hunk */}
-          <div className="bg-zinc-800 text-purple-300 px-4 py-1 text-xs">
-            {hunk.header}
-          </div>
           {/* Líneas del hunk */}
           {hunk.lines.map((line, i) => (
             <DiffLineRow
