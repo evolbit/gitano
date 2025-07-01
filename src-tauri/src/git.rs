@@ -1217,9 +1217,9 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
 
     for entry in statuses.iter() {
         let status = entry.status();
-        let path = entry.path().unwrap_or("").to_string();
+        let file_path = entry.path().unwrap_or("").to_string();
 
-        if path.is_empty() {
+        if file_path.is_empty() {
             continue;
         }
 
@@ -1248,11 +1248,43 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
             ChangeType::Modified // Default
         };
 
+        // Calcular insertions y deletions usando git diff --numstat
+        use std::process::Command;
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("diff")
+            .arg("--numstat")
+            .arg("--")
+            .arg(&file_path)
+            .output();
+
+        let (insertions, deletions) = if let Ok(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Busca la línea correspondiente al archivo
+            let line = stdout.lines().find(|l| l.contains(&file_path));
+            if let Some(line) = line {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    (
+                        parts[0].parse::<u32>().unwrap_or(0),
+                        parts[1].parse::<u32>().unwrap_or(0),
+                    )
+                } else {
+                    (0, 0)
+                }
+            } else {
+                (0, 0)
+            }
+        } else {
+            (0, 0)
+        };
+
         changes.push(FileChange {
-            path,
+            path: file_path,
             status: change_type,
-            insertions: 0, // No tenemos esta información para working directory
-            deletions: 0,  // No tenemos esta información para working directory
+            insertions,
+            deletions,
         });
     }
 
