@@ -83,6 +83,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     lines: number
   ) => {
     try {
+      const prevHunk = extraContext[hunkIdx] || { above: [], below: [] };
+      const offset =
+        direction === "Above" ? prevHunk.above.length : prevHunk.below.length;
       const res = await invoke<DiffLine[]>("get_diff_context", {
         path: repoPath,
         filePath,
@@ -90,6 +93,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         direction,
         lines,
         context,
+        offset,
       });
       setExtraContext((prev) => {
         const prevHunk = prev[hunkIdx] || { above: [], below: [] };

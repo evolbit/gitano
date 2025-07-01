@@ -1119,6 +1119,7 @@ pub fn get_diff_context(
     direction: ContextDirection,
     lines: usize,
     context: usize,
+    offset: usize,
 ) -> Result<Vec<DiffLine>, String> {
     // 1. Obtener los hunks actuales
     let hunks = get_file_diff_hunks(path.clone(), file_path.clone(), context)?;
@@ -1135,12 +1136,16 @@ pub fn get_diff_context(
     let mut result = Vec::new();
     match direction {
         ContextDirection::Above => {
-            let start = if hunk.old_start > lines {
-                hunk.old_start - lines - 1
+            let start = if hunk.old_start > lines + offset {
+                hunk.old_start - lines - offset - 1
             } else {
                 0
             };
-            let end = hunk.old_start - 1;
+            let end = if hunk.old_start > offset {
+                hunk.old_start - offset - 1
+            } else {
+                0
+            };
             for i in start..end {
                 result.push(DiffLine {
                     kind: DiffLineKind::Context,
@@ -1151,7 +1156,7 @@ pub fn get_diff_context(
             }
         }
         ContextDirection::Below => {
-            let start = hunk.old_start + hunk.old_lines - 1;
+            let start = hunk.old_start + hunk.old_lines - 1 + offset;
             let end = std::cmp::min(start + lines, all_lines.len());
             for i in start..end {
                 result.push(DiffLine {

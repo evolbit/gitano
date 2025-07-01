@@ -58,7 +58,8 @@ const RepoTabLayout: React.FC = () => {
             className="!h-full !min-h-0 flex flex-col">
             <Box className="flex-1 text-foreground flex flex-col min-h-0">
               <Accordion
-                defaultValue="changes"
+                multiple
+                defaultValue={["changes"]}
                 variant="contained"
                 chevronPosition="left"
                 classNames={{
