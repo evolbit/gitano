@@ -3,6 +3,7 @@ export {
   IconArrowBarToUp,
   IconArrowForwardUp,
   IconBrandGit,
+  IconCheck,
   IconChevronDown,
   IconChevronRight,
   IconCircleDot,
