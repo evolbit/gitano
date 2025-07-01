@@ -46,10 +46,30 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       useState(selectedIndex);
     const searchInputRef = useRef<HTMLInputElement>(null);
 
+    // Normaliza el status a minúsculas y lo castea al tipo correcto
+    const allowedStatuses = [
+      "added",
+      "deleted",
+      "modified",
+      "renamed",
+      "copied",
+      "typeChanged",
+    ] as const;
+    type AllowedStatus = (typeof allowedStatuses)[number];
+    const normalizedFiles = files.map((file) => ({
+      ...file,
+      status: allowedStatuses.includes((file.status as any).toLowerCase())
+        ? ((file.status as string).toLowerCase() as AllowedStatus)
+        : ("modified" as AllowedStatus),
+    }));
+
     // Filtrado de archivos
-    const filteredFiles = files.filter((f) =>
-      f.path.toLowerCase().includes(search.toLowerCase())
-    );
+    const filteredFiles =
+      search.trim() === ""
+        ? normalizedFiles
+        : normalizedFiles.filter((f) =>
+            f.path.toLowerCase().includes(search.toLowerCase())
+          );
 
     // Mantener el índice seleccionado dentro del rango
     useEffect(() => {

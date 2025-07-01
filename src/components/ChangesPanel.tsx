@@ -30,7 +30,7 @@ const ChangesPanel: React.FC = () => {
     } else {
       setMessage("");
     }
-    // When commit changes, exit amending mode
+    // When commit changes, exit amending mode s
     setIsAmending(false);
   }, [selectedCommit]);
 

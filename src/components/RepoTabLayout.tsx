@@ -17,12 +17,16 @@ const RepoTabLayout: React.FC = () => {
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
 
-  // Hook para obtener los archivos modificados del working directory
-  const { changes, loading, error } = useWorkingDirectoryChanges(repoPath);
+  // Polling automático y constante, sin controles ni notificaciones
+  const { changes, loading, error } = useWorkingDirectoryChanges(repoPath, {
+    pollInterval: 2000,
+    enabled: !!repoPath,
+    pauseOnInactive: false,
+    cacheKey: activeTabId ? `changes-${activeTabId}` : undefined,
+    showNotifications: false,
+  });
 
-  // Estado para el modal de diff (ya no se usará para Changes)
-  const [diffModalOpen, setDiffModalOpen] = useState(false);
-  const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
+  // console.log("[RepoTabLayout] changes ==>", changes);
 
   // Estado para archivo seleccionado desde Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
@@ -44,6 +48,8 @@ const RepoTabLayout: React.FC = () => {
   };
 
   if (!tab) return null;
+
+  console.log("[RepoTabLayout] changes", changes);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -79,27 +85,27 @@ const RepoTabLayout: React.FC = () => {
                         <span className="inline-flex items-center justify-center w-5 h-5">
                           <IconStack2 size={18} />
                         </span>
-                        Changes ({changes.length})
+                        <span>Changes ({changes.length})</span>
                       </span>
                     </div>
                   </Accordion.Control>
                   <Accordion.Panel className="min-w-0">
-                    {loading && (
-                      <div className="p-4 text-center text-muted-foreground">
-                        Cargando cambios...
-                      </div>
-                    )}
                     {error && (
                       <div className="p-4 text-center text-red-500">
                         Error: {error}
                       </div>
                     )}
-                    {!loading && !error && changes.length === 0 && (
+                    {loading && changes.length === 0 && (
+                      <div className="p-4 text-center text-muted-foreground">
+                        Cargando cambios...
+                      </div>
+                    )}
+                    {!error && changes.length === 0 && !loading && (
                       <div className="p-4 text-center text-muted-foreground">
                         No hay cambios en el working directory
                       </div>
                     )}
-                    {!loading && !error && changes.length > 0 && (
+                    {changes.length > 0 && (
                       <DiffFileList
                         files={changes}
                         selectedIndex={

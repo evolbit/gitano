@@ -855,8 +855,8 @@ pub fn get_commits_list_paginated(
     })
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum ChangeType {
     Added,
     Deleted,
@@ -1205,6 +1205,10 @@ pub fn get_commit_file_diff(
 
 #[tauri::command]
 pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, String> {
+    println!(
+        "Rust: get_working_directory_changes called with path: {}",
+        path
+    );
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut changes = Vec::new();
 
@@ -1218,6 +1222,8 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
     for entry in statuses.iter() {
         let status = entry.status();
         let file_path = entry.path().unwrap_or("").to_string();
+
+        println!("Rust: status entry: {:?} path: {}", status, file_path);
 
         if file_path.is_empty() {
             continue;
@@ -1280,6 +1286,11 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
             (0, 0)
         };
 
+        println!(
+            "Rust: Detected file change: {} {:?} +{} -{}",
+            file_path, change_type, insertions, deletions
+        );
+
         changes.push(FileChange {
             path: file_path,
             status: change_type,
@@ -1288,5 +1299,6 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
         });
     }
 
+    println!("Rust: Total changes detected: {}", changes.len());
     Ok(changes)
 }
