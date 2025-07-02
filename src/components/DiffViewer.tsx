@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useState } from "react";
 import DiffHunk from "./DiffHunk";
+import FloatingCommitBar from "./FloatingCommitBar";
 import { IconCheck } from "./icons";
 
 // Tipos para los datos del backend
@@ -80,6 +81,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
+  const canStage = sha === undefined;
+  const [commitBarOpen, setCommitBarOpen] = useState(false);
+  const [commitLoading, setCommitLoading] = useState(false);
 
   // Cargar los hunks iniciales
   useEffect(() => {
@@ -232,7 +236,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
   };
 
-  // Handler para stagear/deselectar todo el hunk
+  // Handler para stagear/desselectar todo el hunk
   const handleStageHunk = (hunkIdx: number) => {
     setStagedLines((prev) => {
       const hunk = hunks[hunkIdx];
@@ -307,7 +311,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   return (
     <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
       {/* Área scrolleable del diff */}
-      <div className="flex-1 overflow-auto px-4">
+      <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
         {loading && <div className="text-zinc-400">Cargando diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
         {!loading && !error && hunks.length === 0 && <div>No hay cambios.</div>}
@@ -333,10 +337,27 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             handleLineMouseDown={handleLineMouseDown}
             handleLineMouseEnter={handleLineMouseEnter}
             handleStageHunk={handleStageHunk}
-            canStage={sha === undefined}
+            canStage={canStage}
           />
         ))}
       </div>
+      {/* Barra flotante de commit solo si canStage (working directory) */}
+      {canStage && (
+        <FloatingCommitBar
+          expanded={commitBarOpen}
+          onExpand={() => setCommitBarOpen(true)}
+          onCollapse={() => setCommitBarOpen(false)}
+          loading={commitLoading}
+          onCommit={(msg, push, amend) => {
+            setCommitLoading(true);
+            // Aquí iría la lógica real de commit
+            setTimeout(() => {
+              setCommitLoading(false);
+              setCommitBarOpen(false);
+            }, 1200);
+          }}
+        />
+      )}
     </div>
   );
 };
