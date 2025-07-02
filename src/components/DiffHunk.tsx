@@ -61,6 +61,7 @@ interface DiffHunkProps {
     isStaged: boolean
   ) => void;
   handleStageHunk: (hunkIdx: number) => void;
+  canStage?: boolean;
 }
 
 const DiffHunk: React.FC<DiffHunkProps> = ({
@@ -83,6 +84,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   handleLineMouseDown,
   handleLineMouseEnter,
   handleStageHunk,
+  canStage = false,
 }) => {
   const isHovered = hoveredHunkIdx === hunkIdx;
   return (
@@ -95,62 +97,64 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
       {/* Cabecera del hunk con botones */}
       <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
         <span className="text-purple-300 text-xs font-mono">{hunk.header}</span>
-        <div className="flex items-center gap-2 ml-auto">
-          {hunk.is_new_file ? (
-            <>
-              <button
-                className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded"
-                onClick={() => {
-                  console.log("Stage new file", hunkIdx);
-                }}>
-                Stage
-              </button>
-              <button
-                className="px-2 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded"
-                onClick={() => {
-                  console.log("Remove new file", hunkIdx);
-                }}>
-                Eliminar
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
-                onClick={() => handleStageHunk(hunkIdx)}>
-                {(() => {
-                  // Contar cuántas líneas son stageables en este hunk
-                  const stageableLines = hunk.lines.filter(
-                    (line) => line.kind === "Add" || line.kind === "Del"
-                  ).length;
-                  // Contar cuántas líneas están actualmente staged
-                  const stagedCount = stagedLines[hunkIdx]?.size || 0;
-                  // Si todas las líneas stageables están staged, mostrar "Deselect all"
-                  return stagedCount === stageableLines
-                    ? "Deselect all"
-                    : "Select all";
-                })()}
-              </button>
-              <button
-                className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
-                disabled={
-                  !(stagedLines[hunkIdx] && stagedLines[hunkIdx].size > 0)
-                }
-                onClick={() => {
-                  // Aquí iría la lógica real de stage, por ahora solo log
-                  const staged = stagedLines[hunkIdx]
-                    ? Array.from(stagedLines[hunkIdx])
-                    : [];
-                  console.log("Stage lines for hunk", hunkIdx, staged);
-                }}>
-                Stage
-              </button>
-            </>
-          )}
-        </div>
+        {canStage && (
+          <div className="flex items-center gap-2 ml-auto">
+            {hunk.is_new_file ? (
+              <>
+                <button
+                  className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded"
+                  onClick={() => {
+                    console.log("Stage new file", hunkIdx);
+                  }}>
+                  Stage
+                </button>
+                <button
+                  className="px-2 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded"
+                  onClick={() => {
+                    console.log("Remove new file", hunkIdx);
+                  }}>
+                  Eliminar
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
+                  onClick={() => handleStageHunk(hunkIdx)}>
+                  {(() => {
+                    // Contar cuántas líneas son stageables en este hunk
+                    const stageableLines = hunk.lines.filter(
+                      (line) => line.kind === "Add" || line.kind === "Del"
+                    ).length;
+                    // Contar cuántas líneas están actualmente staged
+                    const stagedCount = stagedLines[hunkIdx]?.size || 0;
+                    // Si todas las líneas stageables están staged, mostrar "Deselect all"
+                    return stagedCount === stageableLines
+                      ? "Deselect all"
+                      : "Select all";
+                  })()}
+                </button>
+                <button
+                  className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
+                  disabled={
+                    !(stagedLines[hunkIdx] && stagedLines[hunkIdx].size > 0)
+                  }
+                  onClick={() => {
+                    // Aquí iría la lógica real de stage, por ahora solo log
+                    const staged = stagedLines[hunkIdx]
+                      ? Array.from(stagedLines[hunkIdx])
+                      : [];
+                    console.log("Stage lines for hunk", hunkIdx, staged);
+                  }}>
+                  Stage
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
-      {/* Expandir contexto arriba - solo para archivos no nuevos */}
-      {!hunk.is_new_file && (
+      {/* Expandir contexto arriba - solo para archivos no nuevos y si canStage */}
+      {!hunk.is_new_file && canStage && (
         <>
           <div className="flex justify-center py-1">
             <button
@@ -211,8 +215,8 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           />
         );
       })}
-      {/* Líneas extra abajo - solo para archivos no nuevos */}
-      {!hunk.is_new_file && (
+      {/* Líneas extra abajo - solo para archivos no nuevos y si canStage */}
+      {!hunk.is_new_file && canStage && (
         <>
           {extraContext[hunkIdx]?.below?.map((line, i) => (
             <DiffLineRow

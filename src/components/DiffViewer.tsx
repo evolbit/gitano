@@ -333,6 +333,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             handleLineMouseDown={handleLineMouseDown}
             handleLineMouseEnter={handleLineMouseEnter}
             handleStageHunk={handleStageHunk}
+            canStage={sha === undefined}
           />
         ))}
       </div>
