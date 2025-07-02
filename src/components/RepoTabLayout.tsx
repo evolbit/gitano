@@ -32,6 +32,19 @@ const RepoTabLayout: React.FC = () => {
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChange | null>(null);
 
+  // Estado para acciones del archivo en DiffViewer
+  const [fileActions, setFileActions] = useState<null | {
+    filePath: string;
+    insertions: number;
+    deletions: number;
+    canStage: boolean;
+    canDiscard: boolean;
+    canRemove: boolean;
+    onStage: () => void;
+    onDiscard: () => void;
+    onRemove: () => void;
+  }>(null);
+
   // Cierra el DiffViewer si cambia la rama activa
   useEffect(() => {
     setSelectedWorkingFile(null);
@@ -167,12 +180,42 @@ const RepoTabLayout: React.FC = () => {
             className="!h-full !min-h-0">
             {selectedWorkingFile ? (
               <div className="h-full w-full flex flex-col">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background-emphasis">
+                <div className="flex items-center gap-4 px-6 py-4 border-b border-border bg-background-emphasis">
                   <span className="font-bold text-lg">
                     Diff: {selectedWorkingFile.path}
                   </span>
+                  {fileActions && (
+                    <>
+                      <span className="ml-4 flex items-center gap-2 text-xs">
+                        <span className="text-green-500 font-semibold">
+                          +{fileActions.insertions}
+                        </span>
+                        <span className="text-red-500 font-semibold">
+                          -{fileActions.deletions}
+                        </span>
+                      </span>
+                      <button
+                        className="ml-4 px-3 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
+                        disabled={!fileActions.canStage}
+                        onClick={fileActions.onStage}>
+                        Stage
+                      </button>
+                      <button
+                        className="px-3 py-1 text-xs bg-yellow-700 hover:bg-yellow-800 text-white rounded disabled:opacity-50"
+                        disabled={!fileActions.canDiscard}
+                        onClick={fileActions.onDiscard}>
+                        Discard
+                      </button>
+                      <button
+                        className="px-3 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded disabled:opacity-50"
+                        disabled={!fileActions.canRemove}
+                        onClick={fileActions.onRemove}>
+                        Remove
+                      </button>
+                    </>
+                  )}
                   <button
-                    className="ml-4 p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
+                    className="ml-auto p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
                     onClick={handleCloseDiffViewer}
                     aria-label="Cerrar diff">
                     ×
@@ -182,6 +225,7 @@ const RepoTabLayout: React.FC = () => {
                   <DiffViewer
                     repoPath={repoPath || ""}
                     filePath={selectedWorkingFile.path}
+                    onFileActionsData={setFileActions}
                   />
                 </div>
               </div>
