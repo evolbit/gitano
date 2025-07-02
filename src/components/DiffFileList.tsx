@@ -16,6 +16,9 @@ interface DiffFileListProps {
   highlightSelected?: boolean; // activar/desactivar resaltado
   rowDividerColor?: string; // color de la línea de separación
   rowPadding?: string; // padding de los li
+  showFileCheckboxes?: boolean; // NUEVO: mostrar checkbox por archivo
+  fileCheckboxState?: Record<string, "checked" | "indeterminate" | "unchecked">; // estado de cada checkbox
+  onFileCheckboxChange?: (file: FileChange, checked: boolean) => void; // handler
 }
 
 // Type guard para saber si el ref es un objeto con .current
@@ -38,6 +41,9 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       highlightSelected = true,
       rowDividerColor = "divide-border",
       rowPadding = "px-4 py-1",
+      showFileCheckboxes = false,
+      fileCheckboxState = {},
+      onFileCheckboxChange,
     },
     ref
   ) => {
@@ -191,6 +197,8 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
               if (highlightSelected && internalSelectedIndex === idx) {
                 rowClass = `${rowHighlightColor}`;
               }
+              // Estado del checkbox
+              const checkboxState = fileCheckboxState[file.path] || "unchecked";
               return (
                 <li
                   key={file.path}
@@ -203,6 +211,30 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                     }
                   }}>
                   <div className="flex items-center min-w-0 gap-2">
+                    {/* Checkbox por archivo, solo si showFileCheckboxes */}
+                    {showFileCheckboxes && (
+                      <input
+                        type="checkbox"
+                        className="accent-blue-600 w-4 h-4"
+                        checked={checkboxState === "checked"}
+                        ref={(el) => {
+                          if (el)
+                            el.indeterminate =
+                              checkboxState === "indeterminate";
+                        }}
+                        onChange={(e) => {
+                          if (onFileCheckboxChange)
+                            onFileCheckboxChange(file, e.target.checked);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        tabIndex={0}
+                        aria-checked={
+                          checkboxState === "indeterminate"
+                            ? "mixed"
+                            : checkboxState === "checked"
+                        }
+                      />
+                    )}
                     <FileListItem file={fileForList} />
                   </div>
                 </li>
