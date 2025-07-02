@@ -56,6 +56,8 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
     const clearStagedLinesForFile = useStagedLinesStore(
       (s) => s.clearStagedLinesForFile
     );
+    const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
+    const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
 
     // Normaliza el status a minúsculas y lo castea al tipo correcto
     const allowedStatuses = [
@@ -217,9 +219,17 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
               for (const hunkIdx in fileStaged) {
                 stagedCount += fileStaged[hunkIdx]?.size || 0;
               }
-              console.log("stagedCount", stagedCount);
-              console.log("totalStageable", totalStageable);
-              if (stagedCount === 0) {
+              // Detectar archivo nuevo vacío
+              const isNewFile =
+                file.status === "added" &&
+                hunks.length === 1 &&
+                hunks[0].is_new_file;
+
+              if (isNewFile) {
+                checkboxState = isStagedNewFile(file.path)
+                  ? "checked"
+                  : "unchecked";
+              } else if (stagedCount === 0) {
                 checkboxState = "unchecked";
               } else if (stagedCount === totalStageable && totalStageable > 0) {
                 checkboxState = "checked";
@@ -244,7 +254,10 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                         checked={checkboxState === "checked"}
                         indeterminate={checkboxState === "indeterminate"}
                         onChange={(e) => {
-                          if (e.target.checked) {
+                          console.log("isNewFile", isNewFile);
+                          if (isNewFile) {
+                            setStagedNewFile(file.path, e.target.checked);
+                          } else if (e.target.checked) {
                             // Agregar todas las líneas stageables (Add o Del) de todos los hunks
                             const hunks = (file as any).hunks || [];
                             const allHunks: { [hunkIdx: number]: number[] } =

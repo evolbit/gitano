@@ -1491,3 +1491,76 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
     println!("Rust: Total changes detected: {}", changes.len());
     Ok(changes)
 }
+
+#[tauri::command]
+pub fn git_add_file(path: String, file_path: String) -> Result<(), String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("add")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stage_lines(
+    path: String,
+    file_path: String,
+    hunks: serde_json::Value,
+) -> Result<(), String> {
+    // Stub: aquí deberías implementar el stage parcial de líneas (por ahora solo loguea)
+    println!(
+        "[git_stage_lines] path: {} file: {} hunks: {}",
+        path, file_path, hunks
+    );
+    // TODO: Implementar stage parcial real
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_commit(path: String, message: String, amend: bool) -> Result<(), String> {
+    use std::process::Command;
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(&path).arg("commit");
+    if amend {
+        cmd.arg("--amend");
+    }
+    cmd.arg("-m").arg(&message);
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "git commit failed (code: {:?}):\nstdout: {}\nstderr: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_push(path: String) -> Result<(), String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("push")
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "git push failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(())
+}

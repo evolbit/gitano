@@ -86,7 +86,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
   const canStage = sha === undefined;
   const [commitBarOpen, setCommitBarOpen] = useState(false);
-  const [commitLoading, setCommitLoading] = useState(false);
 
   // Limpiar contexto extra cuando cambia el archivo o commit
   useEffect(() => {
@@ -114,7 +113,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
     const canRemove = onlyAdd || onlyDel;
     const canStage = Object.values(stagedLines).some(
-      (set) => set && set.size > 0
+      (set) => set instanceof Set && set.size > 0
     );
     const canDiscard = hunks.length > 0;
     onFileActionsData({
@@ -126,7 +125,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       canRemove,
       onStage: () => {
         const staged = Object.entries(stagedLines).flatMap(([hunkIdx, set]) =>
-          set
+          set instanceof Set
             ? Array.from(set).map((lineIdx) => ({
                 hunkIdx: Number(hunkIdx),
                 lineIdx,
@@ -314,15 +313,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
           expanded={commitBarOpen}
           onExpand={() => setCommitBarOpen(true)}
           onCollapse={() => setCommitBarOpen(false)}
-          loading={commitLoading}
-          onCommit={(msg, push, amend) => {
-            setCommitLoading(true);
-            // Aquí iría la lógica real de commit
-            setTimeout(() => {
-              setCommitLoading(false);
-              setCommitBarOpen(false);
-            }, 1200);
-          }}
+          repoPath={repoPath}
         />
       )}
     </div>

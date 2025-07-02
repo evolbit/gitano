@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from "react";
+import { useStageAndCommit } from "../hooks/useStageAndCommit";
 
 const FloatingCommitBar: React.FC<{
   expanded: boolean;
   onExpand: () => void;
   onCollapse: () => void;
-  onCommit: (msg: string, push: boolean, amend: boolean) => void;
+  repoPath: string;
+  onCommit?: (msg: string, push: boolean, amend: boolean) => void;
   loading?: boolean;
-}> = ({ expanded, onExpand, onCollapse, onCommit, loading }) => {
+}> = ({ expanded, onExpand, onCollapse, repoPath, onCommit, loading }) => {
   const [message, setMessage] = useState("");
   const [push, setPush] = useState(true);
   const [amend, setAmend] = useState(false);
+  const {
+    commitStagedChanges,
+    loading: commitLoading,
+    error: commitError,
+  } = useStageAndCommit();
+  const [localLoading, setLocalLoading] = useState(false);
+  const isLoading = loading || commitLoading || localLoading;
 
   // Cerrar con Escape si está expandido
   useEffect(() => {
@@ -22,6 +31,22 @@ const FloatingCommitBar: React.FC<{
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [expanded, onCollapse]);
+
+  const handleCommit = async () => {
+    setLocalLoading(true);
+    try {
+      await commitStagedChanges(repoPath, message, { push, amend });
+      setMessage("");
+      setAmend(false);
+      setPush(true);
+      onCollapse();
+      if (onCommit) onCommit(message, push, amend);
+    } catch (e) {
+      // El error se muestra abajo
+    } finally {
+      setLocalLoading(false);
+    }
+  };
 
   return (
     <div
@@ -60,7 +85,7 @@ const FloatingCommitBar: React.FC<{
                 placeholder="Commit message..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                disabled={loading}
+                disabled={isLoading}
               />
               <div className="flex flex-wrap items-center gap-4 mt-2 w-full">
                 <label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -68,7 +93,7 @@ const FloatingCommitBar: React.FC<{
                     type="checkbox"
                     checked={push}
                     onChange={(e) => setPush(e.target.checked)}
-                    disabled={loading}
+                    disabled={isLoading}
                   />
                   Push changes immediately to origin/main
                 </label>
@@ -77,7 +102,7 @@ const FloatingCommitBar: React.FC<{
                     type="checkbox"
                     checked={amend}
                     onChange={(e) => setAmend(e.target.checked)}
-                    disabled={loading}
+                    disabled={isLoading}
                   />
                   Amend last commit
                 </label>
@@ -86,16 +111,21 @@ const FloatingCommitBar: React.FC<{
                 <button
                   className="px-4 py-1 rounded bg-zinc-700 text-zinc-200 hover:bg-zinc-600"
                   onClick={onCollapse}
-                  disabled={loading}>
+                  disabled={isLoading}>
                   Cancel
                 </button>
                 <button
                   className="px-4 py-1 rounded bg-zinc-900/80 text-white font-bold hover:bg-zinc-900/95 border border-zinc-700 disabled:opacity-50"
-                  onClick={() => onCommit(message, push, amend)}
-                  disabled={loading || !message.trim()}>
+                  onClick={handleCommit}
+                  disabled={isLoading || !message.trim()}>
                   Commit
                 </button>
               </div>
+              {commitError && (
+                <div className="text-red-500 text-center p-2">
+                  {commitError}
+                </div>
+              )}
             </div>
           </div>
         )}

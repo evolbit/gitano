@@ -4,6 +4,7 @@ export type StagedLinesState = {
   stagedLines: {
     [filePath: string]: {
       [hunkIdx: number]: Set<number>;
+      isNewFile?: boolean;
     };
   };
   setStagedLines: (
@@ -17,9 +18,11 @@ export type StagedLinesState = {
   ) => void;
   clearStagedLinesForFile: (filePath: string) => void;
   clearAllStagedLines: () => void;
+  setStagedNewFile: (filePath: string, value: boolean) => void;
+  isStagedNewFile: (filePath: string) => boolean;
 };
 
-export const useStagedLinesStore = create<StagedLinesState>((set) => ({
+export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
   stagedLines: {},
   setStagedLines: (filePath, hunkIdx, lines) =>
     set((state) => ({
@@ -50,4 +53,34 @@ export const useStagedLinesStore = create<StagedLinesState>((set) => ({
       return { stagedLines: newStaged };
     }),
   clearAllStagedLines: () => set({ stagedLines: {} }),
+  setStagedNewFile: (filePath, value) =>
+    set((state) => {
+      if (value) {
+        return {
+          stagedLines: {
+            ...state.stagedLines,
+            [filePath]: { isNewFile: true },
+          },
+        };
+      } else {
+        const prev = state.stagedLines[filePath] || {};
+        // Si solo hay isNewFile, bórralo todo; si hay líneas, bórralo solo
+        const { isNewFile, ...rest } = prev;
+        if (Object.keys(rest).length === 0) {
+          const newStaged = { ...state.stagedLines };
+          delete newStaged[filePath];
+          return { stagedLines: newStaged };
+        } else {
+          return {
+            stagedLines: {
+              ...state.stagedLines,
+              [filePath]: rest,
+            },
+          };
+        }
+      }
+    }),
+  isStagedNewFile: (filePath) => {
+    return !!get().stagedLines[filePath]?.isNewFile;
+  },
 }));
