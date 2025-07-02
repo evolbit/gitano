@@ -19,7 +19,6 @@ interface DiffFileListProps {
   rowDividerColor?: string; // color de la línea de separación
   rowPadding?: string; // padding de los li
   showFileCheckboxes?: boolean; // NUEVO: mostrar checkbox por archivo
-  onFileCheckboxChange?: (file: FileChange, checked: boolean) => void; // handler
 }
 
 // Type guard para saber si el ref es un objeto con .current
@@ -43,7 +42,6 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       rowDividerColor = "divide-border",
       rowPadding = "px-4 py-1",
       showFileCheckboxes = false,
-      onFileCheckboxChange,
     },
     ref
   ) => {
@@ -52,6 +50,12 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       useState(selectedIndex);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const stagedLines = useStagedLinesStore((s) => s.stagedLines);
+    const setAllStagedLinesForFile = useStagedLinesStore(
+      (s) => s.setAllStagedLinesForFile
+    );
+    const clearStagedLinesForFile = useStagedLinesStore(
+      (s) => s.clearStagedLinesForFile
+    );
 
     // Normaliza el status a minúsculas y lo castea al tipo correcto
     const allowedStatuses = [
@@ -240,8 +244,28 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                         checked={checkboxState === "checked"}
                         indeterminate={checkboxState === "indeterminate"}
                         onChange={(e) => {
-                          if (onFileCheckboxChange)
-                            onFileCheckboxChange(file, e.target.checked);
+                          if (e.target.checked) {
+                            // Agregar todas las líneas stageables (Add o Del) de todos los hunks
+                            const hunks = (file as any).hunks || [];
+                            const allHunks: { [hunkIdx: number]: number[] } =
+                              {};
+                            hunks.forEach((hunk: any, hunkIdx: number) => {
+                              const lineIdxs = hunk.lines
+                                .map((line: DiffLine, idx: number) =>
+                                  line.kind === "Add" || line.kind === "Del"
+                                    ? idx
+                                    : null
+                                )
+                                .filter((idx) => idx !== null) as number[];
+                              if (lineIdxs.length > 0) {
+                                allHunks[hunkIdx] = lineIdxs;
+                              }
+                            });
+                            setAllStagedLinesForFile(file.path, allHunks);
+                          } else {
+                            // Limpiar todas las líneas staged de este archivo
+                            clearStagedLinesForFile(file.path);
+                          }
                         }}
                         onClick={(e) => e.stopPropagation()}
                         tabIndex={0}

@@ -70,13 +70,26 @@ const RepoTabLayout: React.FC = () => {
   // Handler para marcar/desmarcar todas las líneas de un archivo
   const handleFileCheckboxChange = useCallback(
     (file: FileChange, checked: boolean) => {
-      // Aquí deberías obtener los hunks del archivo y marcar todas las líneas stageables
-      // Si tienes los hunks en memoria, marca todas las líneas; si no, ignora
+      // file es FileChangeWithHunks en este contexto
+      const fileWithHunks = file as FileChangeWithHunks;
+      const { path, hunks } = fileWithHunks;
       if (checked) {
-        // Si tienes los hunks, llama a setAllStagedLinesForFile(file.path, allLines)
-        // Si no, ignora
+        // Agregar todas las líneas stageables (Add o Del) de todos los hunks
+        const allHunks: { [hunkIdx: number]: number[] } = {};
+        hunks.forEach((hunk, hunkIdx) => {
+          const lineIdxs = hunk.lines
+            .map((line, idx) =>
+              line.kind === "Add" || line.kind === "Del" ? idx : null
+            )
+            .filter((idx) => idx !== null) as number[];
+          if (lineIdxs.length > 0) {
+            allHunks[hunkIdx] = lineIdxs;
+          }
+        });
+        stagedLinesStore.setAllStagedLinesForFile(path, allHunks);
       } else {
-        stagedLinesStore.clearStagedLinesForFile(file.path);
+        // Limpiar todas las líneas staged de este archivo
+        stagedLinesStore.clearStagedLinesForFile(path);
       }
     },
     [stagedLinesStore]
