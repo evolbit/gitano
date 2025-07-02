@@ -1004,6 +1004,7 @@ pub struct DiffHunk {
     pub new_start: usize,
     pub new_lines: usize,
     pub lines: Vec<DiffLine>,
+    pub is_new_file: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -1079,6 +1080,7 @@ fn parse_unified_diff(diff: &str) -> Vec<DiffHunk> {
                 new_start,
                 new_lines,
                 lines: hunk_lines,
+                is_new_file: false,
             });
         }
     }
@@ -1091,7 +1093,62 @@ pub fn get_file_diff_hunks(
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
+    use std::fs;
+    use std::path::Path;
     use std::process::Command;
+
+    // Verificar si el archivo existe en el working directory
+    let file_path_obj = Path::new(&file_path);
+    let full_path = Path::new(&path).join(file_path_obj);
+
+    if !full_path.exists() {
+        return Ok(vec![]); // Archivo no existe, no hay diff
+    }
+
+    // Verificar si el archivo está en el índice de Git
+    let ls_files_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("ls-files")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let is_tracked = !ls_files_output.stdout.is_empty();
+
+    // Si el archivo no está trackeado, es un archivo nuevo
+    if !is_tracked {
+        // Leer el contenido del archivo
+        let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
+
+        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+        // Crear un hunk especial para archivo nuevo
+        let diff_lines: Vec<DiffLine> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| DiffLine {
+                kind: DiffLineKind::Add,
+                content: line.clone(),
+                old_lineno: None,
+                new_lineno: Some(i + 1),
+            })
+            .collect();
+
+        let hunk = DiffHunk {
+            header: format!("@@ -0,0 +1,{} @@", lines.len()),
+            old_start: 0,
+            old_lines: 0,
+            new_start: 1,
+            new_lines: lines.len(),
+            lines: diff_lines,
+            is_new_file: true,
+        };
+
+        return Ok(vec![hunk]);
+    }
+
+    // Archivo trackeado, obtener diff normal
     let output = Command::new("git")
         .arg("-C")
         .arg(&path)
@@ -1102,7 +1159,18 @@ pub fn get_file_diff_hunks(
         .output()
         .map_err(|e| e.to_string())?;
     let diff = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_unified_diff(&diff))
+
+    if diff.trim().is_empty() {
+        return Ok(vec![]); // No hay cambios
+    }
+
+    let mut hunks = parse_unified_diff(&diff);
+    // Marcar todos los hunks como no nuevos
+    for hunk in &mut hunks {
+        hunk.is_new_file = false;
+    }
+
+    Ok(hunks)
 }
 
 #[derive(Deserialize)]
@@ -1179,28 +1247,129 @@ pub fn get_commit_file_diff(
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
     use std::process::Command;
-    let output = Command::new("git")
+
+    // Verificar si el archivo existe en el commit
+    let show_output = Command::new("git")
         .arg("-C")
         .arg(&path)
         .arg("show")
         .arg(format!("{}:./{}", sha, file_path))
-        .output()
-        .map_err(|e| e.to_string())?;
-    let file_content = String::from_utf8_lossy(&output.stdout);
-    // Para obtener el diff, comparamos el archivo en el commit con el archivo en el padre
-    let diff_output = Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .arg("diff")
-        .arg(format!("-U{}", context))
-        .arg(format!("{}^", sha))
-        .arg(&sha)
-        .arg("--")
-        .arg(&file_path)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let diff = String::from_utf8_lossy(&diff_output.stdout);
-    Ok(parse_unified_diff(&diff))
+        .output();
+
+    match show_output {
+        Ok(output) => {
+            let file_content = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+            // Verificar si el archivo existe en el commit padre
+            let parent_show_output = Command::new("git")
+                .arg("-C")
+                .arg(&path)
+                .arg("show")
+                .arg(format!("{}^:./{}", sha, file_path))
+                .output();
+
+            match parent_show_output {
+                Ok(_) => {
+                    // El archivo existe en ambos commits, obtener diff normal
+                    let diff_output = Command::new("git")
+                        .arg("-C")
+                        .arg(&path)
+                        .arg("diff")
+                        .arg(format!("-U{}", context))
+                        .arg(format!("{}^", sha))
+                        .arg(&sha)
+                        .arg("--")
+                        .arg(&file_path)
+                        .output()
+                        .map_err(|e| e.to_string())?;
+                    let diff = String::from_utf8_lossy(&diff_output.stdout);
+
+                    if diff.trim().is_empty() {
+                        return Ok(vec![]); // No hay cambios
+                    }
+
+                    let mut hunks = parse_unified_diff(&diff);
+                    // Marcar todos los hunks como no nuevos
+                    for hunk in &mut hunks {
+                        hunk.is_new_file = false;
+                    }
+
+                    Ok(hunks)
+                }
+                Err(_) => {
+                    // El archivo no existe en el commit padre, es un archivo nuevo
+                    let diff_lines: Vec<DiffLine> = lines
+                        .iter()
+                        .enumerate()
+                        .map(|(i, line)| DiffLine {
+                            kind: DiffLineKind::Add,
+                            content: line.clone(),
+                            old_lineno: None,
+                            new_lineno: Some(i + 1),
+                        })
+                        .collect();
+
+                    let hunk = DiffHunk {
+                        header: format!("@@ -0,0 +1,{} @@", lines.len()),
+                        old_start: 0,
+                        old_lines: 0,
+                        new_start: 1,
+                        new_lines: lines.len(),
+                        lines: diff_lines,
+                        is_new_file: true,
+                    };
+
+                    Ok(vec![hunk])
+                }
+            }
+        }
+        Err(_) => {
+            // El archivo no existe en este commit, podría ser un archivo eliminado
+            // Verificar si existe en el commit padre
+            let parent_show_output = Command::new("git")
+                .arg("-C")
+                .arg(&path)
+                .arg("show")
+                .arg(format!("{}^:./{}", sha, file_path))
+                .output();
+
+            match parent_show_output {
+                Ok(output) => {
+                    // El archivo existe en el padre pero no en este commit, está eliminado
+                    let file_content = String::from_utf8_lossy(&output.stdout);
+                    let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+                    let diff_lines: Vec<DiffLine> = lines
+                        .iter()
+                        .enumerate()
+                        .map(|(i, line)| DiffLine {
+                            kind: DiffLineKind::Del,
+                            content: line.clone(),
+                            old_lineno: Some(i + 1),
+                            new_lineno: None,
+                        })
+                        .collect();
+
+                    let hunk = DiffHunk {
+                        header: format!("@@ -1,{} +0,0 @@", lines.len()),
+                        old_start: 1,
+                        old_lines: lines.len(),
+                        new_start: 0,
+                        new_lines: 0,
+                        lines: diff_lines,
+                        is_new_file: false,
+                    };
+
+                    Ok(vec![hunk])
+                }
+                Err(_) => {
+                    // El archivo no existe en ningún commit
+                    Ok(vec![])
+                }
+            }
+        }
+    }
 }
 
 #[tauri::command]

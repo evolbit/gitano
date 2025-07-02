@@ -18,6 +18,7 @@ interface DiffHunk {
   new_start: number;
   new_lines: number;
   lines: DiffLine[];
+  is_new_file: boolean;
 }
 
 type ContextDirection = "Above" | "Below";
