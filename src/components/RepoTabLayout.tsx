@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
@@ -54,22 +54,6 @@ const RepoTabLayout: React.FC = () => {
   useEffect(() => {
     setSelectedWorkingFile(null);
   }, [tab?.selectedBranch]);
-
-  // Calcula el estado del checkbox de cada archivo a partir del store y los hunks si están disponibles
-  const fileCheckboxState = useMemo(() => {
-    const state: Record<string, "checked" | "indeterminate" | "unchecked"> = {};
-    changes.forEach((file) => {
-      const fileStaged = stagedLines[file.path] || {};
-      // Aquí deberías tener acceso a los hunks del archivo para contar líneas stageables
-      // Por ahora, si hay staged, checked; si no, unchecked
-      let stagedCount = 0;
-      for (const hunkIdx in fileStaged) {
-        stagedCount += fileStaged[hunkIdx]?.size || 0;
-      }
-      state[file.path] = stagedCount > 0 ? "checked" : "unchecked";
-    });
-    return state;
-  }, [changes, stagedLines]);
 
   // Handler para abrir el diff de un archivo del working directory
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
@@ -167,15 +151,18 @@ const RepoTabLayout: React.FC = () => {
                             : 0
                         }
                         showSearch={true}
-                        onSelect={(file) => handleSelectWorkingFile(file)}
-                        onAction={(file) => handleSelectWorkingFile(file)}
+                        onSelect={(file, _idx) =>
+                          handleSelectWorkingFile(file as FileChangeWithHunks)
+                        }
+                        onAction={(file, _idx) =>
+                          handleSelectWorkingFile(file as FileChangeWithHunks)
+                        }
                         rowBgColor="bg-background"
                         rowTextColor="text-foreground"
                         highlightSelected={true}
                         rowDividerColor="divide-border"
                         rowPadding="px-2 py-1"
                         showFileCheckboxes={true}
-                        fileCheckboxState={fileCheckboxState}
                         onFileCheckboxChange={handleFileCheckboxChange}
                       />
                     )}

@@ -1,5 +1,7 @@
+import { Checkbox } from "@mantine/core";
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { FileChange } from "../types/git";
+import { useStagedLinesStore } from "../store/staging";
+import { DiffLine, FileChange } from "../types/git";
 import FileListItem from "./FileListItem";
 import { IconSearch } from "./icons";
 
@@ -17,7 +19,6 @@ interface DiffFileListProps {
   rowDividerColor?: string; // color de la línea de separación
   rowPadding?: string; // padding de los li
   showFileCheckboxes?: boolean; // NUEVO: mostrar checkbox por archivo
-  fileCheckboxState?: Record<string, "checked" | "indeterminate" | "unchecked">; // estado de cada checkbox
   onFileCheckboxChange?: (file: FileChange, checked: boolean) => void; // handler
 }
 
@@ -42,7 +43,6 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       rowDividerColor = "divide-border",
       rowPadding = "px-4 py-1",
       showFileCheckboxes = false,
-      fileCheckboxState = {},
       onFileCheckboxChange,
     },
     ref
@@ -51,6 +51,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
     const [internalSelectedIndex, setInternalSelectedIndex] =
       useState(selectedIndex);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const stagedLines = useStagedLinesStore((s) => s.stagedLines);
 
     // Normaliza el status a minúsculas y lo castea al tipo correcto
     const allowedStatuses = [
@@ -197,8 +198,30 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
               if (highlightSelected && internalSelectedIndex === idx) {
                 rowClass = `${rowHighlightColor}`;
               }
-              // Estado del checkbox
-              const checkboxState = fileCheckboxState[file.path] || "unchecked";
+              // Calcular estado del checkbox aquí
+              let checkboxState: "checked" | "indeterminate" | "unchecked" =
+                "unchecked";
+              const fileStaged = stagedLines[file.path] || {};
+              const hunks = (file as any).hunks || [];
+              let totalStageable = 0;
+              hunks.forEach((hunk: any) => {
+                totalStageable += hunk.lines.filter(
+                  (line: DiffLine) => line.kind === "Add" || line.kind === "Del"
+                ).length;
+              });
+              let stagedCount = 0;
+              for (const hunkIdx in fileStaged) {
+                stagedCount += fileStaged[hunkIdx]?.size || 0;
+              }
+              console.log("stagedCount", stagedCount);
+              console.log("totalStageable", totalStageable);
+              if (stagedCount === 0) {
+                checkboxState = "unchecked";
+              } else if (stagedCount === totalStageable && totalStageable > 0) {
+                checkboxState = "checked";
+              } else {
+                checkboxState = "indeterminate";
+              }
               return (
                 <li
                   key={file.path}
@@ -213,15 +236,9 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                   <div className="flex items-center min-w-0 gap-2">
                     {/* Checkbox por archivo, solo si showFileCheckboxes */}
                     {showFileCheckboxes && (
-                      <input
-                        type="checkbox"
-                        className="accent-blue-600 w-4 h-4"
+                      <Checkbox
                         checked={checkboxState === "checked"}
-                        ref={(el) => {
-                          if (el)
-                            el.indeterminate =
-                              checkboxState === "indeterminate";
-                        }}
+                        indeterminate={checkboxState === "indeterminate"}
                         onChange={(e) => {
                           if (onFileCheckboxChange)
                             onFileCheckboxChange(file, e.target.checked);
@@ -233,6 +250,8 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                             ? "mixed"
                             : checkboxState === "checked"
                         }
+                        size="xs"
+                        color="blue"
                       />
                     )}
                     <FileListItem file={fileForList} />
