@@ -66,6 +66,7 @@ const RepoTabLayout: React.FC = () => {
   // Handler para abrir el diff de un archivo del working directory
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
     setSelectedWorkingFile(file);
+    if (updated && updated !== selectedWorkingFile) {
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
