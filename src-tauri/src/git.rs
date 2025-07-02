@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
+use tempfile::NamedTempFile;
 
 static COMMIT_BRANCH_MAP_CACHE: Lazy<Mutex<HashMap<String, HashMap<Oid, String>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -110,6 +111,17 @@ pub struct CommitListItem {
 pub struct CommitListPage {
     pub commits: Vec<CommitListItem>,
     pub has_more: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeType {
+    Added,
+    Deleted,
+    Modified,
+    Renamed,
+    Copied,
+    TypeChanged,
 }
 
 #[command]
@@ -855,15 +867,11 @@ pub fn get_commits_list_paginated(
     })
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum ChangeType {
-    Added,
-    Deleted,
-    Modified,
-    Renamed,
-    Copied,
-    TypeChanged,
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum DiffLineKind {
+    Add,
+    Del,
+    Context,
 }
 
 impl From<git2::Delta> for ChangeType {
@@ -994,13 +1002,6 @@ pub fn get_current_branch(path: String) -> Result<String, String> {
     } else {
         Ok("Detached HEAD".to_string())
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub enum DiffLineKind {
-    Add,
-    Del,
-    Context,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1517,7 +1518,11 @@ pub fn git_stage_lines(
     file_path: String,
     hunks: serde_json::Value,
 ) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Write};
+    use std::path::Path;
     use std::process::Command;
+    use tempfile::NamedTempFile;
 
     // 1. Obtener el diff completo del archivo
     let output = Command::new("git")
@@ -1531,9 +1536,9 @@ pub fn git_stage_lines(
     let diff = String::from_utf8_lossy(&output.stdout);
 
     // 2. Parsear el diff en hunks y líneas
-    let parsed_hunks = parse_unified_diff(&diff); // Usa tu función existente
+    let parsed_hunks = parse_unified_diff(&diff);
 
-    // 3. Logs detallados para depuración
+    // 3. Determinar si todas las líneas stageables están seleccionadas
     let mut all_lines_selected = true;
     for (hunk_idx, hunk) in parsed_hunks.iter().enumerate() {
         let stageable_lines: Vec<usize> = hunk
@@ -1543,7 +1548,6 @@ pub fn git_stage_lines(
             .filter(|(_, line)| matches!(line.kind, DiffLineKind::Add | DiffLineKind::Del))
             .map(|(idx, _)| idx)
             .collect();
-
         let selected: Vec<usize> = hunks
             .get(hunk_idx.to_string())
             .and_then(|v| v.as_array())
@@ -1553,29 +1557,14 @@ pub fn git_stage_lines(
                     .collect()
             })
             .unwrap_or_else(Vec::new);
-
-        println!(
-            "[git_stage_lines] Hunk {}: stageable_lines={:?} selected={:?}",
-            hunk_idx, stageable_lines, selected
-        );
         let all_selected = stageable_lines.iter().all(|l| selected.contains(l));
-        println!(
-            "[git_stage_lines] Hunk {}: All stageable selected? {}",
-            hunk_idx, all_selected
-        );
         if !all_selected {
             all_lines_selected = false;
         }
     }
 
-    // ... el resto de tu lógica aquí ...
-    println!(
-        "[git_stage_lines] all_lines_selected (para todos los hunks): {}",
-        all_lines_selected
-    );
-
     if all_lines_selected {
-        println!("[git_stage_lines] Ejecutando git add para {}", file_path);
+        // Si todo está seleccionado, simplemente git add
         let status = Command::new("git")
             .arg("-C")
             .arg(&path)
@@ -1589,7 +1578,204 @@ pub fn git_stage_lines(
         return Ok(());
     }
 
-    // TODO: Implementar stage parcial real o git add si corresponde
+    // 4. Leer el archivo en HEAD para obtener contexto correcto
+    let head_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("show")
+        .arg(format!("HEAD:{}", file_path))
+        .output()
+        .map_err(|e| e.to_string())?;
+    let head_content = String::from_utf8_lossy(&head_output.stdout);
+    let head_lines: Vec<String> = head_content.lines().map(|s| s.to_string()).collect();
+
+    // 5. Generar patch con hunks completamente nuevos
+    let mut patch = String::new();
+    patch.push_str(&format!(
+        "diff --git a/{0} b/{0}\nindex 0000000..0000000 100644\n--- a/{0}\n+++ b/{0}\n",
+        file_path
+    ));
+
+    let mut any_hunk = false;
+    const CONTEXT_LINES: usize = 3; // Líneas de contexto alrededor de cada cambio
+
+    for (hunk_idx, hunk) in parsed_hunks.iter().enumerate() {
+        let selected: Vec<usize> = hunks
+            .get(hunk_idx.to_string())
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                let mut v: Vec<usize> = arr
+                    .iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as usize))
+                    .collect();
+                v.sort_unstable();
+                v
+            })
+            .unwrap_or_else(Vec::new);
+
+        if selected.is_empty() {
+            continue;
+        }
+
+        // Agrupar líneas seleccionadas en regiones contiguas
+        let mut regions = Vec::new();
+        let mut current_region = Vec::new();
+        for &line_idx in &selected {
+            if current_region.is_empty() || line_idx == current_region.last().unwrap() + 1 {
+                current_region.push(line_idx);
+            } else {
+                if !current_region.is_empty() {
+                    regions.push(current_region.clone());
+                }
+                current_region = vec![line_idx];
+            }
+        }
+        if !current_region.is_empty() {
+            regions.push(current_region);
+        }
+
+        // Fusionar regiones cercanas (≤ CONTEXT_LINES de separación)
+        if regions.len() > 1 {
+            let mut merged = Vec::new();
+            let mut cur = regions[0].clone();
+            for region in regions.iter().skip(1) {
+                if region[0] <= cur.last().unwrap() + CONTEXT_LINES {
+                    cur.extend(region);
+                } else {
+                    merged.push(cur);
+                    cur = region.clone();
+                }
+            }
+            merged.push(cur);
+            regions = merged;
+        }
+
+        // Procesar cada región
+        for region in regions {
+            let region_start = region[0];
+            let region_end = region[region.len() - 1];
+
+            // Calcular contexto en el archivo HEAD
+            let hunk_first = &hunk.lines[0];
+            let old_hunk_start = hunk_first.old_lineno.unwrap_or(1) - 1; // 0-based
+            let old_hunk_end = old_hunk_start
+                + hunk
+                    .lines
+                    .iter()
+                    .filter(|l| l.kind != DiffLineKind::Add)
+                    .count();
+
+            let context_start = if region_start < CONTEXT_LINES {
+                old_hunk_start
+            } else {
+                old_hunk_start + region_start - CONTEXT_LINES
+            };
+            let context_end = std::cmp::min(
+                old_hunk_start + region_end + CONTEXT_LINES + 1,
+                old_hunk_end,
+            );
+
+            let mut old_lines = 0;
+            let mut new_lines = 0;
+            let mut hunk_lines = Vec::new();
+            let mut diff_idx = 0;
+
+            // Map diff lines to file lines
+            for i in context_start..context_end {
+                // Buscar el índice en el diff para esta línea del archivo original
+                // (solo para líneas que no son Add)
+                while diff_idx < hunk.lines.len() {
+                    let l = &hunk.lines[diff_idx];
+                    if l.old_lineno == Some(i + 1)
+                        || (l.kind == DiffLineKind::Context && l.old_lineno == Some(i + 1))
+                    {
+                        break;
+                    }
+                    diff_idx += 1;
+                }
+                let is_selected = region.contains(&(diff_idx));
+                if diff_idx < hunk.lines.len() {
+                    let line = &hunk.lines[diff_idx];
+                    match line.kind {
+                        DiffLineKind::Add => {
+                            if is_selected {
+                                hunk_lines.push(format!("+{}", line.content));
+                                new_lines += 1;
+                            }
+                        }
+                        DiffLineKind::Del => {
+                            if is_selected {
+                                hunk_lines.push(format!("-{}", line.content));
+                                old_lines += 1;
+                            } else {
+                                hunk_lines.push(format!(" {}", head_lines[i]));
+                                old_lines += 1;
+                                new_lines += 1;
+                            }
+                        }
+                        DiffLineKind::Context => {
+                            hunk_lines.push(format!(" {}", head_lines[i]));
+                            old_lines += 1;
+                            new_lines += 1;
+                        }
+                    }
+                } else {
+                    // Contexto puro
+                    hunk_lines.push(format!(
+                        " {}",
+                        head_lines.get(i).cloned().unwrap_or_default()
+                    ));
+                    old_lines += 1;
+                    new_lines += 1;
+                }
+            }
+
+            // Header del hunk
+            patch.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                context_start + 1,
+                old_lines.max(1),
+                context_start + 1,
+                new_lines.max(1)
+            ));
+            for l in hunk_lines {
+                patch.push_str(&l);
+                patch.push('\n');
+            }
+            any_hunk = true;
+        }
+    }
+
+    if !any_hunk {
+        return Err("No hay líneas seleccionadas para stagear.".to_string());
+    }
+
+    // 6. Escribir el patch a un archivo temporal
+    println!("[git_stage_lines] PATCH GENERADO:\n{}", patch);
+    let mut patchfile = NamedTempFile::new().map_err(|e| e.to_string())?;
+    patchfile
+        .write_all(patch.as_bytes())
+        .map_err(|e| e.to_string())?;
+    patchfile.flush().map_err(|e| e.to_string())?;
+
+    // 7. Aplicar el patch al área de staging
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("apply")
+        .arg("--cached")
+        .arg(patchfile.path())
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        println!(
+            "[git_stage_lines] git apply --cached stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Err("git apply --cached failed".to_string());
+    }
+
     Ok(())
 }
 
