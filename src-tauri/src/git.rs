@@ -47,7 +47,7 @@ pub struct GitCommit {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitTag {
-}
+    pub name: String,
     pub annotated: bool,
 }
 
@@ -85,8 +85,8 @@ pub struct GitRefData {
     pub tags: Vec<String>,
     pub remotes: Vec<String>,
     pub ci: Option<String>,
-#[derive(Debug, Serialize, Deserialize)]
-pub enum CommitOrdering {
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CommitOrdering {
     Date,
@@ -111,7 +111,7 @@ pub struct CommitListItem {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitListPage {
-}
+    pub commits: Vec<CommitListItem>,
     pub has_more: bool,
 }
 
@@ -132,7 +132,7 @@ pub fn open_local_repo(path: String) -> Result<String, String> {
         Ok(_) => Ok(format!("Repositorio abierto correctamente: {}", path)),
         Err(e) => Err(format!("No es un repositorio git válido: {}", e)),
     }
-#[command]
+}
 
 #[command]
 pub fn get_branches(path: String) -> Result<Vec<String>, String> {
@@ -140,7 +140,7 @@ pub fn get_branches(path: String) -> Result<Vec<String>, String> {
     let mut branches = Vec::new();
     let branch_iter = repo.branches(None).map_err(|e| e.to_string())?;
     for branch in branch_iter {
-            branches.push(name.to_string());
+        let (branch, _) = branch.map_err(|e| e.to_string())?;
         if let Some(name) = branch.name().map_err(|e| e.to_string())? {
             branches.push(name.to_string());
         }
@@ -166,6 +166,8 @@ pub fn get_commits(path: String) -> Result<Vec<CommitInfo>, String> {
     Ok(commits)
 }
 
+#[command]
+pub fn get_commit_graph(path: String) -> Result<Vec<CommitNode>, String> {
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
     revwalk.push_head().map_err(|e| e.to_string())?;
@@ -1518,105 +1520,79 @@ pub fn git_stage_lines(
     file_path: String,
     hunks: serde_json::Value,
 ) -> Result<(), String> {
-    use std::fs::File;
-    use std::io::Write;
-    use std::process::Command;
-    use tempfile::NamedTempFile;
+    use git2::{IndexAddOption, IndexEntry, Oid, Repository};
+    use std::fs;
+    use std::path::Path;
+    use std::str;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    // 1. Obtener el diff completo del archivo
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .arg("diff")
-        .arg("--unified=3")
-        .arg("--")
-        .arg(&file_path)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let diff = String::from_utf8_lossy(&output.stdout);
+    // 1. Abrir el repo
+    let repo = Repository::open(&path).map_err(|e| e.to_string())?;
+    let mut index = repo.index().map_err(|e| e.to_string())?;
 
-    // 2. Parsear el diff y filtrar solo los hunks/lineas seleccionadas
-    let patch = generate_partial_patch(&diff, &hunks)?;
+    // 2. Leer el contenido staged (index)
+    let entry = index
+        .get_path(Path::new(&file_path), 0)
+        .ok_or_else(|| "File not found in index".to_string())?;
+    let blob = repo.find_blob(entry.id).map_err(|e| e.to_string())?;
+    let index_content = str::from_utf8(blob.content()).unwrap_or("").to_string();
 
-    // 3. Escribir el patch a un archivo temporal
-    println!("\n--- PATCH GENERADO ---\n{}\n--- FIN PATCH ---\n", patch);
-    let mut temp_patch = NamedTempFile::new().map_err(|e| e.to_string())?;
-    temp_patch
-        .write_all(patch.as_bytes())
-        .map_err(|e| e.to_string())?;
-    temp_patch.flush().map_err(|e| e.to_string())?;
+    // 3. Leer el contenido actual del working directory
+    let full_path = Path::new(&path).join(&file_path);
+    let working_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
 
-    // 4. Aplicar el patch al index
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .arg("apply")
-        .arg("--cached")
-        .arg(temp_patch.path())
-        .status()
-        .map_err(|e| e.to_string())?;
-    if !status.success() {
-        return Err("git apply --cached failed".to_string());
-    }
-    Ok(())
-}
-
-// Esta función debe generar un patch válido solo con las líneas seleccionadas
-fn generate_partial_patch(diff: &str, hunks: &serde_json::Value) -> Result<String, String> {
-    use regex::Regex;
-    use std::collections::HashMap;
-
-    // 1. Parsear el diff en hunks
-    let hunk_re = Regex::new(r"(?m)^@@ ").map_err(|e| format!("Regex error: {e}"))?;
-    let mut hunk_starts = vec![];
-    for (i, line) in diff.lines().enumerate() {
-        if hunk_re.is_match(line) {
-            hunk_starts.push(i);
+    // 4. Parsear las líneas seleccionadas (hunks: { hunkIdx: [lineIdx, ...], ... })
+    let mut selected_lines = std::collections::HashSet::new();
+    if let Some(obj) = hunks.as_object() {
+        for (_hunk_idx, arr) in obj.iter() {
+            if let Some(arr) = arr.as_array() {
+                for idx in arr {
+                    if let Some(line_idx) = idx.as_u64() {
+                        selected_lines.insert(line_idx as usize);
+                    }
+                }
+            }
         }
     }
-    if hunk_starts.is_empty() {
-        return Err("No hunks found in diff".to_string());
-    }
-    // 2. Extraer encabezado del patch (las líneas antes del primer hunk)
-    let lines: Vec<&str> = diff.lines().collect();
-    let mut patch = String::new();
-    for i in 0..hunk_starts[0] {
-        patch.push_str(lines[i]);
-        patch.push('\n');
-    }
-    // 3. Para cada hunk, incluir solo las líneas seleccionadas (más contexto)
-    for (hunk_idx, &start) in hunk_starts.iter().enumerate() {
-        let end = if hunk_idx + 1 < hunk_starts.len() {
-            hunk_starts[hunk_idx + 1]
+
+    // 5. Combinar líneas según selección
+    let index_lines: Vec<&str> = index_content.lines().collect();
+    let working_lines: Vec<&str> = working_content.lines().collect();
+    let mut result = Vec::new();
+    let max_lines = std::cmp::max(index_lines.len(), working_lines.len());
+    for i in 0..max_lines {
+        if selected_lines.contains(&(i + 1)) {
+            // Línea del working directory
+            result.push(working_lines.get(i).unwrap_or(&"").to_string());
         } else {
-            lines.len()
-        };
-        let hunk_lines = &lines[start..end];
-        // ¿Hay líneas seleccionadas para este hunk?
-        let selected = hunks
-            .get(hunk_idx.to_string())
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                let mut v: Vec<usize> = arr
-                    .iter()
-                    .filter_map(|v| v.as_u64().map(|n| n as usize))
-                    .collect();
-                v.sort_unstable();
-                v
-            })
-            .unwrap_or_else(Vec::new);
-        if selected.is_empty() {
-            continue;
+            // Línea del index
+            result.push(index_lines.get(i).unwrap_or(&"").to_string());
         }
-        // Incluir todo el hunk si todas las líneas están seleccionadas
-        // (optimización simple)
-        patch.push_str(&hunk_lines.join("\n"));
-        patch.push('\n');
-        // Si quieres filtrar solo líneas seleccionadas + contexto, aquí deberías
-        // reconstruir el hunk con solo esas líneas y suficiente contexto.
-        // (Implementación avanzada: usar un parser de unified diff o hacerlo a mano)
     }
-    Ok(patch)
+    let new_content = result.join("\n") + "\n";
+
+    // 6. Escribir el nuevo contenido al index
+    let oid = repo
+        .blob(new_content.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let mut entry = IndexEntry {
+        ctime: git2::IndexTime::new(now.as_secs() as i32, now.subsec_nanos() as u32),
+        mtime: git2::IndexTime::new(now.as_secs() as i32, now.subsec_nanos() as u32),
+        dev: 0,
+        ino: 0,
+        mode: 0o100644,
+        uid: 0,
+        gid: 0,
+        file_size: new_content.len() as u32,
+        id: oid,
+        flags: 0,
+        flags_extended: 0,
+        path: file_path.as_bytes().to_vec(),
+    };
+    index.add(&entry).map_err(|e| e.to_string())?;
+    index.write().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
