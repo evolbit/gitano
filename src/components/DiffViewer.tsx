@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useState } from "react";
+import DiffHunk from "./DiffHunk";
 import { IconCheck } from "./icons";
 
 // Tipos para los datos del backend
@@ -293,97 +294,30 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         {loading && <div className="text-zinc-400">Cargando diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
         {!loading && !error && hunks.length === 0 && <div>No hay cambios.</div>}
-        {hunks.map((hunk, idx) => {
-          const isHovered = hoveredHunkIdx === idx;
-          return (
-            <div
-              key={idx}
-              className={`mb-6 border border-border rounded bg-background ${
-                isHovered ? "ring-2 ring-blue-400/40" : ""
-              }`}
-              onMouseEnter={() => setHoveredHunkIdx(idx)}
-              onMouseLeave={() => setHoveredHunkIdx(null)}>
-              {/* Cabecera del hunk con botones Select all y Stage */}
-              <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
-                <span className="text-purple-300 text-xs font-mono">
-                  {hunk.header}
-                </span>
-                <div className="flex items-center gap-2 ml-auto">
-                  <button
-                    className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
-                    onClick={() => handleStageHunk(idx)}>
-                    Select all
-                  </button>
-                  <button
-                    className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
-                    disabled={!(stagedLines[idx] && stagedLines[idx].size > 0)}
-                    onClick={() => {
-                      // Aquí iría la lógica real de stage, por ahora solo log
-                      const staged = stagedLines[idx]
-                        ? Array.from(stagedLines[idx])
-                        : [];
-                      console.log("Stage lines for hunk", idx, staged);
-                    }}>
-                    Stage
-                  </button>
-                </div>
-              </div>
-              {/* Expandir contexto arriba */}
-              <div className="flex justify-center py-1">
-                <button
-                  className="text-xs text-blue-400 hover:underline"
-                  onClick={() => handleExpandContext(idx, "Above", 10)}>
-                  Mostrar 10 líneas arriba
-                </button>
-              </div>
-              {/* Líneas extra arriba */}
-              {extraContext[idx]?.above?.map((line, i) => (
-                <DiffLineRow
-                  key={"above-" + i}
-                  line={line}
-                  showChecks={false}
-                />
-              ))}
-              {/* Líneas del hunk */}
-              {hunk.lines.map((line, lineIdx) => {
-                const isStageable = line.kind === "Add" || line.kind === "Del";
-                const isStaged = stagedLines[idx]?.has(lineIdx);
-                return (
-                  <DiffLineRow
-                    key={lineIdx}
-                    line={line}
-                    showChecks={isStageable}
-                    isStaged={isStaged}
-                    onCheck={() => handleToggleLineStage(idx, lineIdx)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleLineMouseDown(idx, lineIdx, isStageable, isStaged);
-                    }}
-                    onMouseEnter={() =>
-                      handleLineMouseEnter(idx, lineIdx, isStageable, isStaged)
-                    }
-                  />
-                );
-              })}
-              {/* Líneas extra abajo */}
-              {extraContext[idx]?.below?.map((line, i) => (
-                <DiffLineRow
-                  key={"below-" + i}
-                  line={line}
-                  showChecks={false}
-                />
-              ))}
-              {/* Expandir contexto abajo */}
-              <div className="flex justify-center py-1">
-                <button
-                  className="text-xs text-blue-400 hover:underline"
-                  onClick={() => handleExpandContext(idx, "Below", 10)}>
-                  Mostrar 10 líneas abajo
-                </button>
-              </div>
-            </div>
-          );
-        })}
+        {hunks.map((hunk, idx) => (
+          <DiffHunk
+            key={idx}
+            hunk={hunk}
+            hunkIdx={idx}
+            stagedLines={stagedLines}
+            setStagedLines={setStagedLines}
+            extraContext={extraContext}
+            setExtraContext={setExtraContext}
+            hoveredHunkIdx={hoveredHunkIdx}
+            setHoveredHunkIdx={setHoveredHunkIdx}
+            isDragging={isDragging}
+            setIsDragging={setIsDragging}
+            dragHunkIdx={dragHunkIdx}
+            setDragHunkIdx={setDragHunkIdx}
+            dragMode={dragMode}
+            setDragMode={setDragMode}
+            handleExpandContext={handleExpandContext}
+            handleToggleLineStage={handleToggleLineStage}
+            handleLineMouseDown={handleLineMouseDown}
+            handleLineMouseEnter={handleLineMouseEnter}
+            handleStageHunk={handleStageHunk}
+          />
+        ))}
       </div>
     </div>
   );
