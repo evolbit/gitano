@@ -55,6 +55,17 @@ const RepoTabLayout: React.FC = () => {
     setSelectedWorkingFile(null);
   }, [tab?.selectedBranch]);
 
+  // Cierra el DiffViewer si el archivo seleccionado ya no existe en changes
+  useEffect(() => {
+    if (
+      selectedWorkingFile &&
+      !changes.some((f) => f.path === selectedWorkingFile.path)
+    ) {
+      setSelectedWorkingFile(null);
+      useFileHunksStore.getState().clearFileHunks();
+    }
+  }, [changes, selectedWorkingFile]);
+
   // Handler para abrir el diff de un archivo del working directory
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
     setSelectedWorkingFile(file);
@@ -176,7 +187,6 @@ const RepoTabLayout: React.FC = () => {
                         rowDividerColor="divide-border"
                         rowPadding="px-2 py-1"
                         showFileCheckboxes={true}
-                        onFileCheckboxChange={handleFileCheckboxChange}
                       />
                     )}
                   </Accordion.Panel>
