@@ -1,11 +1,10 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
-import { useStagedLinesStore } from "../store/staging";
-import { FileChange, FileChangeWithHunks } from "../types/git";
+import { FileChangeWithHunks } from "../types/git";
 import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
@@ -47,9 +46,6 @@ const RepoTabLayout: React.FC = () => {
     onRemove: () => void;
   }>(null);
 
-  const stagedLinesStore = useStagedLinesStore();
-  const stagedLines = useStagedLinesStore((s) => s.stagedLines);
-
   // Cierra el DiffViewer si cambia la rama activa
   useEffect(() => {
     setSelectedWorkingFile(null);
@@ -78,37 +74,7 @@ const RepoTabLayout: React.FC = () => {
     useFileHunksStore.getState().clearFileHunks();
   };
 
-  // Handler para marcar/desmarcar todas las líneas de un archivo
-  const handleFileCheckboxChange = useCallback(
-    (file: FileChange, checked: boolean) => {
-      // file es FileChangeWithHunks en este contexto
-      const fileWithHunks = file as FileChangeWithHunks;
-      const { path, hunks } = fileWithHunks;
-      if (checked) {
-        // Agregar todas las líneas stageables (Add o Del) de todos los hunks
-        const allHunks: { [hunkIdx: number]: number[] } = {};
-        hunks.forEach((hunk, hunkIdx) => {
-          const lineIdxs = hunk.lines
-            .map((line, idx) =>
-              line.kind === "Add" || line.kind === "Del" ? idx : null
-            )
-            .filter((idx) => idx !== null) as number[];
-          if (lineIdxs.length > 0) {
-            allHunks[hunkIdx] = lineIdxs;
-          }
-        });
-        stagedLinesStore.setAllStagedLinesForFile(path, allHunks);
-      } else {
-        // Limpiar todas las líneas staged de este archivo
-        stagedLinesStore.clearStagedLinesForFile(path);
-      }
-    },
-    [stagedLinesStore]
-  );
-
   if (!tab) return null;
-
-  console.log("[RepoTabLayout] changes", changes);
 
   return (
     <div className="flex h-full w-full flex-col">

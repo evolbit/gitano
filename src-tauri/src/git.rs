@@ -1383,10 +1383,10 @@ pub struct FileChangeWithHunks {
 
 #[tauri::command]
 pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithHunks>, String> {
-    println!(
-        "Rust: get_working_directory_changes called with path: {}",
-        path
-    );
+    // println!(
+    //     "Rust: get_working_directory_changes called with path: {}",
+    //     path
+    // );
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut changes = Vec::new();
 
@@ -1401,7 +1401,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
         let status = entry.status();
         let file_path = entry.path().unwrap_or("").to_string();
 
-        println!("Rust: status entry: {:?} path: {}", status, file_path);
+        // println!("Rust: status entry: {:?} path: {}", status, file_path);
 
         if file_path.is_empty() {
             continue;
@@ -1470,14 +1470,14 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
             Err(_) => vec![],
         };
 
-        println!(
-            "Rust: Detected file change: {} {:?} +{} -{} ({} hunks)",
-            file_path,
-            change_type,
-            insertions,
-            deletions,
-            hunks.len()
-        );
+        // println!(
+        //     "Rust: Detected file change: {} {:?} +{} -{} ({} hunks)",
+        //     file_path,
+        //     change_type,
+        //     insertions,
+        //     deletions,
+        //     hunks.len()
+        // );
 
         changes.push(FileChangeWithHunks {
             path: file_path,
@@ -1488,7 +1488,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
         });
     }
 
-    println!("Rust: Total changes detected: {}", changes.len());
+    // println!("Rust: Total changes detected: {}", changes.len());
     Ok(changes)
 }
 
@@ -1517,12 +1517,79 @@ pub fn git_stage_lines(
     file_path: String,
     hunks: serde_json::Value,
 ) -> Result<(), String> {
-    // Stub: aquí deberías implementar el stage parcial de líneas (por ahora solo loguea)
+    use std::process::Command;
+
+    // 1. Obtener el diff completo del archivo
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("diff")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diff = String::from_utf8_lossy(&output.stdout);
+
+    // 2. Parsear el diff en hunks y líneas
+    let parsed_hunks = parse_unified_diff(&diff); // Usa tu función existente
+
+    // 3. Logs detallados para depuración
+    let mut all_lines_selected = true;
+    for (hunk_idx, hunk) in parsed_hunks.iter().enumerate() {
+        let stageable_lines: Vec<usize> = hunk
+            .lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| matches!(line.kind, DiffLineKind::Add | DiffLineKind::Del))
+            .map(|(idx, _)| idx)
+            .collect();
+
+        let selected: Vec<usize> = hunks
+            .get(hunk_idx.to_string())
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as usize))
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new);
+
+        println!(
+            "[git_stage_lines] Hunk {}: stageable_lines={:?} selected={:?}",
+            hunk_idx, stageable_lines, selected
+        );
+        let all_selected = stageable_lines.iter().all(|l| selected.contains(l));
+        println!(
+            "[git_stage_lines] Hunk {}: All stageable selected? {}",
+            hunk_idx, all_selected
+        );
+        if !all_selected {
+            all_lines_selected = false;
+        }
+    }
+
+    // ... el resto de tu lógica aquí ...
     println!(
-        "[git_stage_lines] path: {} file: {} hunks: {}",
-        path, file_path, hunks
+        "[git_stage_lines] all_lines_selected (para todos los hunks): {}",
+        all_lines_selected
     );
-    // TODO: Implementar stage parcial real
+
+    if all_lines_selected {
+        println!("[git_stage_lines] Ejecutando git add para {}", file_path);
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("add")
+            .arg(&file_path)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err("git add failed".to_string());
+        }
+        return Ok(());
+    }
+
+    // TODO: Implementar stage parcial real o git add si corresponde
     Ok(())
 }
 

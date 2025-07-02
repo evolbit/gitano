@@ -24,10 +24,8 @@ export function useStageAndCommit() {
           filePath: string;
           hunks: { [hunkIdx: number]: number[] };
         }[] = [];
-        console.log("stagedLines", stagedLines);
         for (const filePath in stagedLines) {
           const entry = stagedLines[filePath];
-          console.log("entry", entry);
           if (entry.isNewFile) {
             filesToStage.push(filePath);
           } else {
@@ -52,8 +50,13 @@ export function useStageAndCommit() {
           await invoke("git_add_file", { path: repoPath, filePath });
         }
 
+        // console.log("partialStage", partialStage);
         // 3. Hacer stage parcial de líneas (si aplica)
         for (const { filePath, hunks } of partialStage) {
+          console.log(
+            "git_stage_lines",
+            JSON.stringify({ path: repoPath, filePath, hunks })
+          );
           await invoke("git_stage_lines", { path: repoPath, filePath, hunks });
         }
 
