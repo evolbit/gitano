@@ -118,7 +118,18 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
               <button
                 className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
                 onClick={() => handleStageHunk(hunkIdx)}>
-                Select all
+                {(() => {
+                  // Contar cuántas líneas son stageables en este hunk
+                  const stageableLines = hunk.lines.filter(
+                    (line) => line.kind === "Add" || line.kind === "Del"
+                  ).length;
+                  // Contar cuántas líneas están actualmente staged
+                  const stagedCount = stagedLines[hunkIdx]?.size || 0;
+                  // Si todas las líneas stageables están staged, mostrar "Deselect all"
+                  return stagedCount === stageableLines
+                    ? "Deselect all"
+                    : "Select all";
+                })()}
               </button>
               <button
                 className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"

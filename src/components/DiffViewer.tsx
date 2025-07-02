@@ -232,17 +232,33 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
   };
 
-  // Handler para stagear todo el hunk
+  // Handler para stagear/deselectar todo el hunk
   const handleStageHunk = (hunkIdx: number) => {
     setStagedLines((prev) => {
       const hunk = hunks[hunkIdx];
-      const staged = new Set<number>();
-      hunk.lines.forEach((line, idx) => {
-        if (line.kind === "Add" || line.kind === "Del") {
-          staged.add(idx);
-        }
-      });
-      return { ...prev, [hunkIdx]: staged };
+      const currentStaged = prev[hunkIdx] || new Set<number>();
+
+      // Contar cuántas líneas son stageables en este hunk
+      const stageableLines = hunk.lines.filter(
+        (line) => line.kind === "Add" || line.kind === "Del"
+      ).length;
+      const stagedCount = currentStaged.size;
+
+      // Si todas las líneas stageables están staged, deseleccionar todas
+      if (stagedCount === stageableLines) {
+        const newStaged = { ...prev };
+        delete newStaged[hunkIdx];
+        return newStaged;
+      } else {
+        // Si no todas están staged, seleccionar todas las stageables
+        const staged = new Set<number>();
+        hunk.lines.forEach((line, idx) => {
+          if (line.kind === "Add" || line.kind === "Del") {
+            staged.add(idx);
+          }
+        });
+        return { ...prev, [hunkIdx]: staged };
+      }
     });
   };
 
