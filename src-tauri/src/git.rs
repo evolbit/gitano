@@ -3,10 +3,12 @@ use git2::{BranchType, Oid, Repository};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
-use tempfile::NamedTempFile;
 
 static COMMIT_BRANCH_MAP_CACHE: Lazy<Mutex<HashMap<String, HashMap<Oid, String>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -45,7 +47,7 @@ pub struct GitCommit {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitTag {
-    pub name: String,
+}
     pub annotated: bool,
 }
 
@@ -83,8 +85,8 @@ pub struct GitRefData {
     pub tags: Vec<String>,
     pub remotes: Vec<String>,
     pub ci: Option<String>,
-}
-
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CommitOrdering {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CommitOrdering {
     Date,
@@ -109,7 +111,7 @@ pub struct CommitListItem {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitListPage {
-    pub commits: Vec<CommitListItem>,
+}
     pub has_more: bool,
 }
 
@@ -130,7 +132,7 @@ pub fn open_local_repo(path: String) -> Result<String, String> {
         Ok(_) => Ok(format!("Repositorio abierto correctamente: {}", path)),
         Err(e) => Err(format!("No es un repositorio git válido: {}", e)),
     }
-}
+#[command]
 
 #[command]
 pub fn get_branches(path: String) -> Result<Vec<String>, String> {
@@ -138,7 +140,7 @@ pub fn get_branches(path: String) -> Result<Vec<String>, String> {
     let mut branches = Vec::new();
     let branch_iter = repo.branches(None).map_err(|e| e.to_string())?;
     for branch in branch_iter {
-        let (branch, _) = branch.map_err(|e| e.to_string())?;
+            branches.push(name.to_string());
         if let Some(name) = branch.name().map_err(|e| e.to_string())? {
             branches.push(name.to_string());
         }
@@ -164,8 +166,6 @@ pub fn get_commits(path: String) -> Result<Vec<CommitInfo>, String> {
     Ok(commits)
 }
 
-#[command]
-pub fn get_commit_graph(path: String) -> Result<Vec<CommitNode>, String> {
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
     revwalk.push_head().map_err(|e| e.to_string())?;
