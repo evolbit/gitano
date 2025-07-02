@@ -18,6 +18,20 @@ const FileListItem = ({ file }: FileListItemProps) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const getStatusIcon = () => {
+    // Si es un archivo nuevo (added con 0 insertions/deletions), mostrar signo de interrogación
+    if (
+      file.status.toLowerCase() === "added" &&
+      file.insertions === 0 &&
+      file.deletions === 0
+    ) {
+      return (
+        <IconQuestionMark
+          size={16}
+          className="text-yellow-500 w-4 h-4 flex-shrink-0"
+        />
+      );
+    }
+
     switch (file.status.toLowerCase()) {
       case "added":
         return (
@@ -95,14 +109,21 @@ const FileListItem = ({ file }: FileListItemProps) => {
           );
         })()}
       </span>
-      <span className="flex items-end gap-2 justify-between w-14 ml-3 text-xs text-zinc-400">
-        <span className="text-green-500 w-1/2 text-right block">
-          +{file.insertions}
+      {/* Mostrar números solo si no es un archivo nuevo */}
+      {!(
+        file.status.toLowerCase() === "added" &&
+        file.insertions === 0 &&
+        file.deletions === 0
+      ) && (
+        <span className="flex items-end gap-2 justify-between w-14 ml-3 text-xs text-zinc-400">
+          <span className="text-green-500 w-1/2 text-right block">
+            +{file.insertions}
+          </span>
+          <span className="text-red-500 w-1/2 text-right block">
+            -{file.deletions}
+          </span>
         </span>
-        <span className="text-red-500 w-1/2 text-right block">
-          -{file.deletions}
-        </span>
-      </span>
+      )}
     </div>
   );
 };
