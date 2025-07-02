@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const FloatingCommitBar: React.FC<{
   expanded: boolean;
@@ -10,6 +10,18 @@ const FloatingCommitBar: React.FC<{
   const [message, setMessage] = useState("");
   const [push, setPush] = useState(true);
   const [amend, setAmend] = useState(false);
+
+  // Cerrar con Escape si está expandido
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCollapse();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [expanded, onCollapse]);
 
   return (
     <div
