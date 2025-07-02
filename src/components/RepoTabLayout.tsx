@@ -67,6 +67,7 @@ const RepoTabLayout: React.FC = () => {
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
     setSelectedWorkingFile(file);
     if (updated && updated !== selectedWorkingFile) {
+    if (updated && updated !== selectedWorkingFile) {
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
