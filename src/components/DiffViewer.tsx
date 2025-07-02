@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useStagedLinesStore } from "../store/staging";
 import DiffHunk from "./DiffHunk";
 import FloatingCommitBar from "./FloatingCommitBar";
-import { IconCheck } from "./icons";
 
 // Tipos para los datos del backend
 interface DiffLine {
@@ -62,7 +63,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   sha,
   context = CONTEXT_DEFAULT,
   onFileActionsData,
-  fileActionsBar,
 }) => {
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,9 +71,12 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [extraContext, setExtraContext] = useState<
     Record<number, { above: DiffLine[]; below: DiffLine[] }>
   >({});
-  // Estado para líneas staged: { [hunkIdx]: Set<lineIdx> }
-  const [stagedLines, setStagedLines] = useState<Record<number, Set<number>>>(
-    {}
+  // Estado global para líneas staged
+  const stagedLines = useStagedLinesStore(
+    useShallow((s) => s.stagedLines[filePath] || {})
+  );
+  const setStagedLinesGlobal = useStagedLinesStore(
+    useShallow((s) => s.setStagedLines)
   );
   // Estado para hover de hunk
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
@@ -90,7 +93,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setLoading(true);
     setError(null);
     setExtraContext({});
-    setStagedLines({});
     setHoveredHunkIdx(null);
     setIsDragging(false);
     setDragHunkIdx(null);
@@ -223,47 +225,36 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
   // Handler para marcar/desmarcar una línea
   const handleToggleLineStage = (hunkIdx: number, lineIdx: number) => {
-    setStagedLines((prev) => {
-      const prevSet: Set<number> = prev[hunkIdx]
-        ? new Set<number>(Array.from(prev[hunkIdx] as Set<number>))
-        : new Set<number>();
-      if (prevSet.has(lineIdx)) {
-        prevSet.delete(lineIdx);
-      } else {
-        prevSet.add(lineIdx);
-      }
-      return { ...prev, [hunkIdx]: prevSet };
-    });
+    const prevSet: Set<number> = stagedLines[hunkIdx]
+      ? new Set<number>(Array.from(stagedLines[hunkIdx] as Set<number>))
+      : new Set<number>();
+    if (prevSet.has(lineIdx)) {
+      prevSet.delete(lineIdx);
+    } else {
+      prevSet.add(lineIdx);
+    }
+    setStagedLinesGlobal(filePath, hunkIdx, prevSet);
   };
 
   // Handler para stagear/desselectar todo el hunk
   const handleStageHunk = (hunkIdx: number) => {
-    setStagedLines((prev) => {
-      const hunk = hunks[hunkIdx];
-      const currentStaged = prev[hunkIdx] || new Set<number>();
-
-      // Contar cuántas líneas son stageables en este hunk
-      const stageableLines = hunk.lines.filter(
-        (line) => line.kind === "Add" || line.kind === "Del"
-      ).length;
-      const stagedCount = currentStaged.size;
-
-      // Si todas las líneas stageables están staged, deseleccionar todas
-      if (stagedCount === stageableLines) {
-        const newStaged = { ...prev };
-        delete newStaged[hunkIdx];
-        return newStaged;
-      } else {
-        // Si no todas están staged, seleccionar todas las stageables
-        const staged = new Set<number>();
-        hunk.lines.forEach((line, idx) => {
-          if (line.kind === "Add" || line.kind === "Del") {
-            staged.add(idx);
-          }
-        });
-        return { ...prev, [hunkIdx]: staged };
-      }
-    });
+    const hunk = hunks[hunkIdx];
+    const currentStaged = stagedLines[hunkIdx] || new Set<number>();
+    const stageableLines = hunk.lines.filter(
+      (line) => line.kind === "Add" || line.kind === "Del"
+    ).length;
+    const stagedCount = currentStaged.size;
+    if (stagedCount === stageableLines) {
+      setStagedLinesGlobal(filePath, hunkIdx, new Set());
+    } else {
+      const staged = new Set<number>();
+      hunk.lines.forEach((line, idx) => {
+        if (line.kind === "Add" || line.kind === "Del") {
+          staged.add(idx);
+        }
+      });
+      setStagedLinesGlobal(filePath, hunkIdx, staged);
+    }
   };
 
   // Handler para mouse up global (terminar drag)
@@ -321,7 +312,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             hunk={hunk}
             hunkIdx={idx}
             stagedLines={stagedLines}
-            setStagedLines={setStagedLines}
+            setStagedLines={(hunkIdx, lines) =>
+              setStagedLinesGlobal(filePath, hunkIdx, lines)
+            }
             extraContext={extraContext}
             setExtraContext={setExtraContext}
             hoveredHunkIdx={hoveredHunkIdx}
@@ -358,68 +351,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
           }}
         />
       )}
-    </div>
-  );
-};
-
-// Componente para mostrar una línea del diff con checks, colores y números de línea
-const DiffLineRow: React.FC<{
-  line: DiffLine;
-  showChecks?: boolean;
-  isStaged?: boolean;
-  onCheck?: () => void;
-  onMouseDown?: (e: React.MouseEvent) => void;
-  onMouseEnter?: () => void;
-}> = ({
-  line,
-  showChecks = false,
-  isStaged = false,
-  onCheck,
-  onMouseDown,
-  onMouseEnter,
-}) => {
-  let baseColor = "";
-  if (line.kind === "Add") baseColor = "text-green-400 bg-green-900/20";
-  else if (line.kind === "Del") baseColor = "text-red-400 bg-red-900/20";
-  else baseColor = "text-zinc-200";
-  // Si está staged, fondo azul y texto blanco
-  const stagedColor = isStaged ? "bg-blue-600 text-white" : baseColor;
-  return (
-    <div
-      className={`flex items-center px-4 py-0.5 ${stagedColor} text-xs font-mono group transition-colors duration-100`}
-      style={{
-        fontVariantNumeric: "tabular-nums",
-        cursor: showChecks ? "pointer" : undefined,
-      }}
-      onMouseDown={onMouseDown}
-      onMouseEnter={onMouseEnter}>
-      {/* Columna de check para old_lineno */}
-      <span className="w-6 h-4 flex items-center justify-center select-none">
-        {showChecks && line.old_lineno !== null && isStaged ? (
-          <IconCheck
-            size={14}
-            className="text-white"
-          />
-        ) : null}
-      </span>
-      {/* Columna de check para new_lineno */}
-      <span className="w-6 h-4 flex items-center justify-center select-none">
-        {showChecks && line.new_lineno !== null && isStaged ? (
-          <IconCheck
-            size={14}
-            className="text-white"
-          />
-        ) : null}
-      </span>
-      {/* Números de línea */}
-      <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
-        {line.old_lineno ?? ""}
-      </span>
-      <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
-        {line.new_lineno ?? ""}
-      </span>
-      {/* Contenido */}
-      <span className="flex-1 min-w-0 whitespace-pre-wrap">{line.content}</span>
     </div>
   );
 };

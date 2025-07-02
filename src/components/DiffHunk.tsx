@@ -25,9 +25,7 @@ interface DiffHunkProps {
   hunk: DiffHunkType;
   hunkIdx: number;
   stagedLines: Record<number, Set<number>>;
-  setStagedLines: React.Dispatch<
-    React.SetStateAction<Record<number, Set<number>>>
-  >;
+  setStagedLines: (hunkIdx: number, lines: Set<number>) => void;
   extraContext: Record<number, { above: DiffLine[]; below: DiffLine[] }>;
   setExtraContext: React.Dispatch<
     React.SetStateAction<

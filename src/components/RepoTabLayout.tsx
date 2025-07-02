@@ -1,8 +1,9 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useRepoStore } from "../store/repo";
+import { useStagedLinesStore } from "../store/staging";
 import { FileChange } from "../types/git";
 import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
@@ -45,10 +46,29 @@ const RepoTabLayout: React.FC = () => {
     onRemove: () => void;
   }>(null);
 
+  const stagedLinesStore = useStagedLinesStore();
+  const stagedLines = useStagedLinesStore((s) => s.stagedLines);
+
   // Cierra el DiffViewer si cambia la rama activa
   useEffect(() => {
     setSelectedWorkingFile(null);
   }, [tab?.selectedBranch]);
+
+  // Calcula el estado del checkbox de cada archivo a partir del store y los hunks si están disponibles
+  const fileCheckboxState = useMemo(() => {
+    const state: Record<string, "checked" | "indeterminate" | "unchecked"> = {};
+    changes.forEach((file) => {
+      const fileStaged = stagedLines[file.path] || {};
+      // Aquí deberías tener acceso a los hunks del archivo para contar líneas stageables
+      // Por ahora, si hay staged, checked; si no, unchecked
+      let stagedCount = 0;
+      for (const hunkIdx in fileStaged) {
+        stagedCount += fileStaged[hunkIdx]?.size || 0;
+      }
+      state[file.path] = stagedCount > 0 ? "checked" : "unchecked";
+    });
+    return state;
+  }, [changes, stagedLines]);
 
   // Handler para abrir el diff de un archivo del working directory
   const handleSelectWorkingFile = (file: FileChange) => {
@@ -59,6 +79,21 @@ const RepoTabLayout: React.FC = () => {
   const handleCloseDiffViewer = () => {
     setSelectedWorkingFile(null);
   };
+
+  // Handler para marcar/desmarcar todas las líneas de un archivo
+  const handleFileCheckboxChange = useCallback(
+    (file: FileChange, checked: boolean) => {
+      // Aquí deberías obtener los hunks del archivo y marcar todas las líneas stageables
+      // Si tienes los hunks en memoria, marca todas las líneas; si no, ignora
+      if (checked) {
+        // Si tienes los hunks, llama a setAllStagedLinesForFile(file.path, allLines)
+        // Si no, ignora
+      } else {
+        stagedLinesStore.clearStagedLinesForFile(file.path);
+      }
+    },
+    [stagedLinesStore]
+  );
 
   if (!tab) return null;
 
@@ -136,6 +171,9 @@ const RepoTabLayout: React.FC = () => {
                         highlightSelected={true}
                         rowDividerColor="divide-border"
                         rowPadding="px-2 py-1"
+                        showFileCheckboxes={true}
+                        fileCheckboxState={fileCheckboxState}
+                        onFileCheckboxChange={handleFileCheckboxChange}
                       />
                     )}
                   </Accordion.Panel>
