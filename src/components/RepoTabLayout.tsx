@@ -2,9 +2,10 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
+import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
 import { useStagedLinesStore } from "../store/staging";
-import { FileChange } from "../types/git";
+import { FileChange, FileChangeWithHunks } from "../types/git";
 import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
@@ -31,7 +32,7 @@ const RepoTabLayout: React.FC = () => {
 
   // Estado para archivo seleccionado desde Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
-    useState<FileChange | null>(null);
+    useState<FileChangeWithHunks | null>(null);
 
   // Estado para acciones del archivo en DiffViewer
   const [fileActions, setFileActions] = useState<null | {
@@ -71,13 +72,15 @@ const RepoTabLayout: React.FC = () => {
   }, [changes, stagedLines]);
 
   // Handler para abrir el diff de un archivo del working directory
-  const handleSelectWorkingFile = (file: FileChange) => {
+  const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
     setSelectedWorkingFile(file);
+    useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
   // Handler para volver al layout normal
   const handleCloseDiffViewer = () => {
     setSelectedWorkingFile(null);
+    useFileHunksStore.getState().clearFileHunks();
   };
 
   // Handler para marcar/desmarcar todas las líneas de un archivo

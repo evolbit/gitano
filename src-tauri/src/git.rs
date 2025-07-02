@@ -996,7 +996,22 @@ pub fn get_current_branch(path: String) -> Result<String, String> {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum DiffLineKind {
+    Add,
+    Del,
+    Context,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub content: String,
+    pub old_lineno: Option<usize>,
+    pub new_lineno: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DiffHunk {
     pub header: String,
     pub old_start: usize,
@@ -1005,21 +1020,6 @@ pub struct DiffHunk {
     pub new_lines: usize,
     pub lines: Vec<DiffLine>,
     pub is_new_file: bool,
-}
-
-#[derive(Serialize, Debug)]
-pub struct DiffLine {
-    pub kind: DiffLineKind,
-    pub content: String,
-    pub old_lineno: Option<usize>,
-    pub new_lineno: Option<usize>,
-}
-
-#[derive(Serialize, Debug, Clone, Copy)]
-pub enum DiffLineKind {
-    Add,
-    Del,
-    Context,
 }
 
 fn parse_unified_diff(diff: &str) -> Vec<DiffHunk> {
@@ -1372,8 +1372,17 @@ pub fn get_commit_file_diff(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileChangeWithHunks {
+    pub path: String,
+    pub status: ChangeType,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub hunks: Vec<DiffHunk>,
+}
+
 #[tauri::command]
-pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, String> {
+pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithHunks>, String> {
     println!(
         "Rust: get_working_directory_changes called with path: {}",
         path
@@ -1455,16 +1464,27 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChange>, St
             (0, 0)
         };
 
+        // Obtener los hunks para este archivo
+        let hunks = match get_file_diff_hunks(path.clone(), file_path.clone(), 3) {
+            Ok(h) => h,
+            Err(_) => vec![],
+        };
+
         println!(
-            "Rust: Detected file change: {} {:?} +{} -{}",
-            file_path, change_type, insertions, deletions
+            "Rust: Detected file change: {} {:?} +{} -{} ({} hunks)",
+            file_path,
+            change_type,
+            insertions,
+            deletions,
+            hunks.len()
         );
 
-        changes.push(FileChange {
+        changes.push(FileChangeWithHunks {
             path: file_path,
             status: change_type,
             insertions,
             deletions,
+            hunks,
         });
     }
 

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useFileHunksStore } from "../store/hunks";
 import { useStagedLinesStore } from "../store/staging";
 import DiffHunk from "./DiffHunk";
 import FloatingCommitBar from "./FloatingCommitBar";
@@ -64,8 +65,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   context = CONTEXT_DEFAULT,
   onFileActionsData,
 }) => {
-  const [hunks, setHunks] = useState<DiffHunk[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { hunks } = useFileHunksStore();
   const [error, setError] = useState<string | null>(null);
   // Para cada hunk, guardamos contexto extra arriba/abajo
   const [extraContext, setExtraContext] = useState<
@@ -88,41 +88,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [commitBarOpen, setCommitBarOpen] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
 
-  // Cargar los hunks iniciales
+  // Limpiar contexto extra cuando cambia el archivo o commit
   useEffect(() => {
-    setLoading(true);
-    setError(null);
     setExtraContext({});
-    setHoveredHunkIdx(null);
-    setIsDragging(false);
-    setDragHunkIdx(null);
-    setDragMode(null);
-    const fn = async () => {
-      try {
-        let result: DiffHunk[];
-        if (sha) {
-          result = await invoke<DiffHunk[]>("get_commit_file_diff", {
-            path: repoPath,
-            sha,
-            filePath,
-            context,
-          });
-        } else {
-          result = await invoke<DiffHunk[]>("get_file_diff_hunks", {
-            path: repoPath,
-            filePath,
-            context,
-          });
-        }
-        setHunks(result);
-      } catch (e) {
-        setError(String(e));
-      } finally {
-        setLoading(false);
-      }
-    };
-    fn();
-  }, [repoPath, filePath, sha, context]);
+  }, [filePath, sha]);
 
   // Lógica para exponer los datos de acciones al padre
   useEffect(() => {
@@ -192,7 +161,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     lines: number
   ) => {
     try {
-      const prevHunk = extraContext[hunkIdx] || { above: [], below: [] };
+      const prevHunk = extraContext[hunkIdx] || {
+        above: [] as DiffLine[],
+        below: [] as DiffLine[],
+      };
       const offset =
         direction === "Above" ? prevHunk.above.length : prevHunk.below.length;
       const res = await invoke<DiffLine[]>("get_diff_context", {
@@ -205,7 +177,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         offset,
       });
       setExtraContext((prev) => {
-        const prevHunk = prev[hunkIdx] || { above: [], below: [] };
+        const prevHunk = prev[hunkIdx] || {
+          above: [] as DiffLine[],
+          below: [] as DiffLine[],
+        };
         if (direction === "Above") {
           return {
             ...prev,
@@ -238,17 +213,17 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
   // Handler para stagear/desselectar todo el hunk
   const handleStageHunk = (hunkIdx: number) => {
-    const hunk = hunks[hunkIdx];
+    const hunk: DiffHunk = hunks[hunkIdx];
     const currentStaged = stagedLines[hunkIdx] || new Set<number>();
     const stageableLines = hunk.lines.filter(
-      (line) => line.kind === "Add" || line.kind === "Del"
+      (line: DiffLine) => line.kind === "Add" || line.kind === "Del"
     ).length;
     const stagedCount = currentStaged.size;
     if (stagedCount === stageableLines) {
       setStagedLinesGlobal(filePath, hunkIdx, new Set());
     } else {
       const staged = new Set<number>();
-      hunk.lines.forEach((line, idx) => {
+      hunk.lines.forEach((line: DiffLine, idx: number) => {
         if (line.kind === "Add" || line.kind === "Del") {
           staged.add(idx);
         }
@@ -303,9 +278,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
       {/* Área scrolleable del diff */}
       <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
-        {loading && <div className="text-zinc-400">Cargando diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
-        {!loading && !error && hunks.length === 0 && <div>No hay cambios.</div>}
+        {hunks.length === 0 && !error && <div>No hay cambios.</div>}
         {hunks.map((hunk, idx) => (
           <DiffHunk
             key={idx}

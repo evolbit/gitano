@@ -1,6 +1,6 @@
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileChange } from "../types/git";
+import { FileChangeWithHunks } from "../types/git";
 
 interface UseWorkingDirectoryChangesOptions {
   pollInterval?: number; // Intervalo en milisegundos para el polling
@@ -16,7 +16,7 @@ export const useWorkingDirectoryChanges = (
 ) => {
   const { pollInterval = 2000, enabled = true } = options;
 
-  const [changes, setChanges] = useState<FileChange[]>([]);
+  const [changes, setChanges] = useState<FileChangeWithHunks[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -33,24 +33,17 @@ export const useWorkingDirectoryChanges = (
     };
   }, []);
 
-  // Función para obtener los cambios
+  // Función para obtener los cambios y los hunks
   const fetchChanges = useCallback(async () => {
-    console.log("[useWorkingDirectoryChanges] Polling repoPath:", repoPath);
     if (!repoPath) return;
     setLoading(true);
     setError(null);
-    console.log("[useWorkingDirectoryChanges] Fetching changes");
     try {
-      const result: FileChange[] = await core.invoke(
+      const result: FileChangeWithHunks[] = await core.invoke(
         "get_working_directory_changes",
         {
           path: repoPath,
         }
-      );
-      console.log(
-        "[useWorkingDirectoryChanges] Working directory changes:",
-        result,
-        isMountedRef.current
       );
       if (isMountedRef.current) {
         setChanges(result);
@@ -59,7 +52,6 @@ export const useWorkingDirectoryChanges = (
       if (isMountedRef.current) {
         setError(String(err));
         setChanges([]);
-        console.error("[useWorkingDirectoryChanges] Error:", err);
       }
     } finally {
       if (isMountedRef.current) {
