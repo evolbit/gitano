@@ -65,7 +65,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   context = CONTEXT_DEFAULT,
   onFileActionsData,
 }) => {
-  const { hunks } = useFileHunksStore();
+  // Estado local para hunks si sha está definido
+  const [localHunks, setLocalHunks] = useState<DiffHunk[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Para cada hunk, guardamos contexto extra arriba/abajo
   const [extraContext, setExtraContext] = useState<
@@ -84,13 +86,41 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
+  // Determinar si se puede seleccionar líneas (solo en working directory)
   const canStage = sha === undefined;
+  const canSelectLines = canStage;
   const [commitBarOpen, setCommitBarOpen] = useState(false);
+
+  // Obtener hunks del store global solo si no hay sha
+  const { hunks: storeHunks } = useFileHunksStore();
+  const hunks = sha ? localHunks : storeHunks;
 
   // Limpiar contexto extra cuando cambia el archivo o commit
   useEffect(() => {
     setExtraContext({});
   }, [filePath, sha]);
+
+  // Si sha está definido, pedir los hunks del backend
+  useEffect(() => {
+    if (!sha) return;
+    setLoading(true);
+    setError(null);
+    invoke<DiffHunk[]>("get_commit_file_diff_command", {
+      path: repoPath,
+      sha,
+      filePath,
+      context,
+    })
+      .then((res) => {
+        setLocalHunks(res);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(String(err));
+        setLocalHunks([]);
+        setLoading(false);
+      });
+  }, [repoPath, filePath, sha, context]);
 
   // Lógica para exponer los datos de acciones al padre
   useEffect(() => {
@@ -199,6 +229,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
   // Handler para marcar/desmarcar una línea
   const handleToggleLineStage = (hunkIdx: number, lineIdx: number) => {
+    if (!canSelectLines) return;
     const prevSet: Set<number> = stagedLines[hunkIdx]
       ? new Set<number>(Array.from(stagedLines[hunkIdx] as Set<number>))
       : new Set<number>();
@@ -212,6 +243,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
   // Handler para stagear/desselectar todo el hunk
   const handleStageHunk = (hunkIdx: number) => {
+    if (!canSelectLines) return;
     const hunk: DiffHunk = hunks[hunkIdx];
     const currentStaged = stagedLines[hunkIdx] || new Set<number>();
     const stageableLines = hunk.lines.filter(
@@ -250,7 +282,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     isStageable: boolean,
     isStaged: boolean
   ) => {
-    if (!isStageable) return;
+    if (!canSelectLines || !isStageable) return;
     setIsDragging(true);
     setDragHunkIdx(hunkIdx);
     setDragMode(isStaged ? "remove" : "add");
@@ -265,7 +297,13 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     isStageable: boolean,
     isStaged: boolean
   ) => {
-    if (!isDragging || dragHunkIdx !== hunkIdx || !isStageable) return;
+    if (
+      !canSelectLines ||
+      !isDragging ||
+      dragHunkIdx !== hunkIdx ||
+      !isStageable
+    )
+      return;
     if (dragMode === "add" && !isStaged) {
       handleToggleLineStage(hunkIdx, lineIdx);
     } else if (dragMode === "remove" && isStaged) {
@@ -277,27 +315,31 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
       {/* Área scrolleable del diff */}
       <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
+        {loading && <div className="text-blue-400">Cargando diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
-        {hunks.length === 0 && !error && <div>No hay cambios.</div>}
+        {hunks.length === 0 && !loading && !error && <div>No hay cambios.</div>}
         {hunks.map((hunk, idx) => (
           <DiffHunk
             key={idx}
             hunk={hunk}
             hunkIdx={idx}
             stagedLines={stagedLines}
-            setStagedLines={(hunkIdx, lines) =>
-              setStagedLinesGlobal(filePath, hunkIdx, lines)
+            setStagedLines={
+              canSelectLines
+                ? (hunkIdx, lines) =>
+                    setStagedLinesGlobal(filePath, hunkIdx, lines)
+                : () => {}
             }
             extraContext={extraContext}
             setExtraContext={setExtraContext}
             hoveredHunkIdx={hoveredHunkIdx}
             setHoveredHunkIdx={setHoveredHunkIdx}
-            isDragging={isDragging}
-            setIsDragging={setIsDragging}
-            dragHunkIdx={dragHunkIdx}
-            setDragHunkIdx={setDragHunkIdx}
-            dragMode={dragMode}
-            setDragMode={setDragMode}
+            isDragging={canSelectLines ? isDragging : false}
+            setIsDragging={canSelectLines ? setIsDragging : () => {}}
+            dragHunkIdx={canSelectLines ? dragHunkIdx : null}
+            setDragHunkIdx={canSelectLines ? setDragHunkIdx : () => {}}
+            dragMode={canSelectLines ? dragMode : null}
+            setDragMode={canSelectLines ? setDragMode : () => {}}
             handleExpandContext={handleExpandContext}
             handleToggleLineStage={handleToggleLineStage}
             handleLineMouseDown={handleLineMouseDown}
