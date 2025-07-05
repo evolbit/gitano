@@ -7,8 +7,10 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import React, { useState } from "react";
+import { core } from "@tauri-apps/api";
+import React, { useEffect, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
+import { useRepoStore } from "../store/repo";
 import {
   IconArrowBackUp,
   IconArrowBarToUp,
@@ -22,13 +24,6 @@ import {
   IconTerminal2,
 } from "./icons";
 
-const REPOS = ["efectoled-backend", "microservices", "Launchpad"];
-const BRANCHES = [
-  "develop",
-  "feature/OYS-24721_CC_BACKOFFICE...",
-  "release/20250519.01",
-];
-
 interface TopToolbarProps {
   bg?: string;
 }
@@ -41,12 +36,60 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
   const [repoMenuOpened, setRepoMenuOpened] = useState(false);
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
 
-  const filteredRepos = REPOS.filter((r) =>
-    r.toLowerCase().includes(repoSearch.toLowerCase())
+  // Repo store hooks
+  const tabs = useRepoStore((s) => s.tabs);
+  const activeTabId = useRepoStore((s) => s.activeTabId);
+  const setActiveTab = useRepoStore((s) => s.setActiveTab);
+  const setTabBranch = useRepoStore((s) => s.setTabBranch);
+  const tab = tabs.find((t) => t.id === activeTabId);
+  const repoPath = tab?.repoPath;
+  const selectedBranch = tab?.selectedBranch;
+
+  // Compute opened repos (filter out home tab)
+  const openedRepos = tabs.filter((t) => t.id !== "home" && t.repoPath);
+  // For display: get repo name from path
+  const getRepoName = (path: string) =>
+    path.split("/").filter(Boolean).pop() || path;
+
+  // Branches state
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+
+  // Fetch branches when repoPath changes
+  useEffect(() => {
+    if (!repoPath) {
+      setBranches([]);
+      return;
+    }
+    setBranchesLoading(true);
+    setBranchesError(null);
+    core
+      .invoke<string[]>("get_branches", { path: repoPath })
+      .then((allBranches) => {
+        setBranches(allBranches);
+      })
+      .catch((e) => setBranchesError(e.toString()))
+      .finally(() => setBranchesLoading(false));
+  }, [repoPath]);
+
+  // Filtered lists for dropdowns
+  const filteredRepos = openedRepos.filter((t) =>
+    getRepoName(t.repoPath).toLowerCase().includes(repoSearch.toLowerCase())
   );
-  const filteredBranches = BRANCHES.filter((b) =>
+  const filteredBranches = branches.filter((b) =>
     b.toLowerCase().includes(branchSearch.toLowerCase())
   );
+
+  // Handlers
+  const handleRepoSelect = (id: string) => {
+    setActiveTab(id);
+    setRepoMenuOpened(false);
+  };
+  const handleBranchSelect = (branch: string) => {
+    if (activeTabId) setTabBranch(activeTabId, branch);
+    setBranchMenuOpened(false);
+  };
 
   return (
     <Group
@@ -85,7 +128,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
                 <Text
                   size="sm"
                   className="text-sm text-zinc-400 font-medium">
-                  efectoled-backend
+                  {repoPath ? getRepoName(repoPath) : "No repository"}
                 </Text>
                 <span className="flex-1" />
                 <HiChevronDown
@@ -121,11 +164,12 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
             {filteredRepos.length === 0 && (
               <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
             )}
-            {filteredRepos.map((repo) => (
+            {filteredRepos.map((t) => (
               <Menu.Item
-                key={repo}
-                className="px-4 py-2">
-                <span className="text-sm">{repo}</span>
+                key={t.id}
+                className="px-4 py-2"
+                onClick={() => handleRepoSelect(t.id)}>
+                <span className="text-sm">{getRepoName(t.repoPath)}</span>
               </Menu.Item>
             ))}
           </Menu.Dropdown>
@@ -157,7 +201,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
                 <Text
                   size="sm"
                   className="text-sm text-zinc-400 font-medium truncate">
-                  feature/OYS-24721_CC_BACKOFFICE...
+                  {selectedBranch ||
+                    (branchesLoading
+                      ? "Loading..."
+                      : branches[0] || "No branch")}
                 </Text>
                 <span className="flex-1" />
                 <HiChevronDown
@@ -190,13 +237,26 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
                 autoFocus
               />
             </div>
-            {filteredBranches.length === 0 && (
-              <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
+            {branchesLoading && (
+              <div className="px-4 py-2 text-zinc-400 text-sm">Loading...</div>
             )}
+            {branchesError && (
+              <div className="px-4 py-2 text-red-400 text-sm">
+                {branchesError}
+              </div>
+            )}
+            {!branchesLoading &&
+              filteredBranches.length === 0 &&
+              !branchesError && (
+                <div className="px-4 py-2 text-zinc-400 text-sm">
+                  No results
+                </div>
+              )}
             {filteredBranches.map((branch) => (
               <Menu.Item
                 key={branch}
-                className="px-4 py-2">
+                className="px-4 py-2"
+                onClick={() => handleBranchSelect(branch)}>
                 <span className="text-sm">{branch}</span>
               </Menu.Item>
             ))}
