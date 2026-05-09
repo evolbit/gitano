@@ -1,6 +1,7 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
 import React, { useEffect, useState } from "react";
+import { REPO_LAYOUT } from "../constants/layout";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
@@ -91,9 +92,9 @@ const RepoTabLayout: React.FC = () => {
         <Split className="h-full w-full min-h-0 flex-1">
           {/* Left sidebar */}
           <Split.Pane
-            initialWidth={240}
-            minWidth={300}
-            maxWidth={350}
+            initialWidth={REPO_LAYOUT.panes.left.initial}
+            minWidth={REPO_LAYOUT.panes.left.min}
+            maxWidth={REPO_LAYOUT.panes.left.max}
             className="!h-full !min-h-0 flex flex-col"
           >
             <Box className="flex-1 text-foreground flex flex-col min-h-0">
@@ -260,11 +261,18 @@ const RepoTabLayout: React.FC = () => {
               </div>
             ) : (
               <Split orientation="vertical" className="h-full w-full">
-                <Split.Pane initialWidth="60%">
+                <Split.Pane
+                  grow
+                  initialWidth={REPO_LAYOUT.panes.middle.initial}
+                  minWidth={REPO_LAYOUT.panes.middle.min}
+                >
                   <CommitList />
                 </Split.Pane>
                 <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
-                <Split.Pane grow>
+                <Split.Pane
+                  initialWidth={REPO_LAYOUT.panes.right.initial}
+                  minWidth={REPO_LAYOUT.panes.right.min}
+                >
                   <ChangesPanel />
                 </Split.Pane>
               </Split>
