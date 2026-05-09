@@ -86,14 +86,18 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
-  // Determine whether lines can be selected (working directory only)
-  const canStage = sha === undefined;
-  const canSelectLines = canStage;
-  const [commitBarOpen, setCommitBarOpen] = useState(false);
-
   // Read hunks from the global store only when there is no sha
   const { hunks: storeHunks } = useFileHunksStore();
   const hunks = sha ? localHunks : storeHunks;
+  // Determine whether lines can be selected (working directory only)
+  const canStage = sha === undefined;
+  const isDeletedFile =
+    hunks.length > 0 &&
+    hunks.every((hunk) =>
+      hunk.lines.every((line) => line.kind === "Del" || line.kind === "Context")
+    );
+  const canSelectLines = canStage && !isDeletedFile;
+  const [commitBarOpen, setCommitBarOpen] = useState(false);
 
   // Clear extra context when the file or commit changes
   useEffect(() => {
@@ -328,7 +332,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             handleLineMouseDown={handleLineMouseDown}
             handleLineMouseEnter={handleLineMouseEnter}
             handleStageBlock={handleStageBlock}
-            canStage={canStage}
+            canStage={canSelectLines}
           />
         ))}
       </div>

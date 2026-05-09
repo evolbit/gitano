@@ -156,7 +156,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             key={lineIdx}
             line={line}
             showHunkGutter={!hunk.is_new_file && canStage}
-            showLineGutter={!hunk.is_new_file && isStageable}
+            showLineGutter={!hunk.is_new_file && canStage && isStageable}
             isBlockStart={isBlockStart}
             isBlockFullyStaged={isBlockFullyStaged}
             isBlockPartiallyStaged={isBlockPartiallyStaged}
@@ -171,7 +171,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             }
             isStaged={isStaged}
             onMouseDown={
-              hunk.is_new_file
+              hunk.is_new_file || !canStage
                 ? undefined
                 : (e) => {
                     e.preventDefault();
@@ -184,7 +184,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                   }
             }
             onMouseEnter={
-              hunk.is_new_file
+              hunk.is_new_file || !canStage
                 ? undefined
                 : () =>
                     handleLineMouseEnter(

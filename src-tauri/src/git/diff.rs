@@ -74,14 +74,6 @@ pub fn get_file_diff_hunks(
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
-    // Check whether the file exists in the working directory
-    let file_path_obj = Path::new(&file_path);
-    let full_path = Path::new(&path).join(file_path_obj);
-
-    if !full_path.exists() {
-        return Ok(vec![]); // The file does not exist, so there is no diff
-    }
-
     // Check whether the file is in the Git index
     let ls_files_output = Command::new("git")
         .arg("-C")
@@ -92,6 +84,52 @@ pub fn get_file_diff_hunks(
         .map_err(|e| e.to_string())?;
 
     let is_tracked = !ls_files_output.stdout.is_empty();
+    let file_path_obj = Path::new(&file_path);
+    let full_path = Path::new(&path).join(file_path_obj);
+
+    if !full_path.exists() {
+        if !is_tracked {
+            return Ok(vec![]);
+        }
+
+        let show_output = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("show")
+            .arg(format!("HEAD:./{}", file_path))
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if !show_output.status.success() {
+            return Ok(vec![]);
+        }
+
+        let file_content = String::from_utf8_lossy(&show_output.stdout);
+        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+        let diff_lines: Vec<DiffLine> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| DiffLine {
+                kind: DiffLineKind::Del,
+                content: line.clone(),
+                old_lineno: Some(i + 1),
+                new_lineno: None,
+            })
+            .collect();
+
+        let hunk = DiffHunk {
+            header: format!("@@ -1,{} +0,0 @@", lines.len()),
+            old_start: 1,
+            old_lines: lines.len(),
+            new_start: 0,
+            new_lines: 0,
+            lines: diff_lines,
+            is_new_file: false,
+        };
+
+        return Ok(vec![hunk]);
+    }
 
     // If the file is not tracked, it is a new file
     if !is_tracked {
@@ -342,11 +380,6 @@ pub fn get_commit_file_diff(
 pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>, String> {
     let full_path = Path::new(repo.path().parent().unwrap()).join(file_path);
 
-    // Check whether the file exists in the working directory
-    if !full_path.exists() {
-        return Ok(vec![]); // The file does not exist, so there is no diff
-    }
-
     // Check whether the file is in the Git index
     let ls_files_output = Command::new("git")
         .arg("-C")
@@ -357,6 +390,50 @@ pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<
         .map_err(|e| e.to_string())?;
 
     let is_tracked = !ls_files_output.stdout.is_empty();
+
+    if !full_path.exists() {
+        if !is_tracked {
+            return Ok(vec![]);
+        }
+
+        let show_output = Command::new("git")
+            .arg("-C")
+            .arg(repo.path().parent().unwrap())
+            .arg("show")
+            .arg(format!("HEAD:./{}", file_path))
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if !show_output.status.success() {
+            return Ok(vec![]);
+        }
+
+        let file_content = String::from_utf8_lossy(&show_output.stdout);
+        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+        let diff_lines: Vec<DiffLine> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| DiffLine {
+                kind: DiffLineKind::Del,
+                content: line.clone(),
+                old_lineno: Some(i + 1),
+                new_lineno: None,
+            })
+            .collect();
+
+        let hunk = DiffHunk {
+            header: format!("@@ -1,{} +0,0 @@", lines.len()),
+            old_start: 1,
+            old_lines: lines.len(),
+            new_start: 0,
+            new_lines: 0,
+            lines: diff_lines,
+            is_new_file: false,
+        };
+
+        return Ok(vec![hunk]);
+    }
 
     // If the file is not tracked, it is a new file
     if !is_tracked {

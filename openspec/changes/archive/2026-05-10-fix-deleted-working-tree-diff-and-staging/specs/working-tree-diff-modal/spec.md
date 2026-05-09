@@ -1,13 +1,4 @@
-## ADDED Requirements
-
-### Requirement: Working-tree file diffs open in a modal
-The system SHALL present working-tree file diffs in a modal instead of replacing the main repo workspace with an inline diff view.
-
-#### Scenario: User opens a working-tree file diff
-- **WHEN** the user opens a changed working-tree file from the repo workspace
-- **THEN** the system MUST open a modal for diff inspection
-- **THEN** the main repo workspace MUST remain visible underneath the modal
-- **THEN** the system MUST NOT replace the main workspace content with an inline diff view
+## MODIFIED Requirements
 
 ### Requirement: Working-tree diff modal mirrors the committed-file modal layout
 The system SHALL use the same two-pane modal pattern for working-tree files that it already uses for committed-file diff inspection.
@@ -33,11 +24,3 @@ The system SHALL use the same two-pane modal pattern for working-tree files that
 - **WHEN** the selected working-tree file has been deleted from disk but is still tracked by Git
 - **THEN** the right pane MUST show deletion hunks for that file
 - **THEN** the modal MUST NOT render the deleted file as `No changes.` when a deletion diff exists
-
-### Requirement: Working-tree diff modal supports keyboard dismissal
-The system SHALL allow users to close the working-tree diff modal with the keyboard.
-
-#### Scenario: User presses escape while the modal is open
-- **WHEN** the working-tree diff modal is open and the user presses `Esc`
-- **THEN** the modal MUST close
-- **THEN** the underlying repo workspace MUST remain in its prior state
