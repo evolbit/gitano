@@ -9,28 +9,6 @@ import TableVirtualResizable, {
   TableColumn,
 } from "./tables/TableVirtualResizable";
 
-function StatusBadge({ status }: { status: string }) {
-  let color = "text-green-400";
-  let dot = "bg-green-400";
-  let label = "Completado";
-  if (status === "failed") {
-    color = "text-red-400";
-    dot = "bg-red-400";
-    label = "Fallido";
-  } else if (status === "pending") {
-    color = "text-yellow-400";
-    dot = "bg-yellow-400";
-    label = "Pendiente";
-  }
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 bg-zinc-800/70 rounded-full px-3 py-0.5 text-sm font-medium min-w-[90px] justify-center ${color}`}>
-      <span className={`w-2.5 h-2.5 rounded-full inline-block ${dot}`} />
-      {label}
-    </span>
-  );
-}
-
 const PAGE_SIZE = 50;
 
 export default function CommitList() {
@@ -65,7 +43,7 @@ export default function CommitList() {
   const loadMoreTimeoutRef = useRef<number | null>(null);
   const loadCommitsRef = useRef<() => Promise<void>>();
 
-  // Define columns with custom rendering for CI and commit_history
+  // Define columns with custom rendering for commit_history
   const columns: TableColumn<any>[] = [
     { key: "sha", label: "SHA", width: 120 },
     {
@@ -129,15 +107,7 @@ export default function CommitList() {
         );
       },
     },
-    { key: "pr", label: "PR", width: 80 },
-    { key: "merged_in", label: "Mergeado en", width: 120 },
     { key: "files", label: "Archivos", width: 80 },
-    {
-      key: "ci",
-      label: "CI",
-      width: 90,
-      render: (value) => <StatusBadge status={value} />,
-    },
   ];
 
   // Load commits (paginated)

@@ -91,10 +91,7 @@ pub struct CommitListItem {
     pub current_branch: String,
     pub source_branch: String,
     pub commit_history: Vec<String>,
-    pub pr: Option<String>,
-    pub merged_in: Option<String>,
     pub files: usize,
-    pub ci: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

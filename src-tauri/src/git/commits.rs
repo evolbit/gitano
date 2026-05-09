@@ -562,9 +562,6 @@ pub fn get_commits_list_paginated(
         }
         history.retain(|b| !to_remove.contains(b));
 
-        let pr = None;
-        let merged_in = None;
-
         let files = (|| -> Result<usize, git2::Error> {
             if commit.parent_count() > 0 {
                 let parent = commit.parent(0)?;
@@ -578,8 +575,6 @@ pub fn get_commits_list_paginated(
         })()
         .map_err(|e| e.to_string())?;
 
-        let ci = None;
-
         rows.push(CommitListItem {
             sha,
             message,
@@ -588,10 +583,7 @@ pub fn get_commits_list_paginated(
             current_branch: String::new(), // Ya no necesitamos mostrar esto separado
             source_branch,
             commit_history: history,
-            pr,
-            merged_in,
             files,
-            ci,
         });
         taken += 1;
     }
