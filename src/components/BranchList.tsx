@@ -74,9 +74,6 @@ export function BranchList() {
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<"local" | "remote">("local");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [selectedBranchFull, setSelectedBranchFull] = useState<string | null>(
-    null
-  );
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -246,7 +243,7 @@ export function BranchList() {
               </li>
             );
           } else {
-            const selected = selectedBranchFull === node.full;
+            const selected = selectedBranch === node.full;
             return (
               <li
                 key={node.full}
@@ -555,7 +552,7 @@ export function BranchList() {
               type === "local" ? "bg-blue-600 !text-zinc-100" : "bg-zinc-800"
             }`}
             onClick={() => setType("local")}
-            title="Locales"
+            title="Local"
             type="button">
             <span className="inline-flex items-center justify-center w-5 h-5">
               <IconDeviceFloppy
@@ -563,7 +560,7 @@ export function BranchList() {
                 className="align-middle"
               />
             </span>
-            Locales
+            Local
           </button>
           <button
             className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
@@ -572,7 +569,7 @@ export function BranchList() {
                 : "bg-zinc-800 text-zinc-400"
             }`}
             onClick={() => setType("remote")}
-            title="Remotas"
+            title="Remote"
             type="button">
             <span className="inline-flex items-center justify-center w-5 h-5">
               <IconCloud
@@ -580,11 +577,11 @@ export function BranchList() {
                 className="align-middle"
               />
             </span>
-            Remotas
+            Remote
           </button>
         </div>
       </div>
-      {loading && <div className="text-sm text-zinc-400">Cargando...</div>}
+      {loading && <div className="text-sm text-zinc-400">Loading...</div>}
       {error && <div className="text-sm text-red-400">{error}</div>}
       <div className="flex-1 min-h-0 mt-2 overflow-y-auto pr-1">
         {renderTree(grouped)}

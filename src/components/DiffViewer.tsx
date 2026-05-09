@@ -315,9 +315,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
       {/* Scrollable diff area */}
       <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
-        {loading && <div className="text-blue-400">Cargando diff...</div>}
+        {loading && <div className="text-blue-400">Loading diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
-        {hunks.length === 0 && !loading && !error && <div>No hay cambios.</div>}
+        {hunks.length === 0 && !loading && !error && <div>No changes.</div>}
         {hunks.map((hunk, idx) => (
           <DiffHunk
             key={idx}

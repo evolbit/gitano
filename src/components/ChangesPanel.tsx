@@ -128,7 +128,7 @@ const ChangesPanel: React.FC = () => {
   if (!selectedCommit) {
     return (
       <div className="p-4 text-center text-muted-foreground h-full flex items-center justify-center">
-        Selecciona un commit para ver los cambios
+        Select a commit to view its changes
       </div>
     );
   }
@@ -187,19 +187,19 @@ const ChangesPanel: React.FC = () => {
         <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
         <Split.Pane grow>
           <div className="p-4 h-full w-full overflow-auto">
-            {loading && <p>Cargando cambios...</p>}
+            {loading && <p>Loading changes...</p>}
             {error && <p className="text-red-500">Error: {error}</p>}
 
             {diff && (
               <div>
                 <h3 className="font-bold mb-2">
-                  Archivos cambiados ({diff.changes.length})
+                  Changed files ({diff.changes.length})
                 </h3>
                 <DiffFileList
                   files={diff.changes}
                   selectedIndex={0}
                   showSearch={false}
-                  onSelect={(file) => {
+                  onSelect={() => {
                     // Selection only, no action
                   }}
                   onAction={(file) => handleOpenDiffModal(file)}

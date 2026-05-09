@@ -1,8 +1,4 @@
-## Purpose
-
-Define which metadata columns and payload fields are part of the commit list experience.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Commit list omits incomplete pull request, merge target, and CI fields
 The commit list workflow SHALL omit `pr`, `merged_in`, and `ci` from both the visible UI and the commit list data contract until that functionality is implemented correctly.

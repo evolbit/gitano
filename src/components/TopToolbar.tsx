@@ -12,9 +12,7 @@ import React, { useEffect, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
 import { useRepoStore } from "../store/repo";
 import {
-  IconArrowBackUp,
   IconArrowBarToUp,
-  IconArrowForwardUp,
   IconBrandGit,
   IconCloudDownload,
   IconCloudUpload,
@@ -24,11 +22,7 @@ import {
   IconTerminal2,
 } from "./icons";
 
-interface TopToolbarProps {
-  bg?: string;
-}
-
-const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
+const TopToolbar: React.FC = () => {
   // Search state for dropdowns
   const [repoSearch, setRepoSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
@@ -263,42 +257,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
           </Menu.Dropdown>
         </Menu>
       </Group>
-      {/* Center: main tool icons */}
       <Group
         gap="xl"
-        className="justify-center flex-1 items-center">
-        <Stack
-          gap={0}
-          align="center">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconArrowBackUp size={18} />
-          </ActionIcon>
-          <Text
-            size="xs"
-            mt={2}
-            className="text-xs text-zinc-400">
-            Undo
-          </Text>
-        </Stack>
-        <Stack
-          gap={0}
-          align="center">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg">
-            <IconArrowForwardUp size={18} />
-          </ActionIcon>
-          <Text
-            size="xs"
-            mt={2}
-            className="text-xs text-zinc-400">
-            Redo
-          </Text>
-        </Stack>
+        px="sm"
+        className="flex-1 items-center justify-end">
         <Stack
           gap={0}
           align="center">
@@ -379,12 +341,6 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ bg = "bg-background" }) => {
             Pop
           </Text>
         </Stack>
-      </Group>
-      {/* Right: Terminal and Search */}
-      <Group
-        gap="md"
-        px="sm"
-        className="min-w-[120px] justify-end">
         <Stack
           gap={0}
           align="center">

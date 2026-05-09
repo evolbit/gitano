@@ -1,16 +1,4 @@
-## Purpose
-
-Define how the commit table shows branch history so it matches Git semantics and stays predictable for users comparing the UI against terminal output.
-
-## Requirements
-
-### Requirement: Branch history matches Git log for the selected branch
-The system SHALL show selected-branch history using the same selected ref semantics as Git log instead of trying to infer branch ownership.
-
-#### Scenario: Branch history is requested
-- **WHEN** a user selects a branch in the UI
-- **THEN** the backend MUST load commits from the selected branch ref
-- **THEN** the default commit list MUST match `git log <selected-branch>` ordering and scope
+## MODIFIED Requirements
 
 ### Requirement: Users can switch branch history view modes
 The system SHALL let users choose how branch-relative history is rendered.

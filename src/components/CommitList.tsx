@@ -20,6 +20,7 @@ export default function CommitList() {
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
+  const selectedCommit = tab?.selectedCommit;
   const setTabCommit = useRepoStore((s) => s.setTabCommit);
   const [search, setSearch] = useState("");
   const [commits, setCommits] = useState<CommitListItem[]>([]);
@@ -45,20 +46,21 @@ export default function CommitList() {
   // Debounce for infinite scroll
   const loadMoreTimeoutRef = useRef<number | null>(null);
   const loadCommitsRef = useRef<() => Promise<void>>();
+  const previousViewKeyRef = useRef<string | null>(null);
 
   // Define columns with custom rendering for commit_history
   const columns: TableColumn<CommitListItem>[] = [
     { key: "sha", label: "SHA", width: 120 },
     {
       key: "date",
-      label: "Fecha",
+      label: "Date",
       width: 150,
       render: (value) => {
         if (!value) return "";
         const date =
           typeof value === "number" ? new Date(value * 1000) : new Date(value);
         return date instanceof Date && !isNaN(date.getTime())
-          ? date.toLocaleString("es-ES", {
+          ? date.toLocaleString("en-GB", {
               year: "numeric",
               month: "2-digit",
               day: "2-digit",
@@ -68,11 +70,17 @@ export default function CommitList() {
           : "";
       },
     },
-    { key: "message", label: "Mensaje", width: 250 },
-    { key: "author", label: "Autor", width: 120 },
+    {
+      key: "message",
+      label: "Message",
+      width: 360,
+      minWidth: 280,
+      grow: true,
+    },
+    { key: "author", label: "Author", width: 140 },
     {
       key: "commit_history",
-      label: "Historia del commit",
+      label: "Branch history",
       width: 200,
       render: (history: string[]) => {
         if (!history || history.length === 0) return null;
@@ -110,7 +118,7 @@ export default function CommitList() {
         );
       },
     },
-    { key: "files", label: "Archivos", width: 80 },
+    { key: "files", label: "Files", width: 80 },
   ];
 
   // Load commits (paginated)
@@ -210,15 +218,24 @@ export default function CommitList() {
     };
   }, []);
 
-  // Reset when repoPath changes
+  // Reset when the viewed history changes. Preserve the selected commit when the
+  // component remounts as part of the details pane opening.
   useEffect(() => {
+    const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}|${
+      selectedBranch ?? ""
+    }|${historyMode}`;
+    const previousViewKey = previousViewKeyRef.current;
+
+    previousViewKeyRef.current = viewKey;
     setCommits([]);
     setOffset(0);
     setHasMore(true);
     setSelectedRowIndex(-1);
-    if (activeTabId) {
+
+    if (previousViewKey && previousViewKey !== viewKey && activeTabId) {
       setTabCommit(activeTabId, null);
     }
+
     loadCommits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoPath, selectedBranch, historyMode, activeTabId, setTabCommit]);
@@ -302,7 +319,19 @@ export default function CommitList() {
   }, [scrollContainer]);
 
   // Function to handle row clicks
+  const clearSelection = useCallback(() => {
+    setSelectedRowIndex(-1);
+    if (activeTabId) {
+      setTabCommit(activeTabId, null);
+    }
+  }, [activeTabId, setTabCommit]);
+
   const handleRowClick = (row: CommitListItem, index: number) => {
+    if (selectedRowIndex === index) {
+      clearSelection();
+      return;
+    }
+
     setSelectedRowIndex(index);
     if (activeTabId) {
       setTabCommit(activeTabId, row);
@@ -326,13 +355,42 @@ export default function CommitList() {
     }
   }, [selectedRowIndex, commits, activeTabId, setTabCommit]);
 
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || selectedRowIndex < 0) return;
+      event.preventDefault();
+      clearSelection();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [selectedRowIndex, clearSelection]);
+
+  useEffect(() => {
+    if (!selectedCommit) {
+      setSelectedRowIndex(-1);
+      return;
+    }
+
+    const selectedCommitIndex = commits.findIndex(
+      (commit) => commit.sha === selectedCommit.sha
+    );
+
+    if (selectedCommitIndex >= 0) {
+      setSelectedRowIndex(selectedCommitIndex);
+    }
+  }, [commits, selectedCommit]);
+
   return (
     <div className="h-full w-full flex flex-col p-4">
       <div className="flex items-center pb-4">
         <InputText
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar commit..."
+          placeholder="Search commits..."
           className="flex-1 bg-zinc-800 rounded-lg px-3 h-9 mr-4"
           leftIcon={
             <IconSearch
@@ -343,7 +401,7 @@ export default function CommitList() {
         />
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 h-9 text-sm text-muted-foreground">
-            <span>Vista</span>
+            <span>View</span>
             <select
               value={historyMode}
               onChange={handleHistoryModeChange}
@@ -377,7 +435,7 @@ export default function CommitList() {
           setKeyboardNavigation={setKeyboardNavigation}
         />
         {hasMore && !loading && (
-          <div className="text-center p-4">Cargando más commits...</div>
+          <div className="text-center p-4">Loading more commits...</div>
         )}
       </div>
     </div>

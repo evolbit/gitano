@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { REPO_LAYOUT } from "../constants/layout";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../store/hunks";
@@ -18,6 +18,7 @@ const RepoTabLayout: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
+  const selectedCommit = tab?.selectedCommit;
 
   // Constant automatic polling, without controls or notifications
   const { changes, loading, error } = useWorkingDirectoryChanges(repoPath, {
@@ -44,6 +45,10 @@ const RepoTabLayout: React.FC = () => {
     onDiscard: () => void;
     onRemove: () => void;
   }>(null);
+  const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
+  const lastCommitDetailsPaneWidthRef = useRef<number | string>(
+    REPO_LAYOUT.panes.right.initial,
+  );
 
   // Close DiffViewer when the active branch changes
   useEffect(() => {
@@ -82,6 +87,34 @@ const RepoTabLayout: React.FC = () => {
     setSelectedWorkingFile(null);
     useFileHunksStore.getState().clearFileHunks();
   };
+
+  useEffect(() => {
+    if (selectedWorkingFile) return;
+
+    const commitDetailsPane = commitDetailsPaneRef.current;
+
+    if (!commitDetailsPane) return;
+
+    if (selectedCommit) {
+      const restoredWidth = lastCommitDetailsPaneWidthRef.current;
+      commitDetailsPane.style.width =
+        typeof restoredWidth === "number"
+          ? `${Math.max(restoredWidth, REPO_LAYOUT.panes.right.min)}px`
+          : restoredWidth;
+      return;
+    }
+
+    const currentWidth = commitDetailsPane.getBoundingClientRect().width;
+
+    if (currentWidth > 1) {
+      lastCommitDetailsPaneWidthRef.current = Math.max(
+        currentWidth,
+        REPO_LAYOUT.panes.right.min,
+      );
+    }
+
+    commitDetailsPane.style.width = "0px";
+  }, [selectedCommit, selectedWorkingFile]);
 
   if (!tab) return null;
 
@@ -133,12 +166,12 @@ const RepoTabLayout: React.FC = () => {
                     )}
                     {loading && changes.length === 0 && (
                       <div className="p-4 text-center text-muted-foreground">
-                        Cargando cambios...
+                        Loading changes...
                       </div>
                     )}
                     {!error && changes.length === 0 && !loading && (
                       <div className="p-4 text-center text-muted-foreground">
-                        No hay cambios en el working directory
+                        No changes in the working directory
                       </div>
                     )}
                     {changes.length > 0 && (
@@ -175,7 +208,7 @@ const RepoTabLayout: React.FC = () => {
                         <span className="inline-flex items-center justify-center w-5 h-5">
                           <IconGitBranch size={18} />
                         </span>
-                        Ramas
+                        Branches
                       </span>
                     </div>
                   </Accordion.Control>
@@ -190,7 +223,7 @@ const RepoTabLayout: React.FC = () => {
                         <span className="inline-flex items-center justify-center w-5 h-5">
                           <IconFolder size={18} />
                         </span>
-                        Carpetas
+                        Folders
                       </span>
                     </div>
                   </Accordion.Control>
@@ -246,7 +279,7 @@ const RepoTabLayout: React.FC = () => {
                   <button
                     className="ml-auto p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
                     onClick={handleCloseDiffViewer}
-                    aria-label="Cerrar diff"
+                    aria-label="Close diff"
                   >
                     ×
                   </button>
@@ -268,12 +301,25 @@ const RepoTabLayout: React.FC = () => {
                 >
                   <CommitList />
                 </Split.Pane>
-                <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+                <Split.Resizer
+                  className={
+                    selectedCommit
+                      ? "!bg-border hover:!bg-primary [--split-resizer-size:1px]"
+                      : "hidden"
+                  }
+                />
                 <Split.Pane
+                  ref={commitDetailsPaneRef}
                   initialWidth={REPO_LAYOUT.panes.right.initial}
-                  minWidth={REPO_LAYOUT.panes.right.min}
+                  minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
+                  onResizeEnd={(size) => {
+                    if (size.width > 1) {
+                      lastCommitDetailsPaneWidthRef.current = size.width;
+                    }
+                  }}
+                  className={selectedCommit ? "overflow-hidden" : "hidden overflow-hidden"}
                 >
-                  <ChangesPanel />
+                  {selectedCommit ? <ChangesPanel /> : null}
                 </Split.Pane>
               </Split>
             )}
