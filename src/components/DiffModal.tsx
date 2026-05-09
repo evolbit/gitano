@@ -3,21 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { useRepoStore } from "../store/repo";
+import { FileChange, FileChangeWithHunks } from "../types/git";
 import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
 import { IconX } from "./icons";
 
-interface FileChange {
-  path: string;
-  status: string;
-  insertions: number;
-  deletions: number;
-}
+type DiffModalFile = FileChange | FileChangeWithHunks;
 
 interface DiffModalProps {
   open: boolean;
-  files: FileChange[];
-  initialFile: FileChange;
+  files: DiffModalFile[];
+  initialFile: DiffModalFile;
   onClose: () => void;
   repoPath?: string;
   sha?: string;
@@ -32,17 +28,7 @@ const DiffModal = ({
   sha,
 }: DiffModalProps) => {
   const [search, setSearch] = useState("");
-
-  // Compute the initial index based on initialFile
-  const getInitialIndex = () => {
-    if (!initialFile || !files.length) return 0;
-    const idx = files.findIndex(
-      (f) => f.path.toLowerCase() === initialFile.path.toLowerCase()
-    );
-    return idx !== -1 ? idx : 0;
-  };
-
-  const [selectedIndex, setSelectedIndex] = useState(getInitialIndex);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +47,17 @@ const DiffModal = ({
       files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase())),
     [files, search]
   );
+
+  const getSelectedIndex = (
+    targetFiles: DiffModalFile[],
+    targetFile: DiffModalFile | null
+  ) => {
+    if (!targetFile || !targetFiles.length) return 0;
+    const idx = targetFiles.findIndex(
+      (file) => file.path.toLowerCase() === targetFile.path.toLowerCase()
+    );
+    return idx >= 0 ? idx : 0;
+  };
 
   // Clear the search when opening the modal
   useEffect(() => {
@@ -85,6 +82,11 @@ const DiffModal = ({
       listRef.current.focus();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedIndex(getSelectedIndex(filteredFiles, initialFile));
+  }, [open, initialFile, filteredFiles]);
 
   // Auto-scroll to keep the selected row visible
   useEffect(() => {
@@ -111,13 +113,21 @@ const DiffModal = ({
       files.map((file) => ({
         ...file,
         status: allowedStatuses.includes(file.status)
-          ? (file.status as import("../types/git").FileChange["status"])
+          ? (file.status as FileChange["status"])
           : "modified",
       })),
     [files]
   );
 
-  const selected = filteredFiles[selectedIndex];
+  const filteredNormalizedFiles = useMemo(
+    () =>
+      normalizedFiles.filter((file) =>
+        file.path.toLowerCase().includes(search.toLowerCase())
+      ),
+    [normalizedFiles, search]
+  );
+
+  const selected = filteredNormalizedFiles[selectedIndex];
 
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
@@ -131,13 +141,13 @@ const DiffModal = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background-emphasis">
           <div className="flex items-center gap-2 w-1/2">
-            <span className="font-bold text-lg">Diferencias de archivos</span>
+            <span className="font-bold text-lg">File differences</span>
             <div className="flex-1" />
           </div>
           <button
             className="ml-4 p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
             onClick={onClose}
-            aria-label="Cerrar">
+            aria-label="Close">
             <IconX size={22} />
           </button>
         </div>
@@ -171,9 +181,7 @@ const DiffModal = ({
                   sha={sha}
                 />
               ) : (
-                <div className="text-red-400">
-                  No se encontró el repoPath o archivo
-                </div>
+                <div className="text-red-400">Repository path or file not found</div>
               )}
             </div>
           </Split.Pane>
@@ -181,8 +189,6 @@ const DiffModal = ({
       </div>
     </div>
   );
-
-  console.log("[DiffModal] selectedIndex:", selectedIndex);
 
   return ReactDOM.createPortal(modalContent, document.body);
 };

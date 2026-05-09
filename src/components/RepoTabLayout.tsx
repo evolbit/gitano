@@ -9,8 +9,8 @@ import { FileChangeWithHunks } from "../types/git";
 import { BranchList } from "./BranchList";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
+import DiffModal from "./DiffModal";
 import DiffFileList from "./DiffFileList";
-import DiffViewer from "./DiffViewer";
 import { IconFolder, IconGitBranch, IconStack2 } from "./icons";
 import TopToolbar from "./TopToolbar";
 
@@ -32,19 +32,6 @@ const RepoTabLayout: React.FC = () => {
   // State for the file selected from Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChangeWithHunks | null>(null);
-
-  // State for file actions in DiffViewer
-  const [fileActions, setFileActions] = useState<null | {
-    filePath: string;
-    insertions: number;
-    deletions: number;
-    canStage: boolean;
-    canDiscard: boolean;
-    canRemove: boolean;
-    onStage: () => void;
-    onDiscard: () => void;
-    onRemove: () => void;
-  }>(null);
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
     REPO_LAYOUT.panes.right.initial,
@@ -82,8 +69,7 @@ const RepoTabLayout: React.FC = () => {
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
-  // Handler to return to the normal layout
-  const handleCloseDiffViewer = () => {
+  const handleCloseDiffModal = () => {
     setSelectedWorkingFile(null);
     useFileHunksStore.getState().clearFileHunks();
   };
@@ -237,95 +223,47 @@ const RepoTabLayout: React.FC = () => {
           <Split.Resizer className="!bg-background-emphasis hover:!bg-foreground [--split-resizer-size:1px] m-0 border-r border-border rounded-none" />
           {/* Right panel: changes based on the selection */}
           <Split.Pane grow className="!h-full !min-h-0">
-            {selectedWorkingFile ? (
-              <div className="h-full w-full flex flex-col">
-                <div className="flex items-center gap-4 px-6 py-4 border-b border-border bg-background-emphasis">
-                  <span className="font-bold text-lg">
-                    Diff: {selectedWorkingFile.path}
-                  </span>
-                  {fileActions && (
-                    <>
-                      <span className="ml-4 flex items-center gap-2 text-xs">
-                        <span className="text-green-500 font-semibold">
-                          +{fileActions.insertions}
-                        </span>
-                        <span className="text-red-500 font-semibold">
-                          -{fileActions.deletions}
-                        </span>
-                      </span>
-                      <button
-                        className="ml-4 px-3 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
-                        disabled={!fileActions.canStage}
-                        onClick={fileActions.onStage}
-                      >
-                        Stage
-                      </button>
-                      <button
-                        className="px-3 py-1 text-xs bg-yellow-700 hover:bg-yellow-800 text-white rounded disabled:opacity-50"
-                        disabled={!fileActions.canDiscard}
-                        onClick={fileActions.onDiscard}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        className="px-3 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded disabled:opacity-50"
-                        disabled={!fileActions.canRemove}
-                        onClick={fileActions.onRemove}
-                      >
-                        Remove
-                      </button>
-                    </>
-                  )}
-                  <button
-                    className="ml-auto p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
-                    onClick={handleCloseDiffViewer}
-                    aria-label="Close diff"
-                  >
-                    ×
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <DiffViewer
-                    repoPath={repoPath || ""}
-                    filePath={selectedWorkingFile.path}
-                    onFileActionsData={setFileActions}
-                  />
-                </div>
-              </div>
-            ) : (
-              <Split orientation="vertical" className="h-full w-full">
-                <Split.Pane
-                  grow
-                  initialWidth={REPO_LAYOUT.panes.middle.initial}
-                  minWidth={REPO_LAYOUT.panes.middle.min}
-                >
-                  <CommitList />
-                </Split.Pane>
-                <Split.Resizer
-                  className={
-                    selectedCommit
-                      ? "!bg-border hover:!bg-primary [--split-resizer-size:1px]"
-                      : "hidden"
+            <Split orientation="vertical" className="h-full w-full">
+              <Split.Pane
+                grow
+                initialWidth={REPO_LAYOUT.panes.middle.initial}
+                minWidth={REPO_LAYOUT.panes.middle.min}
+              >
+                <CommitList />
+              </Split.Pane>
+              <Split.Resizer
+                className={
+                  selectedCommit
+                    ? "!bg-border hover:!bg-primary [--split-resizer-size:1px]"
+                    : "hidden"
+                }
+              />
+              <Split.Pane
+                ref={commitDetailsPaneRef}
+                initialWidth={REPO_LAYOUT.panes.right.initial}
+                minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
+                onResizeEnd={(size) => {
+                  if (size.width > 1) {
+                    lastCommitDetailsPaneWidthRef.current = size.width;
                   }
-                />
-                <Split.Pane
-                  ref={commitDetailsPaneRef}
-                  initialWidth={REPO_LAYOUT.panes.right.initial}
-                  minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
-                  onResizeEnd={(size) => {
-                    if (size.width > 1) {
-                      lastCommitDetailsPaneWidthRef.current = size.width;
-                    }
-                  }}
-                  className={selectedCommit ? "overflow-hidden" : "hidden overflow-hidden"}
-                >
-                  {selectedCommit ? <ChangesPanel /> : null}
-                </Split.Pane>
-              </Split>
-            )}
+                }}
+                className={selectedCommit ? "overflow-hidden" : "hidden overflow-hidden"}
+              >
+                {selectedCommit ? <ChangesPanel /> : null}
+              </Split.Pane>
+            </Split>
           </Split.Pane>
         </Split>
       </div>
+      {selectedWorkingFile && repoPath && changes.length > 0 && (
+        <DiffModal
+          open={true}
+          files={changes}
+          initialFile={selectedWorkingFile}
+          onClose={handleCloseDiffModal}
+          repoPath={repoPath}
+        />
+      )}
     </div>
   );
 };

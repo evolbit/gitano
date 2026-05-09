@@ -105,7 +105,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     if (!sha) return;
     setLoading(true);
     setError(null);
-    invoke<DiffHunk[]>("get_commit_file_diff_command", {
+    invoke<DiffHunk[]>("get_commit_file_diff", {
       path: repoPath,
       sha,
       filePath,

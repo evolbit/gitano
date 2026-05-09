@@ -1,17 +1,21 @@
-use crate::git::diff::*;
+use crate::git::diff::{
+    get_commit_file_diff as load_commit_file_diff,
+    get_diff_context as load_diff_context,
+    get_file_diff_hunks as load_file_diff_hunks,
+};
 use crate::git::types::*;
 
 #[tauri::command]
-pub fn get_file_diff_hunks_command(
+pub fn get_file_diff_hunks(
     path: String,
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
-    get_file_diff_hunks(path, file_path, context)
+    load_file_diff_hunks(path, file_path, context)
 }
 
 #[tauri::command]
-pub fn get_diff_context_command(
+pub fn get_diff_context(
     path: String,
     file_path: String,
     hunk_index: usize,
@@ -20,17 +24,17 @@ pub fn get_diff_context_command(
     context: usize,
     offset: usize,
 ) -> Result<Vec<DiffLine>, String> {
-    get_diff_context(
+    load_diff_context(
         path, file_path, hunk_index, direction, lines, context, offset,
     )
 }
 
 #[tauri::command]
-pub fn get_commit_file_diff_command(
+pub fn get_commit_file_diff(
     path: String,
     sha: String,
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
-    get_commit_file_diff(path, sha, file_path, context)
+    load_commit_file_diff(path, sha, file_path, context)
 }
