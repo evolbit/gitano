@@ -6,11 +6,14 @@ import { useRepoStore } from "../store/repo";
 import { useFileHunksStore } from "../store/hunks";
 import { FileChange, FileChangeWithHunks } from "../types/git";
 import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
-import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
 import { IconX } from "./icons";
 
 type DiffModalFile = FileChange | FileChangeWithHunks;
+
+function isFileChangeWithHunks(file: DiffModalFile): file is FileChangeWithHunks {
+  return "hunks" in file;
+}
 
 interface DiffModalProps {
   open: boolean;
@@ -35,9 +38,9 @@ const DiffModal = ({
   changesViewMode = "tree",
   onChangesViewModeChange,
 }: DiffModalProps) => {
-  const [search, setSearch] = useState("");
   const [selectedPath, setSelectedPath] = useState(initialFile.path);
-  const listRef = useRef<HTMLUListElement>(null);
+  const [internalChangesViewMode, setInternalChangesViewMode] =
+    useState<ChangesExplorerViewMode>(changesViewMode);
   const modalRef = useRef<HTMLDivElement>(null);
   const setFileHunks = useFileHunksStore((s) => s.setFileHunks);
 
@@ -53,10 +56,14 @@ const DiffModal = ({
   // Clear the search when opening the modal
   useEffect(() => {
     if (open) {
-      setSearch("");
       setSelectedPath(initialFile.path);
     }
   }, [open, initialFile.path]);
+
+  useEffect(() => {
+    if (onChangesViewModeChange) return;
+    setInternalChangesViewMode(changesViewMode);
+  }, [changesViewMode, onChangesViewModeChange]);
 
   // Close on Escape
   useEffect(() => {
@@ -68,14 +75,6 @@ const DiffModal = ({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  // Focus the list when opening the modal
-  useEffect(() => {
-    if (open && listRef.current) {
-      listRef.current.focus();
-    }
-  }, [open]);
-
-  // Normalize files for DiffFileList
   const allowedStatuses = [
     "added",
     "deleted",
@@ -95,43 +94,37 @@ const DiffModal = ({
     [files]
   );
 
-  const filteredNormalizedFiles = useMemo(
-    () =>
-      normalizedFiles.filter((file) =>
-        file.path.toLowerCase().includes(search.toLowerCase())
-      ),
-    [normalizedFiles, search]
-  );
-
-  const selectedIndex = Math.max(
-    0,
-    filteredNormalizedFiles.findIndex(
+  const selected =
+    normalizedFiles.find(
       (file) => file.path.toLowerCase() === selectedPath.toLowerCase()
-    )
-  );
+    ) ??
+    normalizedFiles.find(
+      (file) => file.path.toLowerCase() === initialFile.path.toLowerCase()
+    ) ??
+    normalizedFiles[0];
 
-  // Auto-scroll to keep the selected row visible
-  useEffect(() => {
-    if (!listRef.current) return;
-    const el = listRef.current.querySelector(
-      `[data-file-index='${selectedIndex}']`
-    ) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [selectedIndex]);
-
-  const selected = filteredNormalizedFiles[selectedIndex];
+  const effectiveChangesViewMode = onChangesViewModeChange
+    ? changesViewMode
+    : internalChangesViewMode;
 
   useEffect(() => {
     if (sha || !selected) return;
-    if (!("hunks" in selected)) return;
+    if (!isFileChangeWithHunks(selected)) return;
     setFileHunks(selected.path, selected.hunks);
   }, [selected, setFileHunks, sha]);
 
   const handleSelectFile = (file: DiffModalFile) => {
     setSelectedPath(file.path);
     onFileSelect?.(file);
+  };
+
+  const handleChangeViewMode = (mode: ChangesExplorerViewMode) => {
+    if (onChangesViewModeChange) {
+      onChangesViewModeChange(mode);
+      return;
+    }
+
+    setInternalChangesViewMode(mode);
   };
 
   if (!open) {
@@ -168,29 +161,17 @@ const DiffModal = ({
             initialWidth={340}
             minWidth={220}
             maxWidth={500}>
-            {sha === undefined ? (
-              <ChangesExplorer
-                files={normalizedFiles}
-                selectedPath={selected?.path ?? initialFile.path}
-                onSelectFile={handleSelectFile}
-                viewMode={changesViewMode}
-                onViewModeChange={(mode) => onChangesViewModeChange?.(mode)}
-                showFileCheckboxes={true}
-                surface="modal"
-                showHeader={true}
-                autoFocusSearch={true}
-              />
-            ) : (
-              <DiffFileList
-                ref={listRef}
-                files={normalizedFiles}
-                selectedIndex={selectedIndex}
-                onSelect={(file) => handleSelectFile(file)}
-                onAction={(file) => handleSelectFile(file)}
-                autoFocusSearch={true}
-                showFileCheckboxes={false}
-              />
-            )}
+            <ChangesExplorer
+              files={normalizedFiles}
+              selectedPath={selected?.path ?? initialFile.path}
+              onSelectFile={handleSelectFile}
+              viewMode={effectiveChangesViewMode}
+              onViewModeChange={handleChangeViewMode}
+              showFileCheckboxes={sha === undefined}
+              surface={sha === undefined ? "modal" : "main"}
+              showHeader={sha === undefined}
+              autoFocusSearch={true}
+            />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
           {/* Right panel: diff */}

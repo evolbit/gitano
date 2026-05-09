@@ -84,6 +84,17 @@ function getParentPath(path: string) {
   return parts.join("/");
 }
 
+function getAncestorFolderPaths(path: string) {
+  const parts = path.split("/");
+  const ancestors: string[] = [];
+
+  for (let index = 1; index < parts.length; index += 1) {
+    ancestors.push(parts.slice(0, index).join("/"));
+  }
+
+  return ancestors;
+}
+
 function isUntrackedFile(file: ChangesExplorerFile) {
   if (file.status !== "added") return false;
   if (file.insertions === 0 && file.deletions === 0) return true;
@@ -266,6 +277,7 @@ function ChangesExplorer({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const revealFrameRef = useRef<number | null>(null);
 
   const stagedLines = useStagedLinesStore((s) => s.stagedLines);
   const setAllStagedLinesForFile = useStagedLinesStore(
@@ -313,6 +325,27 @@ function ChangesExplorer({
   }, [sectionTrees]);
 
   useEffect(() => {
+    if (viewMode !== "tree" || !selectedPath) return;
+
+    const ancestorPaths = getAncestorFolderPaths(selectedPath);
+    if (ancestorPaths.length === 0) return;
+
+    setExpanded((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      ancestorPaths.forEach((path) => {
+        if (next[path] !== true) {
+          next[path] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [selectedPath, viewMode]);
+
+  useEffect(() => {
     if (!contextMenuOpen) return;
 
     function handleClick(event: MouseEvent) {
@@ -340,14 +373,34 @@ function ChangesExplorer({
 
   useEffect(() => {
     if (!containerRef.current || !selectedPath) return;
-    const el = containerRef.current.querySelector(
-      `[data-file-path='${CSS.escape(selectedPath)}']`,
-    ) as HTMLElement | null;
 
-    if (el) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (revealFrameRef.current !== null) {
+      cancelAnimationFrame(revealFrameRef.current);
     }
-  }, [selectedPath, viewMode, search]);
+
+    const scheduleReveal = () => {
+      revealFrameRef.current = requestAnimationFrame(() => {
+        revealFrameRef.current = requestAnimationFrame(() => {
+          const el = containerRef.current?.querySelector(
+            `[data-file-path='${CSS.escape(selectedPath)}']`,
+          ) as HTMLElement | null;
+
+          if (el) {
+            el.scrollIntoView({ block: "nearest", behavior: "auto" });
+          }
+        });
+      });
+    };
+
+    scheduleReveal();
+
+    return () => {
+      if (revealFrameRef.current !== null) {
+        cancelAnimationFrame(revealFrameRef.current);
+        revealFrameRef.current = null;
+      }
+    };
+  }, [expanded, search, selectedPath, viewMode]);
 
   const openContextMenu = (x: number, y: number) => {
     setMenuPos({ x, y });
