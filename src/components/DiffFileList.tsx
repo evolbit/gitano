@@ -1,9 +1,8 @@
-import { Checkbox } from "@mantine/core";
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { useStagedLinesStore } from "../store/staging";
 import { DiffLine, FileChange } from "../types/git";
 import FileListItem from "./FileListItem";
-import { IconSearch } from "./icons";
+import { IconCheck, IconSearch } from "./icons";
 
 interface DiffFileListProps {
   files: FileChange[];
@@ -249,48 +248,75 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                   }}>
                   <div className="flex items-center min-w-0 gap-2">
                     {/* Per-file checkbox, only when showFileCheckboxes is enabled */}
-                    {showFileCheckboxes && (
-                      <Checkbox
-                        checked={checkboxState === "checked"}
-                        indeterminate={checkboxState === "indeterminate"}
-                        onChange={(e) => {
-                          console.log("isNewFile", isNewFile);
+                    {showFileCheckboxes &&
+                      (() => {
+                        const toggleFileSelection = () => {
                           if (isNewFile) {
-                            setStagedNewFile(file.path, e.target.checked);
-                          } else if (e.target.checked) {
-                            // Add all stageable lines (Add or Del) from all hunks
+                            setStagedNewFile(
+                              file.path,
+                              checkboxState !== "checked"
+                            );
+                            return;
+                          }
+
+                          if (checkboxState !== "checked") {
                             const hunks = (file as any).hunks || [];
                             const allHunks: { [hunkIdx: number]: number[] } =
                               {};
-                            hunks.forEach((hunk: any, hunkIdx: number) => {
-                              const lineIdxs = hunk.lines
-                                .map((line: DiffLine, idx: number) =>
-                                  line.kind === "Add" || line.kind === "Del"
-                                    ? idx
-                                    : null
-                                )
-                                .filter((idx) => idx !== null) as number[];
-                              if (lineIdxs.length > 0) {
-                                allHunks[hunkIdx] = lineIdxs;
+
+                            hunks.forEach(
+                              (
+                                hunk: { lines: DiffLine[] },
+                                hunkIdx: number
+                              ) => {
+                                const lineIdxs = hunk.lines
+                                  .map((line: DiffLine, idx: number) =>
+                                    line.kind === "Add" || line.kind === "Del"
+                                      ? idx
+                                      : null
+                                  )
+                                  .filter((lineIdx) => lineIdx !== null) as number[];
+
+                                if (lineIdxs.length > 0) {
+                                  allHunks[hunkIdx] = lineIdxs;
+                                }
                               }
-                            });
+                            );
+
                             setAllStagedLinesForFile(file.path, allHunks);
-                          } else {
-                            // Clear all staged lines for this file
-                            clearStagedLinesForFile(file.path);
+                            return;
                           }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        tabIndex={0}
-                        aria-checked={
-                          checkboxState === "indeterminate"
-                            ? "mixed"
-                            : checkboxState === "checked"
-                        }
-                        size="xs"
-                        color="blue"
-                      />
-                    )}
+
+                          clearStagedLinesForFile(file.path);
+                        };
+
+                        return (
+                          <button
+                            type="button"
+                            className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${
+                              checkboxState === "checked" ||
+                              checkboxState === "indeterminate"
+                                ? "border-blue-500 bg-blue-600 text-white"
+                                : "border-zinc-500 bg-transparent text-transparent"
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFileSelection();
+                            }}
+                            aria-checked={
+                              checkboxState === "indeterminate"
+                                ? "mixed"
+                                : checkboxState === "checked"
+                            }
+                            aria-label={`Toggle file selection for ${file.path}`}>
+                            {checkboxState === "checked" ? (
+                              <IconCheck size={12} className="text-white" />
+                            ) : checkboxState === "indeterminate" ? (
+                              <span className="block h-0.5 w-2 rounded bg-white" />
+                            ) : null}
+                          </button>
+                        );
+                      })()}
                     <FileListItem file={fileForList} />
                   </div>
                 </li>

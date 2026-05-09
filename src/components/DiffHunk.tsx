@@ -25,27 +25,14 @@ interface DiffHunkProps {
   hunk: DiffHunkType;
   hunkIdx: number;
   stagedLines: Record<number, Set<number>>;
-  setStagedLines: (hunkIdx: number, lines: Set<number>) => void;
   extraContext: Record<number, { above: DiffLine[]; below: DiffLine[] }>;
-  setExtraContext: React.Dispatch<
-    React.SetStateAction<
-      Record<number, { above: DiffLine[]; below: DiffLine[] }>
-    >
-  >;
   hoveredHunkIdx: number | null;
   setHoveredHunkIdx: React.Dispatch<React.SetStateAction<number | null>>;
-  isDragging: boolean;
-  setIsDragging: React.Dispatch<React.SetStateAction<boolean>>;
-  dragHunkIdx: number | null;
-  setDragHunkIdx: React.Dispatch<React.SetStateAction<number | null>>;
-  dragMode: "add" | "remove" | null;
-  setDragMode: React.Dispatch<React.SetStateAction<"add" | "remove" | null>>;
   handleExpandContext: (
     hunkIdx: number,
     direction: ContextDirection,
     lines: number
   ) => void;
-  handleToggleLineStage: (hunkIdx: number, lineIdx: number) => void;
   handleLineMouseDown: (
     hunkIdx: number,
     lineIdx: number,
@@ -58,7 +45,7 @@ interface DiffHunkProps {
     isStageable: boolean,
     isStaged: boolean
   ) => void;
-  handleStageHunk: (hunkIdx: number) => void;
+  handleStageBlock: (hunkIdx: number, lineIdxs: number[]) => void;
   canStage?: boolean;
 }
 
@@ -66,25 +53,18 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   hunk,
   hunkIdx,
   stagedLines,
-  setStagedLines,
   extraContext,
-  setExtraContext,
   hoveredHunkIdx,
   setHoveredHunkIdx,
-  isDragging,
-  setIsDragging,
-  dragHunkIdx,
-  setDragHunkIdx,
-  dragMode,
-  setDragMode,
   handleExpandContext,
-  handleToggleLineStage,
   handleLineMouseDown,
   handleLineMouseEnter,
-  handleStageHunk,
+  handleStageBlock,
   canStage = false,
 }) => {
   const isHovered = hoveredHunkIdx === hunkIdx;
+  const blocks = getStageableBlocks(hunk.lines);
+
   return (
     <div
       className={`mb-6 border border-border rounded bg-background ${
@@ -92,7 +72,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
       }`}
       onMouseEnter={() => setHoveredHunkIdx(hunkIdx)}
       onMouseLeave={() => setHoveredHunkIdx(null)}>
-      {/* Hunk header with buttons */}
+      {/* Hunk header with secondary actions */}
       <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
         <span className="text-purple-300 text-xs font-mono">{hunk.header}</span>
         {canStage && (
@@ -111,42 +91,21 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                   onClick={() => {
                     console.log("Remove new file", hunkIdx);
                   }}>
-                  Eliminar
+                  Remove
                 </button>
               </>
             ) : (
-              <>
-                <button
-                  className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
-                  onClick={() => handleStageHunk(hunkIdx)}>
-                  {(() => {
-                    // Count how many lines are stageable in this hunk
-                    const stageableLines = hunk.lines.filter(
-                      (line) => line.kind === "Add" || line.kind === "Del"
-                    ).length;
-                    // Count how many lines are currently staged
-                    const stagedCount = stagedLines[hunkIdx]?.size || 0;
-                    // If all stageable lines are staged, show "Deselect all"
-                    return stagedCount === stageableLines
-                      ? "Deselect all"
-                      : "Select all";
-                  })()}
-                </button>
-                <button
-                  className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
-                  disabled={
-                    !(stagedLines[hunkIdx] && stagedLines[hunkIdx].size > 0)
-                  }
-                  onClick={() => {
-                    // Real staging logic should go here; for now it only logs
-                    const staged = stagedLines[hunkIdx]
-                      ? Array.from(stagedLines[hunkIdx])
-                      : [];
-                    console.log("Stage lines for hunk", hunkIdx, staged);
-                  }}>
-                  Stage
-                </button>
-              </>
+              <button
+                className="px-2 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
+                disabled={!(stagedLines[hunkIdx] && stagedLines[hunkIdx].size > 0)}
+                onClick={() => {
+                  const staged = stagedLines[hunkIdx]
+                    ? Array.from(stagedLines[hunkIdx])
+                    : [];
+                  console.log("Stage lines for hunk", hunkIdx, staged);
+                }}>
+                Stage
+              </button>
             )}
           </div>
         )}
@@ -166,7 +125,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             <DiffLineRow
               key={"above-" + i}
               line={line}
-              showChecks={false}
+              showLineGutter={false}
             />
           ))}
         </>
@@ -175,17 +134,42 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
       {hunk.lines.map((line, lineIdx) => {
         const isStageable = line.kind === "Add" || line.kind === "Del";
         const isStaged = stagedLines[hunkIdx]?.has(lineIdx);
+        const block = blocks.find(
+          ({ startLineIdx, endLineIdx }) =>
+            lineIdx >= startLineIdx && lineIdx <= endLineIdx
+        );
+        const isBlockStart = block?.startLineIdx === lineIdx;
+        const blockStagedCount = block
+          ? block.lineIdxs.filter((idx) => stagedLines[hunkIdx]?.has(idx)).length
+          : 0;
+        const isBlockFullyStaged =
+          !!block &&
+          block.lineIdxs.length > 0 &&
+          blockStagedCount === block.lineIdxs.length;
+        const isBlockPartiallyStaged =
+          !!block &&
+          blockStagedCount > 0 &&
+          blockStagedCount < block.lineIdxs.length;
+
         return (
           <DiffLineRow
             key={lineIdx}
             line={line}
-            showChecks={!hunk.is_new_file && isStageable}
-            isStaged={isStaged}
-            onCheck={
-              hunk.is_new_file
-                ? undefined
-                : () => handleToggleLineStage(hunkIdx, lineIdx)
+            showHunkGutter={!hunk.is_new_file && canStage}
+            showLineGutter={!hunk.is_new_file && isStageable}
+            isBlockStart={isBlockStart}
+            isBlockFullyStaged={isBlockFullyStaged}
+            isBlockPartiallyStaged={isBlockPartiallyStaged}
+            onBlockMouseDown={
+              block && !hunk.is_new_file && canStage
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleStageBlock(hunkIdx, block.lineIdxs);
+                  }
+                : undefined
             }
+            isStaged={isStaged}
             onMouseDown={
               hunk.is_new_file
                 ? undefined
@@ -220,7 +204,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             <DiffLineRow
               key={"below-" + i}
               line={line}
-              showChecks={false}
+              showLineGutter={false}
             />
           ))}
           {/* Expand context below */}
@@ -237,19 +221,63 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   );
 };
 
+function getStageableBlocks(lines: DiffLine[]) {
+  const blocks: { startLineIdx: number; endLineIdx: number; lineIdxs: number[] }[] = [];
+  let currentBlock: { startLineIdx: number; endLineIdx: number; lineIdxs: number[] } | null =
+    null;
+
+  lines.forEach((line, idx) => {
+    const isStageable = line.kind === "Add" || line.kind === "Del";
+
+    if (!isStageable) {
+      if (currentBlock) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      return;
+    }
+
+    if (!currentBlock) {
+      currentBlock = {
+        startLineIdx: idx,
+        endLineIdx: idx,
+        lineIdxs: [idx],
+      };
+      return;
+    }
+
+    currentBlock.endLineIdx = idx;
+    currentBlock.lineIdxs.push(idx);
+  });
+
+  if (currentBlock) {
+    blocks.push(currentBlock);
+  }
+
+  return blocks;
+}
+
 // Component that renders a diff line with checks, colors, and line numbers
 const DiffLineRow: React.FC<{
   line: DiffLine;
-  showChecks?: boolean;
+  showHunkGutter?: boolean;
+  isBlockStart?: boolean;
+  isBlockFullyStaged?: boolean;
+  isBlockPartiallyStaged?: boolean;
+  onBlockMouseDown?: (e: React.MouseEvent) => void;
+  showLineGutter?: boolean;
   isStaged?: boolean;
-  onCheck?: () => void;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
 }> = ({
   line,
-  showChecks = false,
+  showHunkGutter = true,
+  isBlockStart = false,
+  isBlockFullyStaged = false,
+  isBlockPartiallyStaged = false,
+  onBlockMouseDown,
+  showLineGutter = false,
   isStaged = false,
-  onCheck,
   onMouseDown,
   onMouseEnter,
 }) => {
@@ -257,36 +285,56 @@ const DiffLineRow: React.FC<{
   if (line.kind === "Add") baseColor = "text-green-400 bg-green-900/20";
   else if (line.kind === "Del") baseColor = "text-red-400 bg-red-900/20";
   else baseColor = "text-zinc-200";
-  // If it is staged, use a blue background and white text
-  const stagedColor = isStaged ? "bg-blue-600 text-white" : baseColor;
   return (
     <div
-      className={`flex items-center px-4 py-0.5 ${stagedColor} text-xs font-mono group transition-colors duration-100`}
+      className={`flex items-center px-4 ${baseColor} text-xs font-mono group transition-colors duration-100`}
       style={{
         fontVariantNumeric: "tabular-nums",
-        cursor: showChecks ? "pointer" : undefined,
+        cursor: showLineGutter ? "pointer" : undefined,
       }}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}>
-      {/* Check column for old_lineno */}
-      <span className="w-6 h-4 flex items-center justify-center select-none">
-        {showChecks && line.old_lineno !== null && isStaged ? (
+      <span
+        className={`flex h-7 w-6 items-center justify-center select-none transition-colors ${
+          showHunkGutter
+            ? onBlockMouseDown
+              ? isBlockFullyStaged || isBlockPartiallyStaged
+                ? "bg-blue-600 text-white"
+                : "bg-white/6 text-zinc-400"
+              : ""
+            : ""
+        }`}>
+        {showHunkGutter ? (
+          <button
+            type="button"
+            aria-label={isBlockFullyStaged ? "Deselect block" : "Select block"}
+            className="flex h-full w-full items-center justify-center"
+            onMouseDown={onBlockMouseDown}>
+            {isBlockStart ? (
+              isBlockFullyStaged ? (
+                <IconCheck size={12} className="text-white" />
+              ) : isBlockPartiallyStaged ? (
+                <span className="block h-0.5 w-2 rounded bg-white" />
+              ) : null
+            ) : null}
+          </button>
+        ) : null}
+      </span>
+      <span
+        className={`flex h-7 w-6 items-center justify-center select-none transition-colors ${
+          showLineGutter
+            ? isStaged
+              ? "bg-blue-600 text-white"
+              : "bg-transparent text-zinc-500"
+            : "bg-transparent"
+        }`}>
+        {showLineGutter && isStaged ? (
           <IconCheck
             size={14}
             className="text-white"
           />
         ) : null}
       </span>
-      {/* Check column for new_lineno */}
-      <span className="w-6 h-4 flex items-center justify-center select-none">
-        {showChecks && line.new_lineno !== null && isStaged ? (
-          <IconCheck
-            size={14}
-            className="text-white"
-          />
-        ) : null}
-      </span>
-      {/* Line numbers */}
       <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
         {line.old_lineno ?? ""}
       </span>

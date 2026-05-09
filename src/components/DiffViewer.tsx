@@ -241,25 +241,22 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setStagedLinesGlobal(filePath, hunkIdx, prevSet);
   };
 
-  // Handler to stage or deselect the entire hunk
-  const handleStageHunk = (hunkIdx: number) => {
+  // Handler to stage or deselect a contiguous block within a hunk
+  const handleStageBlock = (hunkIdx: number, lineIdxs: number[]) => {
     if (!canSelectLines) return;
-    const hunk: DiffHunk = hunks[hunkIdx];
     const currentStaged = stagedLines[hunkIdx] || new Set<number>();
-    const stageableLines = hunk.lines.filter(
-      (line: DiffLine) => line.kind === "Add" || line.kind === "Del"
-    ).length;
-    const stagedCount = currentStaged.size;
-    if (stagedCount === stageableLines) {
-      setStagedLinesGlobal(filePath, hunkIdx, new Set());
+    const areAllLinesStaged = lineIdxs.every((lineIdx) =>
+      currentStaged.has(lineIdx)
+    );
+
+    if (areAllLinesStaged) {
+      const updated = new Set(currentStaged);
+      lineIdxs.forEach((lineIdx) => updated.delete(lineIdx));
+      setStagedLinesGlobal(filePath, hunkIdx, updated);
     } else {
-      const staged = new Set<number>();
-      hunk.lines.forEach((line: DiffLine, idx: number) => {
-        if (line.kind === "Add" || line.kind === "Del") {
-          staged.add(idx);
-        }
-      });
-      setStagedLinesGlobal(filePath, hunkIdx, staged);
+      const updated = new Set(currentStaged);
+      lineIdxs.forEach((lineIdx) => updated.add(lineIdx));
+      setStagedLinesGlobal(filePath, hunkIdx, updated);
     }
   };
 
@@ -324,27 +321,13 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             hunk={hunk}
             hunkIdx={idx}
             stagedLines={stagedLines}
-            setStagedLines={
-              canSelectLines
-                ? (hunkIdx, lines) =>
-                    setStagedLinesGlobal(filePath, hunkIdx, lines)
-                : () => {}
-            }
             extraContext={extraContext}
-            setExtraContext={setExtraContext}
             hoveredHunkIdx={hoveredHunkIdx}
             setHoveredHunkIdx={setHoveredHunkIdx}
-            isDragging={canSelectLines ? isDragging : false}
-            setIsDragging={canSelectLines ? setIsDragging : () => {}}
-            dragHunkIdx={canSelectLines ? dragHunkIdx : null}
-            setDragHunkIdx={canSelectLines ? setDragHunkIdx : () => {}}
-            dragMode={canSelectLines ? dragMode : null}
-            setDragMode={canSelectLines ? setDragMode : () => {}}
             handleExpandContext={handleExpandContext}
-            handleToggleLineStage={handleToggleLineStage}
             handleLineMouseDown={handleLineMouseDown}
             handleLineMouseEnter={handleLineMouseEnter}
-            handleStageHunk={handleStageHunk}
+            handleStageBlock={handleStageBlock}
             canStage={canStage}
           />
         ))}

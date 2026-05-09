@@ -182,7 +182,7 @@ const RepoTabLayout: React.FC = () => {
                         highlightSelected={true}
                         rowDividerColor="divide-border"
                         rowPadding="px-2 py-1"
-                        showFileCheckboxes={true}
+                        showFileCheckboxes={false}
                       />
                     )}
                   </Accordion.Panel>
@@ -261,6 +261,11 @@ const RepoTabLayout: React.FC = () => {
           files={changes}
           initialFile={selectedWorkingFile}
           onClose={handleCloseDiffModal}
+          onFileSelect={(file) => {
+            if ("hunks" in file) {
+              handleSelectWorkingFile(file);
+            }
+          }}
           repoPath={repoPath}
         />
       )}

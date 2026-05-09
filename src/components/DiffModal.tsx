@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { useRepoStore } from "../store/repo";
+import { useFileHunksStore } from "../store/hunks";
 import { FileChange, FileChangeWithHunks } from "../types/git";
 import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
@@ -15,6 +16,7 @@ interface DiffModalProps {
   files: DiffModalFile[];
   initialFile: DiffModalFile;
   onClose: () => void;
+  onFileSelect?: (file: DiffModalFile) => void;
   repoPath?: string;
   sha?: string;
 }
@@ -24,13 +26,15 @@ const DiffModal = ({
   files,
   initialFile,
   onClose,
+  onFileSelect,
   repoPath,
   sha,
 }: DiffModalProps) => {
   const [search, setSearch] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedPath, setSelectedPath] = useState(initialFile.path);
   const listRef = useRef<HTMLUListElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const setFileHunks = useFileHunksStore((s) => s.setFileHunks);
 
   // If repoPath is not provided as a prop, read it from the store (active tab)
   const storeRepoPath = useRepoStore(
@@ -41,30 +45,13 @@ const DiffModal = ({
   );
   const effectiveRepoPath = repoPath || storeRepoPath;
 
-  // File filtering
-  const filteredFiles = useMemo(
-    () =>
-      files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase())),
-    [files, search]
-  );
-
-  const getSelectedIndex = (
-    targetFiles: DiffModalFile[],
-    targetFile: DiffModalFile | null
-  ) => {
-    if (!targetFile || !targetFiles.length) return 0;
-    const idx = targetFiles.findIndex(
-      (file) => file.path.toLowerCase() === targetFile.path.toLowerCase()
-    );
-    return idx >= 0 ? idx : 0;
-  };
-
   // Clear the search when opening the modal
   useEffect(() => {
     if (open) {
       setSearch("");
+      setSelectedPath(initialFile.path);
     }
-  }, [open]);
+  }, [open, initialFile.path]);
 
   // Close on Escape
   useEffect(() => {
@@ -82,22 +69,6 @@ const DiffModal = ({
       listRef.current.focus();
     }
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    setSelectedIndex(getSelectedIndex(filteredFiles, initialFile));
-  }, [open, initialFile, filteredFiles]);
-
-  // Auto-scroll to keep the selected row visible
-  useEffect(() => {
-    if (!listRef.current) return;
-    const el = listRef.current.querySelector(
-      `[data-file-index='${selectedIndex}']`
-    ) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [selectedIndex]);
 
   // Normalize files for DiffFileList
   const allowedStatuses = [
@@ -127,7 +98,40 @@ const DiffModal = ({
     [normalizedFiles, search]
   );
 
+  const selectedIndex = Math.max(
+    0,
+    filteredNormalizedFiles.findIndex(
+      (file) => file.path.toLowerCase() === selectedPath.toLowerCase()
+    )
+  );
+
+  // Auto-scroll to keep the selected row visible
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector(
+      `[data-file-index='${selectedIndex}']`
+    ) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedIndex]);
+
   const selected = filteredNormalizedFiles[selectedIndex];
+
+  useEffect(() => {
+    if (sha || !selected) return;
+    if (!("hunks" in selected)) return;
+    setFileHunks(selected.path, selected.hunks);
+  }, [selected, setFileHunks, sha]);
+
+  const handleSelectFile = (file: DiffModalFile) => {
+    setSelectedPath(file.path);
+    onFileSelect?.(file);
+  };
+
+  if (!open) {
+    return null;
+  }
 
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
@@ -137,7 +141,8 @@ const DiffModal = ({
       <div
         ref={modalRef}
         className="relative w-[96vw] h-[96vh] mx-auto my-6 bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden min-h-0"
-        style={{ zIndex: 1 }}>
+        style={{ zIndex: 1 }}
+        onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background-emphasis">
           <div className="flex items-center gap-2 w-1/2">
@@ -162,9 +167,10 @@ const DiffModal = ({
               ref={listRef}
               files={normalizedFiles}
               selectedIndex={selectedIndex}
-              onSelect={(_, idx) => setSelectedIndex(idx)}
-              onAction={(_, idx) => setSelectedIndex(idx)}
+              onSelect={(file) => handleSelectFile(file)}
+              onAction={(file) => handleSelectFile(file)}
               autoFocusSearch={true}
+              showFileCheckboxes={sha === undefined}
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
