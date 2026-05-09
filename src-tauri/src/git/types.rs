@@ -100,6 +100,13 @@ pub struct CommitListPage {
     pub has_more: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CommitHistoryMode {
+    GitLog,
+    FirstParent,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeType {

@@ -1,6 +1,6 @@
 use crate::git::types::*;
 use crate::git::utils::*;
-use git2::{BranchType, Oid, Repository};
+use git2::{BranchType, Oid, Repository, Sort};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -387,6 +387,7 @@ pub fn get_formatted_commits(
 pub fn get_commits_list_paginated(
     path: String,
     branch: String,
+    history_mode: Option<CommitHistoryMode>,
     offset: usize,
     limit: usize,
 ) -> Result<CommitListPage, String> {
@@ -404,35 +405,22 @@ pub fn get_commits_list_paginated(
     let branch_tips = get_all_branch_tips(&repo).map_err(|e| e.to_string())?;
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk
+        .set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
+        .map_err(|e| e.to_string())?;
 
-    if branch.trim().is_empty() {
+    let selected_branch = branch.trim();
+    let history_mode = history_mode.unwrap_or(CommitHistoryMode::GitLog);
+
+    if history_mode == CommitHistoryMode::FirstParent {
+        revwalk.simplify_first_parent().map_err(|e| e.to_string())?;
+    }
+
+    if selected_branch.is_empty() {
         revwalk.push_head().map_err(|e| e.to_string())?;
     } else {
-        // Support both local and remote branches
-        let mut found = false;
-        let refs_to_try = if branch.contains('/') {
-            vec![
-                format!("refs/heads/{}", branch),
-                format!("refs/remotes/{}", branch),
-            ]
-        } else {
-            vec![
-                format!("refs/heads/{}", branch),
-                format!("refs/remotes/origin/{}", branch),
-            ]
-        };
-        for branch_ref in refs_to_try {
-            if let Ok(reference) = repo.find_reference(&branch_ref) {
-                if let Some(target) = reference.target() {
-                    revwalk.push(target).map_err(|e| e.to_string())?;
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if !found {
-            return Err(format!("Branch reference not found for '{}'", branch));
-        }
+        let (_, selected_oid) = resolve_branch_target(&repo, selected_branch)?;
+        revwalk.push(selected_oid).map_err(|e| e.to_string())?;
     }
 
     let mut rows = Vec::new();
@@ -451,140 +439,14 @@ pub fn get_commits_list_paginated(
         }
 
         let oid = oid_result.map_err(|e| e.to_string())?;
-        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
-        let sha = commit.id().to_string();
-        let message = commit.summary().unwrap_or("").to_string();
-        let author = commit.author().name().unwrap_or("").to_string();
-        let date = commit.time().seconds();
-        let current_branch = if branch.trim().is_empty() {
-            // Try to get the current branch name (HEAD)
-            if let Ok(head) = repo.head() {
-                if let Some(name) = head.shorthand() {
-                    name.to_string()
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
-        } else {
-            branch.clone()
-        };
-
-        let source_branch = if commit.parent_count() > 1 {
-            let parent2 = commit.parent_id(1).ok();
-            if let Some(parent2_id) = parent2 {
-                // Look up the branch name that points to the second parent
-                let mut source_branch = String::new();
-                if let Ok(branches) = repo.branches(None) {
-                    for branch in branches.flatten() {
-                        let (b, _) = branch;
-                        if let Some(target) = b.get().target() {
-                            if target == parent2_id {
-                                if let Ok(Some(name)) = b.name() {
-                                    source_branch = name.to_string();
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                source_branch
-            } else {
-                String::new()
-            }
-        } else {
-            current_branch.clone()
-        };
-
-        let mut history = Vec::new();
-
-        // 1. Is this a merge commit?
-        let commit_message = commit.message().unwrap_or("");
-        if commit.parent_count() > 1 {
-            if let Some(source) = get_merge_source_branch(commit_message) {
-                history.push(source);
-            } else if let Ok(parent2_id) = commit.parent_id(1) {
-                if let Some(branch_from_map) = commit_branch_map.get(&parent2_id) {
-                    history.push(branch_from_map.clone());
-                }
-            }
-        }
-
-        // 2. Is this the tip of a branch? (It can be both a merge and a tip)
-        if let Some(tip_branches) = branch_tips.get(&commit.id()) {
-            for tip in tip_branches {
-                if !history.contains(tip) {
-                    history.push(tip.clone());
-                }
-            }
-        }
-
-        // 3. If nothing has been found yet, use the precomputed map.
-        if history.is_empty() {
-            if let Some(branch_from_map) = commit_branch_map.get(&commit.id()) {
-                history.push(branch_from_map.clone());
-            }
-        }
-
-        // Remove duplicates and prefer local branches over remote ones
-        history.sort();
-        history.dedup();
-
-        let mut to_remove = HashSet::<String>::new();
-        let local_branches: HashSet<String> = history
-            .iter()
-            .filter_map(|b| {
-                if b.starts_with("origin/") || b.starts_with("refs/remotes/") {
-                    None
-                } else if let Some(stripped) = b.strip_prefix("refs/heads/") {
-                    Some(stripped.to_string())
-                } else {
-                    Some(b.clone())
-                }
-            })
-            .collect();
-
-        for branch in &history {
-            let remote_equivalent = if let Some(stripped) = branch.strip_prefix("origin/") {
-                Some(stripped)
-            } else if let Some(stripped) = branch.strip_prefix("refs/remotes/origin/") {
-                Some(stripped)
-            } else {
-                None
-            };
-
-            if let Some(remote_eq) = remote_equivalent {
-                if local_branches.contains(remote_eq) {
-                    to_remove.insert(branch.clone());
-                }
-            }
-        }
-        history.retain(|b| !to_remove.contains(b));
-
-        let files = (|| -> Result<usize, git2::Error> {
-            if commit.parent_count() > 0 {
-                let parent = commit.parent(0)?;
-                let diff =
-                    repo.diff_tree_to_tree(Some(&parent.tree()?), Some(&commit.tree()?), None)?;
-                Ok(diff.stats()?.files_changed())
-            } else {
-                // Commit inicial
-                Ok(commit.tree()?.len())
-            }
-        })()
-        .map_err(|e| e.to_string())?;
-
-        rows.push(CommitListItem {
-            sha,
-            message,
-            author,
-            date,
-            current_branch: String::new(), // Ya no necesitamos mostrar esto separado
-            source_branch,
-            commit_history: history,
-            files,
-        });
+        rows.push(build_commit_list_item(
+            &repo,
+            oid,
+            &branch,
+            selected_branch.is_empty(),
+            commit_branch_map,
+            &branch_tips,
+        )?);
         taken += 1;
     }
 
@@ -592,6 +454,166 @@ pub fn get_commits_list_paginated(
         commits: rows,
         has_more,
     })
+}
+
+fn build_commit_list_item(
+    repo: &Repository,
+    oid: Oid,
+    branch: &str,
+    use_head_branch_name: bool,
+    commit_branch_map: &HashMap<Oid, String>,
+    branch_tips: &HashMap<Oid, Vec<String>>,
+) -> Result<CommitListItem, String> {
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let sha = commit.id().to_string();
+    let message = commit.summary().unwrap_or("").to_string();
+    let author = commit.author().name().unwrap_or("").to_string();
+    let date = commit.time().seconds();
+    let current_branch = if use_head_branch_name {
+        if let Ok(head) = repo.head() {
+            if let Some(name) = head.shorthand() {
+                name.to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        branch.to_string()
+    };
+
+    let source_branch = if commit.parent_count() > 1 {
+        let parent2 = commit.parent_id(1).ok();
+        if let Some(parent2_id) = parent2 {
+            let mut source_branch = String::new();
+            if let Ok(branches) = repo.branches(None) {
+                for branch in branches.flatten() {
+                    let (b, _) = branch;
+                    if let Some(target) = b.get().target() {
+                        if target == parent2_id {
+                            if let Ok(Some(name)) = b.name() {
+                                source_branch = name.to_string();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            source_branch
+        } else {
+            String::new()
+        }
+    } else {
+        current_branch.clone()
+    };
+
+    let mut history = Vec::new();
+    let commit_message = commit.message().unwrap_or("");
+    if commit.parent_count() > 1 {
+        if let Some(source) = get_merge_source_branch(commit_message) {
+            history.push(source);
+        } else if let Ok(parent2_id) = commit.parent_id(1) {
+            if let Some(branch_from_map) = commit_branch_map.get(&parent2_id) {
+                history.push(branch_from_map.clone());
+            }
+        }
+    }
+
+    if let Some(tip_branches) = branch_tips.get(&commit.id()) {
+        for tip in tip_branches {
+            if !history.contains(tip) {
+                history.push(tip.clone());
+            }
+        }
+    }
+
+    if history.is_empty() {
+        if let Some(branch_from_map) = commit_branch_map.get(&commit.id()) {
+            history.push(branch_from_map.clone());
+        }
+    }
+
+    history.sort();
+    history.dedup();
+
+    let mut to_remove = HashSet::<String>::new();
+    let local_branches: HashSet<String> = history
+        .iter()
+        .filter_map(|b| {
+            if b.starts_with("origin/") || b.starts_with("refs/remotes/") {
+                None
+            } else if let Some(stripped) = b.strip_prefix("refs/heads/") {
+                Some(stripped.to_string())
+            } else {
+                Some(b.clone())
+            }
+        })
+        .collect();
+
+    for branch in &history {
+        let remote_equivalent = if let Some(stripped) = branch.strip_prefix("origin/") {
+            Some(stripped)
+        } else if let Some(stripped) = branch.strip_prefix("refs/remotes/origin/") {
+            Some(stripped)
+        } else {
+            None
+        };
+
+        if let Some(remote_eq) = remote_equivalent {
+            if local_branches.contains(remote_eq) {
+                to_remove.insert(branch.clone());
+            }
+        }
+    }
+    history.retain(|b| !to_remove.contains(b));
+
+    let files = (|| -> Result<usize, git2::Error> {
+        if commit.parent_count() > 0 {
+            let parent = commit.parent(0)?;
+            let diff =
+                repo.diff_tree_to_tree(Some(&parent.tree()?), Some(&commit.tree()?), None)?;
+            Ok(diff.stats()?.files_changed())
+        } else {
+            Ok(commit.tree()?.len())
+        }
+    })()
+    .map_err(|e| e.to_string())?;
+
+    Ok(CommitListItem {
+        sha,
+        message,
+        author,
+        date,
+        current_branch: String::new(),
+        source_branch,
+        commit_history: history,
+        files,
+    })
+}
+
+fn resolve_branch_target(repo: &Repository, branch: &str) -> Result<(String, Oid), String> {
+    let refs_to_try = if branch.contains('/') {
+        vec![
+            format!("refs/heads/{}", branch),
+            format!("refs/remotes/{}", branch),
+        ]
+    } else {
+        vec![
+            format!("refs/heads/{}", branch),
+            format!("refs/remotes/origin/{}", branch),
+        ]
+    };
+
+    for branch_ref in refs_to_try {
+        if let Ok(reference) = repo.find_reference(&branch_ref) {
+            if let Some(target) = reference.target() {
+                return Ok((branch_ref, target));
+            }
+        }
+    }
+
+    Err(format!("Branch reference not found for '{}'", branch))
 }
 
 #[command]

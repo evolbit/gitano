@@ -51,6 +51,13 @@ export interface CommitListItem {
   files: number;
 }
 
+export type CommitHistoryMode = "git_log" | "first_parent";
+
+export interface CommitListPage {
+  commits: CommitListItem[];
+  has_more: boolean;
+}
+
 export enum ChangeType {
   Added = "added",
   Deleted = "deleted",

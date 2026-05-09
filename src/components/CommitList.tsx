@@ -2,9 +2,13 @@ import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
-import { CommitListItem } from "../types/git";
+import {
+  CommitHistoryMode,
+  CommitListItem,
+  CommitListPage,
+} from "../types/git";
 import InputText from "./form/InputText";
-import { IconFilter, IconGitBranch, IconPlus, IconSearch } from "./icons";
+import { IconGitBranch, IconSearch } from "./icons";
 import TableVirtualResizable, {
   TableColumn,
 } from "./tables/TableVirtualResizable";
@@ -18,13 +22,12 @@ export default function CommitList() {
   const selectedBranch = tab?.selectedBranch;
   const setTabCommit = useRepoStore((s) => s.setTabCommit);
   const [search, setSearch] = useState("");
-  const [commits, setCommits] = useState<any[]>([]);
+  const [commits, setCommits] = useState<CommitListItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [isSearchBarVisible, setIsSearchBarVisible] = useState(true);
-  const lastScrollY = useRef(0);
+  const [historyMode, setHistoryMode] = useState<CommitHistoryMode>("git_log");
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
     null
   );
@@ -44,7 +47,7 @@ export default function CommitList() {
   const loadCommitsRef = useRef<() => Promise<void>>();
 
   // Define columns with custom rendering for commit_history
-  const columns: TableColumn<any>[] = [
+  const columns: TableColumn<CommitListItem>[] = [
     { key: "sha", label: "SHA", width: 120 },
     {
       key: "date",
@@ -134,12 +137,16 @@ export default function CommitList() {
     setError(null);
     console.log("Calling loadCommits", { reset, offset, hasMore });
     try {
-      const result: any = await core.invoke("get_commits_list_paginated", {
-        path: repoPath,
-        branch: selectedBranch || "",
-        offset: reset ? 0 : offset,
-        limit: PAGE_SIZE,
-      });
+      const result = await core.invoke<CommitListPage>(
+        "get_commits_list_paginated",
+        {
+          path: repoPath,
+          branch: selectedBranch || "",
+          historyMode,
+          offset: reset ? 0 : offset,
+          limit: PAGE_SIZE,
+        }
+      );
       console.log("Backend result:", result);
       const newCommits = result.commits || [];
 
@@ -208,10 +215,13 @@ export default function CommitList() {
     setCommits([]);
     setOffset(0);
     setHasMore(true);
-    setSelectedRowIndex(-1); // Reset selected row when repo changes
+    setSelectedRowIndex(-1);
+    if (activeTabId) {
+      setTabCommit(activeTabId, null);
+    }
     loadCommits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath, selectedBranch]);
+  }, [repoPath, selectedBranch, historyMode, activeTabId, setTabCommit]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -299,6 +309,12 @@ export default function CommitList() {
     }
   };
 
+  const handleHistoryModeChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    setHistoryMode(event.target.value as CommitHistoryMode);
+  };
+
   // Update the selected commit in the store whenever the selected row changes
   useEffect(() => {
     if (
@@ -312,14 +328,7 @@ export default function CommitList() {
 
   return (
     <div className="h-full w-full flex flex-col p-4">
-      {/* Top bar with scroll behavior */}
-      <div
-        className={`flex items-center pb-4 transition-transform duration-300 ease-in-out ${
-          isSearchBarVisible ? "translate-y-0" : "-translate-y-full"
-        }`}
-        style={{
-          transform: isSearchBarVisible ? "translateY(0)" : "translateY(-100%)",
-        }}>
+      <div className="flex items-center pb-4">
         <InputText
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -332,21 +341,24 @@ export default function CommitList() {
             />
           }
         />
-        <button className="flex items-center bg-zinc-800 text-zinc-400 border-none rounded-lg px-3 h-9 mr-2 cursor-pointer font-medium text-[15px]">
-          <IconFilter
-            size={18}
-            className="mr-1.5"
-          />
-          Filtros
-        </button>
-        <button className="flex items-center bg-indigo-500 text-zinc-400 border-none rounded-lg px-4 h-9 cursor-pointer font-medium text-[15px]">
-          <IconPlus
-            size={18}
-            className="mr-1.5"
-          />
-          Añadir manualmente
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 h-9 text-sm text-muted-foreground">
+            <span>Vista</span>
+            <select
+              value={historyMode}
+              onChange={handleHistoryModeChange}
+              className="bg-transparent border-none outline-none text-foreground text-sm">
+              <option value="git_log">Git log</option>
+              <option value="first_parent">First parent</option>
+            </select>
+          </label>
+        </div>
       </div>
+      {error && (
+        <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          {error}
+        </div>
+      )}
       {/* Table with built-in infinite scroll */}
       <div
         ref={setContainerRef}
