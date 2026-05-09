@@ -18,7 +18,7 @@ export function useStageAndCommit() {
       setLoading(true);
       setError(null);
       try {
-        // 1. Recopilar archivos y líneas staged
+        // 1. Collect staged files and lines
         const filesToStage: string[] = [];
         const partialStage: {
           filePath: string;
@@ -29,7 +29,7 @@ export function useStageAndCommit() {
           if (entry.isNewFile) {
             filesToStage.push(filePath);
           } else {
-            // Si hay líneas staged, hacer stage parcial
+            // If there are staged lines, stage them partially
             const hunks: { [hunkIdx: number]: number[] } = {};
             for (const hunkIdx in entry) {
               if (hunkIdx === "isNewFile") continue;
@@ -44,14 +44,14 @@ export function useStageAndCommit() {
           }
         }
 
-        // 2. Hacer git add de archivos nuevos vacíos
+        // 2. Run git add for empty new files
         for (const filePath of filesToStage) {
           console.log("git_add_file", { path: repoPath, filePath });
           await invoke("git_add_file", { path: repoPath, filePath });
         }
 
         // console.log("partialStage", partialStage);
-        // 3. Hacer stage parcial de líneas (si aplica)
+        // 3. Partially stage lines when applicable
         for (const { filePath, hunks } of partialStage) {
           console.log(
             "git_stage_lines",
@@ -60,19 +60,19 @@ export function useStageAndCommit() {
           await invoke("git_stage_lines", { path: repoPath, filePath, hunks });
         }
 
-        // 4. Ejecutar el commit
+        // 4. Run the commit
         await invoke("git_commit", {
           path: repoPath,
           message,
           amend: !!options.amend,
         });
 
-        // 5. Push si corresponde
+        // 5. Push if requested
         if (options.push) {
           await invoke("git_push", { path: repoPath });
         }
 
-        // 6. Limpiar staged lines
+        // 6. Clear staged lines
         clearAllStagedLines();
       } catch (e: any) {
         setError(e.toString());

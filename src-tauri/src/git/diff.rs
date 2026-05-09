@@ -74,15 +74,15 @@ pub fn get_file_diff_hunks(
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
-    // Verificar si el archivo existe en el working directory
+    // Check whether the file exists in the working directory
     let file_path_obj = Path::new(&file_path);
     let full_path = Path::new(&path).join(file_path_obj);
 
     if !full_path.exists() {
-        return Ok(vec![]); // Archivo no existe, no hay diff
+        return Ok(vec![]); // The file does not exist, so there is no diff
     }
 
-    // Verificar si el archivo está en el índice de Git
+    // Check whether the file is in the Git index
     let ls_files_output = Command::new("git")
         .arg("-C")
         .arg(&path)
@@ -93,13 +93,13 @@ pub fn get_file_diff_hunks(
 
     let is_tracked = !ls_files_output.stdout.is_empty();
 
-    // Si el archivo no está trackeado, es un archivo nuevo
+    // If the file is not tracked, it is a new file
     if !is_tracked {
-        // Leer el contenido del archivo
+        // Read the file contents
         let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
         let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
 
-        // Crear un hunk especial para archivo nuevo
+        // Create a special hunk for a new file
         let diff_lines: Vec<DiffLine> = lines
             .iter()
             .enumerate()
@@ -124,7 +124,7 @@ pub fn get_file_diff_hunks(
         return Ok(vec![hunk]);
     }
 
-    // Archivo trackeado, obtener diff normal
+    // Tracked file: get the regular diff
     let output = Command::new("git")
         .arg("-C")
         .arg(&path)
@@ -137,11 +137,11 @@ pub fn get_file_diff_hunks(
     let diff = String::from_utf8_lossy(&output.stdout);
 
     if diff.trim().is_empty() {
-        return Ok(vec![]); // No hay cambios
+        return Ok(vec![]); // No changes
     }
 
     let mut hunks = parse_unified_diff(&diff);
-    // Marcar todos los hunks como no nuevos
+    // Mark all hunks as not new
     for hunk in &mut hunks {
         hunk.is_new_file = false;
     }
@@ -158,13 +158,13 @@ pub fn get_diff_context(
     context: usize,
     offset: usize,
 ) -> Result<Vec<DiffLine>, String> {
-    // 1. Obtener los hunks actuales
+    // 1. Get the current hunks
     let hunks = get_file_diff_hunks(path.clone(), file_path.clone(), context)?;
     if hunk_index >= hunks.len() {
         return Err("Hunk index out of range".to_string());
     }
     let hunk = &hunks[hunk_index];
-    // 2. Leer el archivo original
+    // 2. Read the original file
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     let file = File::open(format!("{}/{}", path, file_path)).map_err(|e| e.to_string())?;
@@ -214,7 +214,7 @@ pub fn get_commit_file_diff(
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
-    // Verificar si el archivo existe en el commit
+    // Check whether the file exists in the commit
     let show_output = Command::new("git")
         .arg("-C")
         .arg(&path)
@@ -227,7 +227,7 @@ pub fn get_commit_file_diff(
             let file_content = String::from_utf8_lossy(&output.stdout);
             let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
 
-            // Verificar si el archivo existe en el commit padre
+            // Check whether the file exists in the parent commit
             let parent_show_output = Command::new("git")
                 .arg("-C")
                 .arg(&path)
@@ -237,7 +237,7 @@ pub fn get_commit_file_diff(
 
             match parent_show_output {
                 Ok(_) => {
-                    // El archivo existe en ambos commits, obtener diff normal
+                    // The file exists in both commits, get the regular diff
                     let diff_output = Command::new("git")
                         .arg("-C")
                         .arg(&path)
@@ -252,11 +252,11 @@ pub fn get_commit_file_diff(
                     let diff = String::from_utf8_lossy(&diff_output.stdout);
 
                     if diff.trim().is_empty() {
-                        return Ok(vec![]); // No hay cambios
+                        return Ok(vec![]); // No changes
                     }
 
                     let mut hunks = parse_unified_diff(&diff);
-                    // Marcar todos los hunks como no nuevos
+                    // Mark all hunks as not new
                     for hunk in &mut hunks {
                         hunk.is_new_file = false;
                     }
@@ -264,7 +264,7 @@ pub fn get_commit_file_diff(
                     Ok(hunks)
                 }
                 Err(_) => {
-                    // El archivo no existe en el commit padre, es un archivo nuevo
+                    // The file does not exist in the parent commit, so it is a new file
                     let diff_lines: Vec<DiffLine> = lines
                         .iter()
                         .enumerate()
@@ -291,8 +291,8 @@ pub fn get_commit_file_diff(
             }
         }
         Err(_) => {
-            // El archivo no existe en este commit, podría ser un archivo eliminado
-            // Verificar si existe en el commit padre
+            // The file does not exist in this commit; it may have been deleted
+            // Check whether it exists in the parent commit
             let parent_show_output = Command::new("git")
                 .arg("-C")
                 .arg(&path)
@@ -302,7 +302,7 @@ pub fn get_commit_file_diff(
 
             match parent_show_output {
                 Ok(output) => {
-                    // El archivo existe en el padre pero no en este commit, está eliminado
+                    // The file exists in the parent but not in this commit, so it was deleted
                     let file_content = String::from_utf8_lossy(&output.stdout);
                     let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
 
@@ -330,7 +330,7 @@ pub fn get_commit_file_diff(
                     Ok(vec![hunk])
                 }
                 Err(_) => {
-                    // El archivo no existe en ningún commit
+                    // The file does not exist in either commit
                     Ok(vec![])
                 }
             }
@@ -338,16 +338,16 @@ pub fn get_commit_file_diff(
     }
 }
 
-// Función auxiliar para obtener diff entre index y working directory
+// Helper function to get the diff between the index and the working directory
 pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>, String> {
     let full_path = Path::new(repo.path().parent().unwrap()).join(file_path);
 
-    // Verificar si el archivo existe en el working directory
+    // Check whether the file exists in the working directory
     if !full_path.exists() {
-        return Ok(vec![]); // Archivo no existe, no hay diff
+        return Ok(vec![]); // The file does not exist, so there is no diff
     }
 
-    // Verificar si el archivo está en el índice de Git
+    // Check whether the file is in the Git index
     let ls_files_output = Command::new("git")
         .arg("-C")
         .arg(repo.path().parent().unwrap())
@@ -358,13 +358,13 @@ pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<
 
     let is_tracked = !ls_files_output.stdout.is_empty();
 
-    // Si el archivo no está trackeado, es un archivo nuevo
+    // If the file is not tracked, it is a new file
     if !is_tracked {
-        // Leer el contenido del archivo
+        // Read the file contents
         let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
         let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
 
-        // Crear un hunk especial para archivo nuevo
+        // Create a special hunk for a new file
         let diff_lines: Vec<DiffLine> = lines
             .iter()
             .enumerate()
@@ -389,7 +389,7 @@ pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<
         return Ok(vec![hunk]);
     }
 
-    // Archivo trackeado, obtener diff normal entre index y working directory
+    // Tracked file: get the regular diff between the index and the working directory
     let output = Command::new("git")
         .arg("-C")
         .arg(repo.path().parent().unwrap())
@@ -403,11 +403,11 @@ pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<
     let diff = String::from_utf8_lossy(&output.stdout);
 
     if diff.trim().is_empty() {
-        return Ok(vec![]); // No hay cambios
+        return Ok(vec![]); // No changes
     }
 
     let mut hunks = parse_unified_diff(&diff);
-    // Marcar todos los hunks como no nuevos
+    // Mark all hunks as not new
     for hunk in &mut hunks {
         hunk.is_new_file = false;
     }

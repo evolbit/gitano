@@ -119,7 +119,7 @@ const ChangesPanel: React.FC = () => {
     }
   };
 
-  // Handler para abrir el modal de diff
+  // Handler to open the diff modal
   const handleOpenDiffModal = (file: FileChange) => {
     setDiffModalFile(file);
     setDiffModalOpen(true);
@@ -200,7 +200,7 @@ const ChangesPanel: React.FC = () => {
                   selectedIndex={0}
                   showSearch={false}
                   onSelect={(file) => {
-                    // Solo selección, no acción
+                    // Selection only, no action
                   }}
                   onAction={(file) => handleOpenDiffModal(file)}
                   rowBgColor="bg-background"
@@ -215,7 +215,7 @@ const ChangesPanel: React.FC = () => {
         </Split.Pane>
       </Split>
 
-      {/* Modal de diff de archivos */}
+      {/* File diff modal */}
       {diffModalOpen && diffModalFile && diff && (
         <DiffModal
           open={diffModalOpen}

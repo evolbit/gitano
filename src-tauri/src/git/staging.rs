@@ -11,7 +11,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut changes = Vec::new();
 
-    // Obtener el estado del working directory
+    // Get the working directory status
     let mut opts = StatusOptions::new();
     opts.include_ignored(false)
         .include_untracked(true)
@@ -26,7 +26,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
             continue;
         }
 
-        // Determinar el tipo de cambio basado en el status
+        // Determine the change type based on the status
         let change_type = if status.is_wt_new() {
             ChangeType::Added
         } else if status.is_wt_deleted() {
@@ -51,7 +51,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
             ChangeType::Modified // Default
         };
 
-        // Calcular insertions y deletions usando git diff --numstat
+        // Calculate insertions and deletions using git diff --numstat
         let output = Command::new("git")
             .arg("-C")
             .arg(&path)
@@ -63,7 +63,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
 
         let (insertions, deletions) = if let Ok(output) = output {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // Busca la línea correspondiente al archivo
+            // Find the line corresponding to the file
             let line = stdout.lines().find(|l| l.contains(&file_path));
             if let Some(line) = line {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -82,7 +82,7 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
             (0, 0)
         };
 
-        // Obtener los hunks para este archivo
+        // Get the hunks for this file
         let hunks = match get_file_diff_hunks(path.clone(), file_path.clone(), 3) {
             Ok(h) => h,
             Err(_) => vec![],
@@ -124,20 +124,20 @@ pub fn git_stage_lines(
     file_path: String,
     hunks: serde_json::Value,
 ) -> Result<(), String> {
-    // 1. Abrir el repo
+    // 1. Open the repo
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
 
-    // 2. Leer el contenido staged (index) - base para construir el nuevo staged
+    // 2. Read the staged content (index) as the base for building the new staged state
     let index_content = if let Some(entry) = index.get_path(Path::new(&file_path), 0) {
         let blob = repo.find_blob(entry.id).map_err(|e| e.to_string())?;
         str::from_utf8(blob.content()).unwrap_or("").to_string()
     } else {
-        // Archivo no está en index, empezar con contenido vacío
+        // The file is not in the index, so start with empty content
         String::new()
     };
 
-    // 3. Leer el contenido actual del working directory
+    // 3. Read the current working directory contents
     let full_path = Path::new(&path).join(&file_path);
     let working_content = if full_path.exists() {
         fs::read_to_string(&full_path).map_err(|e| e.to_string())?
@@ -145,10 +145,10 @@ pub fn git_stage_lines(
         String::new()
     };
 
-    // 4. Obtener el diff entre index y working directory
+    // 4. Get the diff between the index and the working directory
     let diff_hunks = get_index_working_diff(&repo, &file_path)?;
 
-    // 5. Parsear las líneas seleccionadas (hunks: { hunkIdx: [lineIdx, ...], ... })
+    // 5. Parse the selected lines (hunks: { hunkIdx: [lineIdx, ...], ... })
     let mut selected_lines = std::collections::HashMap::new();
     if let Some(obj) = hunks.as_object() {
         for (hunk_idx_str, arr) in obj.iter() {
@@ -168,7 +168,7 @@ pub fn git_stage_lines(
         }
     }
 
-    // 6. Construir el nuevo contenido staged aplicando el diff parcial
+    // 6. Build the new staged content by applying the partial diff
     let index_lines: Vec<&str> = index_content.lines().collect();
     let working_lines: Vec<&str> = working_content.lines().collect();
 
@@ -177,7 +177,7 @@ pub fn git_stage_lines(
     let mut working_line_idx = 0;
 
     for (hunk_idx, hunk) in diff_hunks.iter().enumerate() {
-        // Agregar líneas de contexto antes del hunk (si las hay)
+        // Add context lines before the hunk when present
         while index_line_idx < hunk.old_start.saturating_sub(1)
             && index_line_idx < index_lines.len()
         {
@@ -186,7 +186,7 @@ pub fn git_stage_lines(
             working_line_idx += 1;
         }
 
-        // Procesar las líneas del hunk
+        // Process the hunk lines
         for (line_idx, line) in hunk.lines.iter().enumerate() {
             let is_selected = selected_lines
                 .get(&hunk_idx)
@@ -195,7 +195,7 @@ pub fn git_stage_lines(
 
             match line.kind {
                 DiffLineKind::Context => {
-                    // Línea de contexto - siempre incluir del index
+                    // Context line: always include it from the index
                     if index_line_idx < index_lines.len() {
                         new_staged_lines.push(index_lines[index_line_idx].to_string());
                     }
@@ -203,12 +203,12 @@ pub fn git_stage_lines(
                     working_line_idx += 1;
                 }
                 DiffLineKind::Del => {
-                    // Línea eliminada
+                    // Deleted line
                     if is_selected {
-                        // Si está seleccionada, omitirla (no incluir en staged)
+                        // If selected, omit it (do not include it in staged)
                         index_line_idx += 1;
                     } else {
-                        // Si no está seleccionada, mantenerla en staged
+                        // If not selected, keep it in staged
                         if index_line_idx < index_lines.len() {
                             new_staged_lines.push(index_lines[index_line_idx].to_string());
                         }
@@ -216,34 +216,34 @@ pub fn git_stage_lines(
                     }
                 }
                 DiffLineKind::Add => {
-                    // Línea agregada
+                    // Added line
                     if is_selected {
-                        // Si está seleccionada, incluirla en staged
+                        // If selected, include it in staged
                         if working_line_idx < working_lines.len() {
                             new_staged_lines.push(working_lines[working_line_idx].to_string());
                         }
                     }
-                    // Siempre avanzar en working directory
+                    // Always advance in the working directory
                     working_line_idx += 1;
                 }
             }
         }
     }
 
-    // Agregar las líneas restantes del index
+    // Add the remaining lines from the index
     while index_line_idx < index_lines.len() {
         new_staged_lines.push(index_lines[index_line_idx].to_string());
         index_line_idx += 1;
     }
 
-    // 7. Construir el contenido final
+    // 7. Build the final content
     let new_content = if new_staged_lines.is_empty() {
         String::new()
     } else {
         new_staged_lines.join("\n") + "\n"
     };
 
-    // 8. Escribir el nuevo contenido al index
+    // 8. Write the new content to the index
     let oid = repo
         .blob(new_content.as_bytes())
         .map_err(|e| e.to_string())?;

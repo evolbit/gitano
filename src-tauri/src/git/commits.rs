@@ -280,14 +280,14 @@ pub fn get_formatted_commits(
         commit_lookup.insert(commit.hash.clone(), i);
     }
 
-    // heads: nombres de ramas locales que apuntan a cada commit
+    // heads: names of local branches that point to each commit
     for reference in repo.references().map_err(|e| e.to_string())? {
         if let Ok(reference) = reference {
             let name = reference.name().unwrap_or("");
             if name.starts_with("refs/heads/") {
                 if let Some(target) = reference.target() {
                     if let Some(&index) = commit_lookup.get(&target.to_string()) {
-                        // Extrae el nombre de la rama después de 'refs/heads/'
+                        // Extract the branch name after 'refs/heads/'
                         if let Some(branch_name) = name.strip_prefix("refs/heads/") {
                             commits[index].heads.push(branch_name.to_string());
                         }
@@ -319,7 +319,7 @@ pub fn get_formatted_commits(
         }
     }
 
-    // REMOTES: Anotar remotes en los commits
+    // REMOTES: annotate remotes on the commits
     for (commit_hash, remote_name) in remote_refs {
         if let Some(&index) = commit_lookup.get(&commit_hash) {
             commits[index].remotes.push(GitRemote {
@@ -336,7 +336,7 @@ pub fn get_formatted_commits(
         }
     }
 
-    // Uncommitted Changes: Si hay cambios no commiteados, agrega un commit especial
+    // Uncommitted Changes: if there are uncommitted changes, add a special commit
     if let Ok(statuses) = repo.statuses(None) {
         let has_uncommitted = statuses.iter().any(|entry| {
             let s = entry.status();
@@ -408,7 +408,7 @@ pub fn get_commits_list_paginated(
     if branch.trim().is_empty() {
         revwalk.push_head().map_err(|e| e.to_string())?;
     } else {
-        // Soporta ramas locales y remotas
+        // Support both local and remote branches
         let mut found = false;
         let refs_to_try = if branch.contains('/') {
             vec![
@@ -457,7 +457,7 @@ pub fn get_commits_list_paginated(
         let author = commit.author().name().unwrap_or("").to_string();
         let date = commit.time().seconds();
         let current_branch = if branch.trim().is_empty() {
-            // Intentar obtener el nombre de la rama actual (HEAD)
+            // Try to get the current branch name (HEAD)
             if let Ok(head) = repo.head() {
                 if let Some(name) = head.shorthand() {
                     name.to_string()
@@ -474,7 +474,7 @@ pub fn get_commits_list_paginated(
         let source_branch = if commit.parent_count() > 1 {
             let parent2 = commit.parent_id(1).ok();
             if let Some(parent2_id) = parent2 {
-                // Buscar nombre de rama que apunte al segundo padre
+                // Look up the branch name that points to the second parent
                 let mut source_branch = String::new();
                 if let Ok(branches) = repo.branches(None) {
                     for branch in branches.flatten() {
@@ -499,7 +499,7 @@ pub fn get_commits_list_paginated(
 
         let mut history = Vec::new();
 
-        // 1. Es un commit de merge?
+        // 1. Is this a merge commit?
         let commit_message = commit.message().unwrap_or("");
         if commit.parent_count() > 1 {
             if let Some(source) = get_merge_source_branch(commit_message) {
@@ -511,7 +511,7 @@ pub fn get_commits_list_paginated(
             }
         }
 
-        // 2. Es la punta de una rama? (Puede ser un merge y también una punta)
+        // 2. Is this the tip of a branch? (It can be both a merge and a tip)
         if let Some(tip_branches) = branch_tips.get(&commit.id()) {
             for tip in tip_branches {
                 if !history.contains(tip) {
@@ -520,14 +520,14 @@ pub fn get_commits_list_paginated(
             }
         }
 
-        // 3. Si no hemos encontrado nada, usamos el mapa pre-calculado.
+        // 3. If nothing has been found yet, use the precomputed map.
         if history.is_empty() {
             if let Some(branch_from_map) = commit_branch_map.get(&commit.id()) {
                 history.push(branch_from_map.clone());
             }
         }
 
-        // Eliminar duplicados y preferir ramas locales sobre remotas
+        // Remove duplicates and prefer local branches over remote ones
         history.sort();
         history.dedup();
 

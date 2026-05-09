@@ -6,7 +6,7 @@ import { useStagedLinesStore } from "../store/staging";
 import DiffHunk from "./DiffHunk";
 import FloatingCommitBar from "./FloatingCommitBar";
 
-// Tipos para los datos del backend
+// Types for backend data
 interface DiffLine {
   kind: "Add" | "Del" | "Context";
   content: string;
@@ -27,11 +27,11 @@ interface DiffHunk {
 type ContextDirection = "Above" | "Below";
 
 /**
- * Para mover los controles a la barra superior externa:
- * 1. Elimina la cabecera interna (nombre, contadores, botones) de este componente.
- * 2. Expón una función getFileActionsData() que retorna los datos necesarios para la barra superior.
- * 3. El padre debe llamar a getFileActionsData() y renderizar los controles donde corresponda.
- * 4. Alternativamente, puedes pasar el bloque visual ya armado como 'fileActionsBar' y se renderizará arriba del diff.
+ * To move the controls to the external top bar:
+ * 1. Remove this component's internal header (name, counters, buttons).
+ * 2. Expose a getFileActionsData() function that returns the data needed for the top bar.
+ * 3. The parent should call getFileActionsData() and render the controls where appropriate.
+ * 4. Alternatively, you can pass the prebuilt visual block as 'fileActionsBar' and it will render above the diff.
  */
 interface DiffViewerProps {
   repoPath: string;
@@ -50,8 +50,8 @@ interface DiffViewerProps {
     onRemove: () => void;
   }) => void;
   /**
-   * Si se provee, este bloque visual se renderiza arriba del área scrolleable del diff.
-   * Ejemplo: <DiffViewer fileActionsBar={<MiBarra filePath=... ... />} ... />
+   * If provided, this visual block is rendered above the scrollable diff area.
+   * Example: <DiffViewer fileActionsBar={<MyBar filePath=... ... />} ... />
    */
   fileActionsBar?: React.ReactNode;
 }
@@ -65,42 +65,42 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   context = CONTEXT_DEFAULT,
   onFileActionsData,
 }) => {
-  // Estado local para hunks si sha está definido
+  // Local state for hunks when sha is defined
   const [localHunks, setLocalHunks] = useState<DiffHunk[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Para cada hunk, guardamos contexto extra arriba/abajo
+  // Store extra context above and below for each hunk
   const [extraContext, setExtraContext] = useState<
     Record<number, { above: DiffLine[]; below: DiffLine[] }>
   >({});
-  // Estado global para líneas staged
+  // Global state for staged lines
   const stagedLines = useStagedLinesStore(
     useShallow((s) => s.stagedLines[filePath] || {})
   );
   const setStagedLinesGlobal = useStagedLinesStore(
     useShallow((s) => s.setStagedLines)
   );
-  // Estado para hover de hunk
+  // Hunk hover state
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
-  // Estado para selección múltiple por drag
+  // State for drag-based multi-selection
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
-  // Determinar si se puede seleccionar líneas (solo en working directory)
+  // Determine whether lines can be selected (working directory only)
   const canStage = sha === undefined;
   const canSelectLines = canStage;
   const [commitBarOpen, setCommitBarOpen] = useState(false);
 
-  // Obtener hunks del store global solo si no hay sha
+  // Read hunks from the global store only when there is no sha
   const { hunks: storeHunks } = useFileHunksStore();
   const hunks = sha ? localHunks : storeHunks;
 
-  // Limpiar contexto extra cuando cambia el archivo o commit
+  // Clear extra context when the file or commit changes
   useEffect(() => {
     setExtraContext({});
   }, [filePath, sha]);
 
-  // Si sha está definido, pedir los hunks del backend
+  // If sha is defined, request hunks from the backend
   useEffect(() => {
     if (!sha) return;
     setLoading(true);
@@ -122,7 +122,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       });
   }, [repoPath, filePath, sha, context]);
 
-  // Lógica para exponer los datos de acciones al padre
+  // Logic to expose action data to the parent
   useEffect(() => {
     if (!onFileActionsData) return;
     let insertions = 0;
@@ -173,7 +173,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
   }, [filePath, hunks, stagedLines, onFileActionsData]);
 
-  // Calcular los números de modificaciones siempre
+  // Always compute modification counts
   let insertions = 0;
   let deletions = 0;
   hunks.forEach((hunk) => {
@@ -183,7 +183,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     });
   });
 
-  // Pedir más contexto arriba/abajo
+  // Request more context above or below
   const handleExpandContext = async (
     hunkIdx: number,
     direction: ContextDirection,
@@ -227,7 +227,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     }
   };
 
-  // Handler para marcar/desmarcar una línea
+  // Handler to select or deselect a line
   const handleToggleLineStage = (hunkIdx: number, lineIdx: number) => {
     if (!canSelectLines) return;
     const prevSet: Set<number> = stagedLines[hunkIdx]
@@ -241,7 +241,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setStagedLinesGlobal(filePath, hunkIdx, prevSet);
   };
 
-  // Handler para stagear/desselectar todo el hunk
+  // Handler to stage or deselect the entire hunk
   const handleStageHunk = (hunkIdx: number) => {
     if (!canSelectLines) return;
     const hunk: DiffHunk = hunks[hunkIdx];
@@ -263,7 +263,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     }
   };
 
-  // Handler para mouse up global (terminar drag)
+  // Global mouseup handler to finish a drag gesture
   useEffect(() => {
     if (!isDragging) return;
     const handleUp = () => {
@@ -275,7 +275,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     return () => window.removeEventListener("mouseup", handleUp);
   }, [isDragging]);
 
-  // Handler para mouse down en línea
+  // Handler for mousedown on a line
   const handleLineMouseDown = (
     hunkIdx: number,
     lineIdx: number,
@@ -286,11 +286,11 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setIsDragging(true);
     setDragHunkIdx(hunkIdx);
     setDragMode(isStaged ? "remove" : "add");
-    // Marcar/desmarcar la línea inicial
+    // Select or deselect the initial line
     handleToggleLineStage(hunkIdx, lineIdx);
   };
 
-  // Handler para mouse enter en línea (durante drag)
+  // Handler for mouseenter on a line during drag
   const handleLineMouseEnter = (
     hunkIdx: number,
     lineIdx: number,
@@ -313,7 +313,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
   return (
     <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
-      {/* Área scrolleable del diff */}
+      {/* Scrollable diff area */}
       <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
         {loading && <div className="text-blue-400">Cargando diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
@@ -349,7 +349,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
           />
         ))}
       </div>
-      {/* Barra flotante de commit solo si canStage (working directory) */}
+      {/* Floating commit bar only when canStage is true (working directory) */}
       {canStage && (
         <FloatingCommitBar
           expanded={commitBarOpen}

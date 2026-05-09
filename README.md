@@ -52,11 +52,11 @@ El sistema de detección se puede configurar con las siguientes opciones:
 
 ```typescript
 useWorkingDirectoryChanges(repoPath, {
-  pollInterval: 3000, // Intervalo en milisegundos (por defecto: 2000)
-  enabled: true, // Habilitar/deshabilitar polling
-  pauseOnInactive: true, // Pausar cuando la pestaña no está activa
-  showNotifications: true, // Mostrar notificaciones del sistema
-  cacheKey: "unique-key", // Clave única para cachear resultados
+  pollInterval: 3000, // Polling interval in milliseconds (default: 2000)
+  enabled: true, // Enable or disable polling
+  pauseOnInactive: true, // Pause when the tab is not active
+  showNotifications: true, // Show system notifications
+  cacheKey: "unique-key", // Unique key for caching results
 });
 ```
 
@@ -81,17 +81,17 @@ useWorkingDirectoryChanges(repoPath, {
 ## Instalación
 
 ```bash
-# Clonar el repositorio
+# Clone the repository
 git clone <repository-url>
 cd gitano
 
-# Instalar dependencias
+# Install dependencies
 pnpm install
 
-# Ejecutar en modo desarrollo
+# Run in development mode
 pnpm tauri dev
 
-# Construir para producción
+# Build for production
 pnpm tauri build
 ```
 
@@ -107,11 +107,11 @@ pnpm tauri build
 
 ```
 src/
-├── components/          # Componentes React
-├── hooks/              # Hooks personalizados
-├── store/              # Estado global (Zustand)
-├── types/              # Tipos TypeScript
-└── utils/              # Utilidades
+├── components/          # React components
+├── hooks/              # Custom hooks
+├── store/              # Global state (Zustand)
+├── types/              # TypeScript types
+└── utils/              # Utilities
 ```
 
 ## Contribuir

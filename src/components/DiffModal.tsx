@@ -33,7 +33,7 @@ const DiffModal = ({
 }: DiffModalProps) => {
   const [search, setSearch] = useState("");
 
-  // Calcular el índice inicial basado en initialFile
+  // Compute the initial index based on initialFile
   const getInitialIndex = () => {
     if (!initialFile || !files.length) return 0;
     const idx = files.findIndex(
@@ -46,7 +46,7 @@ const DiffModal = ({
   const listRef = useRef<HTMLUListElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Si no recibimos repoPath como prop, lo obtenemos del store (tab activo)
+  // If repoPath is not provided as a prop, read it from the store (active tab)
   const storeRepoPath = useRepoStore(
     useShallow((s) => {
       const tab = s.tabs.find((t) => t.id === s.activeTabId);
@@ -55,21 +55,21 @@ const DiffModal = ({
   );
   const effectiveRepoPath = repoPath || storeRepoPath;
 
-  // Filtrado de archivos
+  // File filtering
   const filteredFiles = useMemo(
     () =>
       files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase())),
     [files, search]
   );
 
-  // Al abrir el modal, limpiar búsqueda
+  // Clear the search when opening the modal
   useEffect(() => {
     if (open) {
       setSearch("");
     }
   }, [open]);
 
-  // Cerrar con ESC
+  // Close on Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -79,14 +79,14 @@ const DiffModal = ({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  // Foco en la lista al abrir el modal
+  // Focus the list when opening the modal
   useEffect(() => {
     if (open && listRef.current) {
       listRef.current.focus();
     }
   }, [open]);
 
-  // Scroll automático para mantener visible la fila seleccionada
+  // Auto-scroll to keep the selected row visible
   useEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current.querySelector(
@@ -97,7 +97,7 @@ const DiffModal = ({
     }
   }, [selectedIndex]);
 
-  // Normalizar archivos para DiffFileList
+  // Normalize files for DiffFileList
   const allowedStatuses = [
     "added",
     "deleted",
@@ -121,9 +121,9 @@ const DiffModal = ({
 
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
-      {/* Overlay oscuro */}
+      {/* Dark overlay */}
       <div className="absolute inset-0 bg-black/60" />
-      {/* Modal principal */}
+      {/* Main modal */}
       <div
         ref={modalRef}
         className="relative w-[96vw] h-[96vh] mx-auto my-6 bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden min-h-0"
@@ -141,9 +141,9 @@ const DiffModal = ({
             <IconX size={22} />
           </button>
         </div>
-        {/* Split resizable */}
+        {/* Resizable split */}
         <Split className="flex-1 min-h-0 w-full flex h-full">
-          {/* Panel izquierdo: lista de archivos */}
+          {/* Left panel: file list */}
           <Split.Pane
             initialWidth={340}
             minWidth={220}
@@ -158,12 +158,12 @@ const DiffModal = ({
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
-          {/* Panel derecho: diff */}
+          {/* Right panel: diff */}
           <Split.Pane
             grow
             className="h-full min-h-0 bg-background flex flex-col">
             <div className="flex-1 overflow-auto p-6">
-              {/* Diff real del archivo seleccionado */}
+              {/* Actual diff for the selected file */}
               {effectiveRepoPath && selected ? (
                 <DiffViewer
                   repoPath={effectiveRepoPath}

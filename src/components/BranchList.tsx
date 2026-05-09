@@ -13,7 +13,7 @@ import {
   IconGitMerge,
 } from "./icons";
 
-// Helper para agrupar ramas por prefijo
+// Helper to group branches by prefix
 function groupBranches(branches: string[]): any[] {
   const tree: any = {};
   branches.forEach((branch) => {
@@ -92,14 +92,14 @@ export function BranchList() {
   const otherRef = useRef<HTMLDivElement>(null);
   const submenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Limpiar timeout al desmontar (debe estar en el cuerpo principal, no en renderContextMenu)
+  // Clear the timeout on unmount (must live in the main body, not in renderContextMenu)
   useEffect(() => {
     return () => {
       if (submenuTimeout.current) clearTimeout(submenuTimeout.current);
     };
   }, []);
 
-  // Cerrar menú contextual al hacer click fuera
+  // Close the context menu when clicking outside
   useEffect(() => {
     if (!contextMenu) return;
     function handleClick(e: MouseEvent) {
@@ -120,7 +120,7 @@ export function BranchList() {
       .invoke<string[]>(command, { path: repoPath })
       .then((allBranches) => {
         if (type === "local") {
-          // Solo oculta ramas que empiezan con <remoto>/ (ej: origin/feature/foo), pero NO las locales con /
+          // Only hide branches that start with <remote>/ (for example, origin/feature/foo), but NOT local ones with /
           setBranches(
             allBranches.filter(
               (b) =>
@@ -137,7 +137,7 @@ export function BranchList() {
             )
           );
         } else {
-          // Solo incluye ramas que empiezan con <remoto>/
+          // Only include branches that start with <remote>/
           setBranches(allBranches.filter((b) => /^\w+\//.test(b)));
         }
       })
@@ -147,7 +147,7 @@ export function BranchList() {
 
   const grouped = groupBranches(branches);
 
-  // Ajustar posición del menú contextual si se sale por abajo
+  // Adjust the context menu position if it overflows below the viewport
   useLayoutEffect(() => {
     if (!contextMenu || !menuRef.current || !menuPos) return;
     const rect = menuRef.current.getBoundingClientRect();
@@ -159,19 +159,19 @@ export function BranchList() {
     if (newY !== menuPos.y) setMenuPos({ x: menuPos.x, y: newY });
   }, [contextMenu, menuPos]);
 
-  // Detectar si el submenú se sale del viewport derecho o inferior
+  // Detect whether the submenu overflows the right or bottom edge of the viewport
   useLayoutEffect(() => {
     if (!showOther || !otherRef.current) return;
     const rect = otherRef.current.getBoundingClientRect();
-    const submenuWidth = 200; // ancho estimado del submenú
-    const submenuHeight = 220; // alto estimado del submenú (ajusta si tienes más/menos opciones)
-    // Izquierda/derecha
+    const submenuWidth = 200; // Estimated submenu width
+    const submenuHeight = 220; // Estimated submenu height (adjust if you have more or fewer options)
+    // Left/right
     if (rect.right + submenuWidth > window.innerWidth - 8) {
-      setSubmenuLeft(false); // abrir hacia la izquierda
+      setSubmenuLeft(false); // Open to the left
     } else {
-      setSubmenuLeft(true); // abrir hacia la derecha
+      setSubmenuLeft(true); // Open to the right
     }
-    // Arriba/abajo
+    // Up/down
     if (rect.bottom + submenuHeight > window.innerHeight - 8) {
       setSubmenuDirection("up");
     } else {
@@ -295,19 +295,19 @@ export function BranchList() {
     );
   }
 
-  // Renderiza el menú contextual
+  // Render the context menu
   function renderContextMenu() {
     if (!contextMenu || !menuPos) return null;
     const { node } = contextMenu;
     const branchName = node.full || node.name;
 
-    // Helper para cerrar ambos menús
+    // Helper to close both menus
     function closeMenus() {
       setContextMenu(null);
       setShowOther(false);
     }
 
-    // Handler para mouseleave con retardo (grace period)
+    // Delayed mouseleave handler (grace period)
     function handleMenuMouseLeave(e: React.MouseEvent) {
       const relatedTarget = e.relatedTarget as HTMLElement;
       if (relatedTarget?.closest(".submenu")) return;
@@ -339,7 +339,7 @@ export function BranchList() {
         }}
         className="flex"
         onMouseLeave={handleMenuMouseLeave}>
-        {/* Menú principal */}
+        {/* Main menu */}
         <div className="bg-background-emphasis border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none z-[99999] min-w-[320px]">
           {/* Remote actions, Branch operations, Worktree, Branching, Danger zone */}
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
@@ -443,7 +443,7 @@ export function BranchList() {
           </div>
 
           <div className="my-1 border-t border-zinc-700" />
-          {/* Compare fuera del submenú */}
+          {/* Compare outside the submenu */}
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Compare
           </div>
@@ -455,7 +455,7 @@ export function BranchList() {
             Compare commit against working directory
           </div>
           <div className="my-1 border-t border-zinc-700" />
-          {/* Otros (dropdown) */}
+          {/* Other actions (dropdown) */}
           <div
             className="relative"
             ref={otherRef}>
@@ -467,7 +467,7 @@ export function BranchList() {
               Otras acciones
               <IconChevronRight size={14} />
             </div>
-            {/* Submenú Otros */}
+            {/* Other actions submenu */}
             {showOther && (
               <div
                 className={`submenu bg-zinc-900/95 border border-zinc-600 rounded shadow-lg py-1 text-xs text-zinc-200 select-none min-w-[180px] z-[100000] absolute ${

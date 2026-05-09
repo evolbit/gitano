@@ -59,14 +59,14 @@ export default function TableVirtualResizable<
     overscan: 5,
   });
 
-  // Preservar la posición de scroll cuando se cargan más datos
+  // Preserve the scroll position when more data is loaded
   const lastScrollTop = useRef(0);
   const isInitialLoad = useRef(true);
   const isAddingData = useRef(false);
 
   useEffect(() => {
     if (parentRef.current && !isInitialLoad.current && isAddingData.current) {
-      // Restaurar la posición de scroll después de cargar más datos
+      // Restore the scroll position after loading more data
       const timeoutId = setTimeout(() => {
         if (parentRef.current) {
           parentRef.current.scrollTop = lastScrollTop.current;
@@ -79,14 +79,14 @@ export default function TableVirtualResizable<
     isInitialLoad.current = false;
   }, [data.length]);
 
-  // Detectar cuando se están agregando datos (no reseteando)
+  // Detect when data is being added rather than reset
   useEffect(() => {
     if (!isInitialLoad.current && data.length > 0) {
       isAddingData.current = true;
     }
   }, [data.length]);
 
-  // Guardar la posición de scroll antes de cargar más datos
+  // Save the scroll position before loading more data
   useEffect(() => {
     const handleScroll = () => {
       if (parentRef.current) {
@@ -106,7 +106,7 @@ export default function TableVirtualResizable<
     };
   }, []);
 
-  // Scroll automático cuando cambia selectedRowIndex
+  // Auto-scroll when selectedRowIndex changes
   useEffect(() => {
     if (
       keyboardNavigation &&
@@ -252,7 +252,7 @@ export default function TableVirtualResizable<
     }
   }, [data.length, enableInfiniteScroll, onLoadMore, hasMore, loading]);
 
-  // Handlers para resize
+  // Resize handlers
   const onMouseDown = (e: React.MouseEvent, key: string) => {
     resizingCol.current = key;
     startX.current = e.clientX;
@@ -280,7 +280,7 @@ export default function TableVirtualResizable<
         ref={parentRef}
         data-virtualizer-scroll
         className="flex-1 w-full overflow-auto relative bg-background">
-        {/* Cabecera de la tabla - normal, sin sticky */}
+        {/* Table header: regular, not sticky */}
         <div className="flex items-center bg-background-emphasis h-12 font-semibold text-foreground text-sm select-none">
           {columns.map((col) => (
             <div
@@ -298,7 +298,7 @@ export default function TableVirtualResizable<
             </div>
           ))}
         </div>
-        {/* Contenido de la tabla */}
+        {/* Table content */}
         <div
           style={{
             height: rowVirtualizer.getTotalSize(),
@@ -330,7 +330,7 @@ export default function TableVirtualResizable<
               </div>
             );
           })}
-          {/* Relleno visual si hay espacio vacío */}
+          {/* Visual filler when there is empty space */}
           {parentRef.current &&
             rowVirtualizer.getTotalSize() < parentRef.current.clientHeight && (
               <div

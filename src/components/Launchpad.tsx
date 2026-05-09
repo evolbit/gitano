@@ -203,7 +203,7 @@ export const Launchpad = ({
   const handleBrowse = async () => {
     const path = await openLocalRepoDialog();
     if (path) {
-      // Agregar el repositorio a la lista de recientes antes de abrirlo
+      // Add the repository to the recent list before opening it
       addRecentRepo(path);
       onRepoOpened?.(path);
     }
@@ -218,7 +218,7 @@ export const Launchpad = ({
   };
 
   const handleRepoClick = (path: string) => {
-    // Agregar el repositorio a la lista de recientes cuando se hace clic
+    // Add the repository to the recent list when clicked
     addRecentRepo(path);
     onRepoOpened?.(path);
   };

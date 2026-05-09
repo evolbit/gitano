@@ -18,7 +18,7 @@ const RepoTabLayout: React.FC = () => {
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
 
-  // Polling automático y constante, sin controles ni notificaciones
+  // Constant automatic polling, without controls or notifications
   const { changes, loading, error } = useWorkingDirectoryChanges(repoPath, {
     pollInterval: 2000,
     enabled: !!repoPath,
@@ -27,13 +27,11 @@ const RepoTabLayout: React.FC = () => {
     showNotifications: false,
   });
 
-  // console.log("[RepoTabLayout] changes ==>", changes);
-
-  // Estado para archivo seleccionado desde Changes
+  // State for the file selected from Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChangeWithHunks | null>(null);
 
-  // Estado para acciones del archivo en DiffViewer
+  // State for file actions in DiffViewer
   const [fileActions, setFileActions] = useState<null | {
     filePath: string;
     insertions: number;
@@ -46,12 +44,12 @@ const RepoTabLayout: React.FC = () => {
     onRemove: () => void;
   }>(null);
 
-  // Cierra el DiffViewer si cambia la rama activa
+  // Close DiffViewer when the active branch changes
   useEffect(() => {
     setSelectedWorkingFile(null);
   }, [tab?.selectedBranch]);
 
-  // Cierra el DiffViewer si el archivo seleccionado ya no existe en changes
+  // Close DiffViewer if the selected file no longer exists in changes
   useEffect(() => {
     if (
       selectedWorkingFile &&
@@ -62,7 +60,7 @@ const RepoTabLayout: React.FC = () => {
     }
   }, [changes, selectedWorkingFile]);
 
-  // Actualiza la referencia del archivo seleccionado si cambia el diff/hunks
+  // Update the selected file reference if the diff or hunks change
   useEffect(() => {
     if (!selectedWorkingFile) return;
     const updated = changes.find((f) => f.path === selectedWorkingFile.path);
@@ -72,13 +70,13 @@ const RepoTabLayout: React.FC = () => {
     }
   }, [changes, selectedWorkingFile]);
 
-  // Handler para abrir el diff de un archivo del working directory
+  // Handler to open the diff for a working directory file
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
     setSelectedWorkingFile(file);
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
-  // Handler para volver al layout normal
+  // Handler to return to the normal layout
   const handleCloseDiffViewer = () => {
     setSelectedWorkingFile(null);
     useFileHunksStore.getState().clearFileHunks();
@@ -91,12 +89,13 @@ const RepoTabLayout: React.FC = () => {
       <TopToolbar />
       <div className="flex-1 min-h-0">
         <Split className="h-full w-full min-h-0 flex-1">
-          {/* Sidebar izquierdo */}
+          {/* Left sidebar */}
           <Split.Pane
             initialWidth={240}
             minWidth={300}
             maxWidth={350}
-            className="!h-full !min-h-0 flex flex-col">
+            className="!h-full !min-h-0 flex flex-col"
+          >
             <Box className="flex-1 text-foreground flex flex-col min-h-0">
               <Accordion
                 multiple
@@ -112,7 +111,8 @@ const RepoTabLayout: React.FC = () => {
                     "text-foreground flex-1 flex flex-col min-h-0 bg-background-emphasis",
                   content: "flex-1 min-h-0",
                   icon: "mr-2",
-                }}>
+                }}
+              >
                 <Accordion.Item value="changes">
                   <Accordion.Control>
                     <div className="flex flex-row items-center w-full justify-between">
@@ -146,7 +146,7 @@ const RepoTabLayout: React.FC = () => {
                         selectedIndex={
                           selectedWorkingFile
                             ? changes.findIndex(
-                                (f) => f.path === selectedWorkingFile.path
+                                (f) => f.path === selectedWorkingFile.path,
                               )
                             : 0
                         }
@@ -194,17 +194,15 @@ const RepoTabLayout: React.FC = () => {
                     </div>
                   </Accordion.Control>
                   <Accordion.Panel>
-                    {/* Aquí va la lista de carpetas */}
+                    {/* Folder list goes here */}
                   </Accordion.Panel>
                 </Accordion.Item>
               </Accordion>
             </Box>
           </Split.Pane>
           <Split.Resizer className="!bg-background-emphasis hover:!bg-foreground [--split-resizer-size:1px] m-0 border-r border-border rounded-none" />
-          {/* Panel derecho: cambia según selección */}
-          <Split.Pane
-            grow
-            className="!h-full !min-h-0">
+          {/* Right panel: changes based on the selection */}
+          <Split.Pane grow className="!h-full !min-h-0">
             {selectedWorkingFile ? (
               <div className="h-full w-full flex flex-col">
                 <div className="flex items-center gap-4 px-6 py-4 border-b border-border bg-background-emphasis">
@@ -224,19 +222,22 @@ const RepoTabLayout: React.FC = () => {
                       <button
                         className="ml-4 px-3 py-1 text-xs bg-green-700 hover:bg-green-800 text-white rounded disabled:opacity-50"
                         disabled={!fileActions.canStage}
-                        onClick={fileActions.onStage}>
+                        onClick={fileActions.onStage}
+                      >
                         Stage
                       </button>
                       <button
                         className="px-3 py-1 text-xs bg-yellow-700 hover:bg-yellow-800 text-white rounded disabled:opacity-50"
                         disabled={!fileActions.canDiscard}
-                        onClick={fileActions.onDiscard}>
+                        onClick={fileActions.onDiscard}
+                      >
                         Discard
                       </button>
                       <button
                         className="px-3 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded disabled:opacity-50"
                         disabled={!fileActions.canRemove}
-                        onClick={fileActions.onRemove}>
+                        onClick={fileActions.onRemove}
+                      >
                         Remove
                       </button>
                     </>
@@ -244,7 +245,8 @@ const RepoTabLayout: React.FC = () => {
                   <button
                     className="ml-auto p-2 rounded hover:bg-zinc-800 text-2xl text-muted-foreground"
                     onClick={handleCloseDiffViewer}
-                    aria-label="Cerrar diff">
+                    aria-label="Cerrar diff"
+                  >
                     ×
                   </button>
                 </div>
@@ -257,9 +259,7 @@ const RepoTabLayout: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <Split
-                orientation="vertical"
-                className="h-full w-full">
+              <Split orientation="vertical" className="h-full w-full">
                 <Split.Pane initialWidth="60%">
                   <CommitList />
                 </Split.Pane>

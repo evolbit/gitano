@@ -51,21 +51,21 @@ export default function CommitList() {
     null
   );
 
-  // Estado para navegación por teclado
+  // State for keyboard navigation
   const [selectedRowIndex, setSelectedRowIndex] = useState<number>(-1);
   const [isTableFocused, setIsTableFocused] = useState(false);
   const [keyboardNavigation, setKeyboardNavigation] = useState(false);
 
-  // Callback para manejar el ref del contenedor
+  // Callback to handle the container ref
   const setContainerRef = useCallback((el: HTMLDivElement | null) => {
     setScrollContainer(el);
   }, []);
 
-  // Debounce para el infinite scroll
+  // Debounce for infinite scroll
   const loadMoreTimeoutRef = useRef<number | null>(null);
   const loadCommitsRef = useRef<() => Promise<void>>();
 
-  // Definir columnas con render personalizado para CI y commit_history
+  // Define columns with custom rendering for CI and commit_history
   const columns: TableColumn<any>[] = [
     { key: "sha", label: "SHA", width: 120 },
     {
@@ -173,14 +173,14 @@ export default function CommitList() {
       console.log("Backend result:", result);
       const newCommits = result.commits || [];
 
-      // Preservar la posición de scroll antes de actualizar los datos
+      // Preserve the scroll position before updating the data
       const currentScrollTop = scrollContainer?.scrollTop || 0;
 
       setCommits((prev) => (reset ? newCommits : [...prev, ...newCommits]));
       setHasMore(result.has_more);
       setOffset((prev) => (reset ? PAGE_SIZE : prev + PAGE_SIZE));
 
-      // Restaurar la posición de scroll después de actualizar los datos
+      // Restore the scroll position after updating the data
       if (!reset && scrollContainer) {
         setTimeout(() => {
           scrollContainer.scrollTop = currentScrollTop;
@@ -200,7 +200,7 @@ export default function CommitList() {
     }
   };
 
-  // Actualizar la referencia a loadCommits
+  // Update the loadCommits reference
   useEffect(() => {
     loadCommitsRef.current = loadCommits;
   }, [loadCommits]);
@@ -210,12 +210,12 @@ export default function CommitList() {
       e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
       e.currentTarget.clientHeight + 200
     ) {
-      // Limpiar timeout anterior si existe
+      // Clear the previous timeout if it exists
       if (loadMoreTimeoutRef.current) {
         clearTimeout(loadMoreTimeoutRef.current);
       }
 
-      // Usar un debounce para evitar múltiples llamadas
+      // Use a debounce to avoid multiple calls
       loadMoreTimeoutRef.current = setTimeout(() => {
         if (loadCommitsRef.current) {
           loadCommitsRef.current();
@@ -224,7 +224,7 @@ export default function CommitList() {
     }
   }, []);
 
-  // Limpiar timeout al desmontar
+  // Clear the timeout on unmount
   useEffect(() => {
     return () => {
       if (loadMoreTimeoutRef.current) {
@@ -243,7 +243,7 @@ export default function CommitList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoPath, selectedBranch]);
 
-  // Navegación por teclado
+  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!commits.length || !isTableFocused) return;
@@ -289,7 +289,7 @@ export default function CommitList() {
       }
     };
 
-    // Agregar event listener directamente al documento
+    // Add the event listener directly to the document
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
@@ -297,7 +297,7 @@ export default function CommitList() {
     };
   }, [commits, selectedRowIndex, activeTabId, setTabCommit, isTableFocused]);
 
-  // Manejar focus en el contenedor
+  // Handle focus on the container
   useEffect(() => {
     const handleFocus = () => {
       setIsTableFocused(true);
@@ -321,7 +321,7 @@ export default function CommitList() {
     };
   }, [scrollContainer]);
 
-  // Función para manejar el clic en una fila
+  // Function to handle row clicks
   const handleRowClick = (row: CommitListItem, index: number) => {
     setSelectedRowIndex(index);
     if (activeTabId) {
@@ -329,7 +329,7 @@ export default function CommitList() {
     }
   };
 
-  // Actualizar el commit seleccionado en el store cada vez que cambia la fila seleccionada
+  // Update the selected commit in the store whenever the selected row changes
   useEffect(() => {
     if (
       selectedRowIndex >= 0 &&
@@ -342,7 +342,7 @@ export default function CommitList() {
 
   return (
     <div className="h-full w-full flex flex-col p-4">
-      {/* Barra superior - con comportamiento de scroll */}
+      {/* Top bar with scroll behavior */}
       <div
         className={`flex items-center pb-4 transition-transform duration-300 ease-in-out ${
           isSearchBarVisible ? "translate-y-0" : "-translate-y-full"
@@ -377,7 +377,7 @@ export default function CommitList() {
           Añadir manualmente
         </button>
       </div>
-      {/* Tabla con infinite scroll integrado */}
+      {/* Table with built-in infinite scroll */}
       <div
         ref={setContainerRef}
         className="flex-1 overflow-y-auto focus:outline-none"

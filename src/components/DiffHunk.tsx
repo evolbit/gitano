@@ -1,7 +1,7 @@
 import React from "react";
 import { IconCheck } from "./icons";
 
-// Tipos para los datos del backend
+// Types for backend data
 interface DiffLine {
   kind: "Add" | "Del" | "Context";
   content: string;
@@ -92,7 +92,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
       }`}
       onMouseEnter={() => setHoveredHunkIdx(hunkIdx)}
       onMouseLeave={() => setHoveredHunkIdx(null)}>
-      {/* Cabecera del hunk con botones */}
+      {/* Hunk header with buttons */}
       <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
         <span className="text-purple-300 text-xs font-mono">{hunk.header}</span>
         {canStage && (
@@ -120,13 +120,13 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                   className="px-2 py-1 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded"
                   onClick={() => handleStageHunk(hunkIdx)}>
                   {(() => {
-                    // Contar cuántas líneas son stageables en este hunk
+                    // Count how many lines are stageable in this hunk
                     const stageableLines = hunk.lines.filter(
                       (line) => line.kind === "Add" || line.kind === "Del"
                     ).length;
-                    // Contar cuántas líneas están actualmente staged
+                    // Count how many lines are currently staged
                     const stagedCount = stagedLines[hunkIdx]?.size || 0;
-                    // Si todas las líneas stageables están staged, mostrar "Deselect all"
+                    // If all stageable lines are staged, show "Deselect all"
                     return stagedCount === stageableLines
                       ? "Deselect all"
                       : "Select all";
@@ -138,7 +138,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     !(stagedLines[hunkIdx] && stagedLines[hunkIdx].size > 0)
                   }
                   onClick={() => {
-                    // Aquí iría la lógica real de stage, por ahora solo log
+                    // Real staging logic should go here; for now it only logs
                     const staged = stagedLines[hunkIdx]
                       ? Array.from(stagedLines[hunkIdx])
                       : [];
@@ -151,17 +151,17 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           </div>
         )}
       </div>
-      {/* Expandir contexto arriba - solo para archivos no nuevos y si canStage */}
+      {/* Expand context above, only for non-new files when canStage is true */}
       {!hunk.is_new_file && canStage && (
         <>
           <div className="flex justify-center py-1">
             <button
               className="text-xs text-blue-400 hover:underline"
               onClick={() => handleExpandContext(hunkIdx, "Above", 10)}>
-              Mostrar 10 líneas arriba
+              Show 10 lines above
             </button>
           </div>
-          {/* Líneas extra arriba */}
+          {/* Extra lines above */}
           {extraContext[hunkIdx]?.above?.map((line, i) => (
             <DiffLineRow
               key={"above-" + i}
@@ -171,7 +171,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           ))}
         </>
       )}
-      {/* Líneas del hunk */}
+      {/* Hunk lines */}
       {hunk.lines.map((line, lineIdx) => {
         const isStageable = line.kind === "Add" || line.kind === "Del";
         const isStaged = stagedLines[hunkIdx]?.has(lineIdx);
@@ -213,7 +213,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           />
         );
       })}
-      {/* Líneas extra abajo - solo para archivos no nuevos y si canStage */}
+      {/* Extra lines below, only for non-new files when canStage is true */}
       {!hunk.is_new_file && canStage && (
         <>
           {extraContext[hunkIdx]?.below?.map((line, i) => (
@@ -223,12 +223,12 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
               showChecks={false}
             />
           ))}
-          {/* Expandir contexto abajo */}
+          {/* Expand context below */}
           <div className="flex justify-center py-1">
             <button
               className="text-xs text-blue-400 hover:underline"
               onClick={() => handleExpandContext(hunkIdx, "Below", 10)}>
-              Mostrar 10 líneas abajo
+              Show 10 lines below
             </button>
           </div>
         </>
@@ -237,7 +237,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   );
 };
 
-// Componente para mostrar una línea del diff con checks, colores y números de línea
+// Component that renders a diff line with checks, colors, and line numbers
 const DiffLineRow: React.FC<{
   line: DiffLine;
   showChecks?: boolean;
@@ -257,7 +257,7 @@ const DiffLineRow: React.FC<{
   if (line.kind === "Add") baseColor = "text-green-400 bg-green-900/20";
   else if (line.kind === "Del") baseColor = "text-red-400 bg-red-900/20";
   else baseColor = "text-zinc-200";
-  // Si está staged, fondo azul y texto blanco
+  // If it is staged, use a blue background and white text
   const stagedColor = isStaged ? "bg-blue-600 text-white" : baseColor;
   return (
     <div
@@ -268,7 +268,7 @@ const DiffLineRow: React.FC<{
       }}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}>
-      {/* Columna de check para old_lineno */}
+      {/* Check column for old_lineno */}
       <span className="w-6 h-4 flex items-center justify-center select-none">
         {showChecks && line.old_lineno !== null && isStaged ? (
           <IconCheck
@@ -277,7 +277,7 @@ const DiffLineRow: React.FC<{
           />
         ) : null}
       </span>
-      {/* Columna de check para new_lineno */}
+      {/* Check column for new_lineno */}
       <span className="w-6 h-4 flex items-center justify-center select-none">
         {showChecks && line.new_lineno !== null && isStaged ? (
           <IconCheck
@@ -286,14 +286,14 @@ const DiffLineRow: React.FC<{
           />
         ) : null}
       </span>
-      {/* Números de línea */}
+      {/* Line numbers */}
       <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
         {line.old_lineno ?? ""}
       </span>
       <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
         {line.new_lineno ?? ""}
       </span>
-      {/* Contenido */}
+      {/* Content */}
       <span className="flex-1 min-w-0 whitespace-pre-wrap">{line.content}</span>
     </div>
   );

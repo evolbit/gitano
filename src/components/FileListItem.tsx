@@ -18,7 +18,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const getStatusIcon = () => {
-    // Si es un archivo nuevo (added con 0 insertions/deletions), mostrar signo de interrogación
+    // If this is a new file (added with 0 insertions/deletions), show a question mark
     if (
       file.status.toLowerCase() === "added" &&
       file.insertions === 0 &&
@@ -109,7 +109,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
           );
         })()}
       </span>
-      {/* Mostrar números solo si no es un archivo nuevo */}
+      {/* Show numbers only if this is not a new file */}
       {!(
         file.status.toLowerCase() === "added" &&
         file.insertions === 0 &&

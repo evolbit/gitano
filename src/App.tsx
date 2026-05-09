@@ -99,7 +99,7 @@ export default function App() {
 
   // Handler to open repo in a new tab
   const handleRepoOpened = (repoPath: string) => {
-    // Agregar el repositorio a la lista de recientes
+    // Add the repository to the recent list
     addRecentRepo(repoPath);
 
     // Check if a tab for this repo already exists

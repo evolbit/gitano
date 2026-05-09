@@ -64,7 +64,7 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
         };
       } else {
         const prev = state.stagedLines[filePath] || {};
-        // Si solo hay isNewFile, bórralo todo; si hay líneas, bórralo solo
+        // If only isNewFile is present, remove the whole entry; otherwise remove only that flag
         const { isNewFile, ...rest } = prev;
         if (Object.keys(rest).length === 0) {
           const newStaged = { ...state.stagedLines };

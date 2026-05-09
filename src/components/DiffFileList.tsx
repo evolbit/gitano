@@ -12,16 +12,16 @@ interface DiffFileListProps {
   selectedIndex: number;
   autoFocusSearch?: boolean;
   showSearch?: boolean;
-  rowBgColor?: string; // color de fondo de fila
-  rowHighlightColor?: string; // color de resaltado
-  rowTextColor?: string; // color de texto
-  highlightSelected?: boolean; // activar/desactivar resaltado
-  rowDividerColor?: string; // color de la línea de separación
-  rowPadding?: string; // padding de los li
-  showFileCheckboxes?: boolean; // NUEVO: mostrar checkbox por archivo
+  rowBgColor?: string; // Row background color
+  rowHighlightColor?: string; // Highlight color
+  rowTextColor?: string; // Text color
+  highlightSelected?: boolean; // Enable or disable highlighting
+  rowDividerColor?: string; // Divider line color
+  rowPadding?: string; // li padding
+  showFileCheckboxes?: boolean; // NEW: show a checkbox per file
 }
 
-// Type guard para saber si el ref es un objeto con .current
+// Type guard to know whether the ref is an object with .current
 function isRefObject(r: unknown): r is React.RefObject<HTMLUListElement> {
   return !!r && typeof r === "object" && "current" in r;
 }
@@ -59,7 +59,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
     const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
     const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
 
-    // Normaliza el status a minúsculas y lo castea al tipo correcto
+    // Normalize the status to lowercase and cast it to the correct type
     const allowedStatuses = [
       "added",
       "deleted",
@@ -76,7 +76,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
         : ("modified" as AllowedStatus),
     }));
 
-    // Filtrado de archivos
+    // File filtering
     const filteredFiles =
       search.trim() === ""
         ? normalizedFiles
@@ -84,7 +84,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
             f.path.toLowerCase().includes(search.toLowerCase())
           );
 
-    // Mantener el índice seleccionado dentro del rango
+    // Keep the selected index within bounds
     useEffect(() => {
       if (internalSelectedIndex >= filteredFiles.length) {
         setInternalSelectedIndex(filteredFiles.length - 1);
@@ -94,12 +94,12 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       }
     }, [filteredFiles.length, internalSelectedIndex]);
 
-    // Sincronizar el índice seleccionado interno con el prop
+    // Sync the internal selected index with the prop
     useEffect(() => {
       setInternalSelectedIndex(selectedIndex);
     }, [selectedIndex]);
 
-    // Navegación por teclado en la lista de archivos
+    // Keyboard navigation in the file list
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
         if (document.activeElement === searchInputRef.current) return;
@@ -111,7 +111,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
             filteredFiles.length - 1
           );
           setInternalSelectedIndex(newIndex);
-          // Notificar al padre solo si el índice cambió
+          // Notify the parent only if the index changed
           if (newIndex !== internalSelectedIndex) {
             onSelect(filteredFiles[newIndex], newIndex);
           }
@@ -119,7 +119,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
           e.preventDefault();
           const newIndex = Math.max(internalSelectedIndex - 1, 0);
           setInternalSelectedIndex(newIndex);
-          // Notificar al padre solo si el índice cambió
+          // Notify the parent only if the index changed
           if (newIndex !== internalSelectedIndex) {
             onSelect(filteredFiles[newIndex], newIndex);
           }
@@ -137,7 +137,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       return () => window.removeEventListener("keydown", handler);
     }, [filteredFiles, internalSelectedIndex, onSelect, onAction]);
 
-    // Scroll automático para mantener visible la fila seleccionada
+    // Auto-scroll to keep the selected row visible
     useEffect(() => {
       if (!isRefObject(ref) || !ref.current) return;
       const el = ref.current.querySelector(
@@ -157,7 +157,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
     return (
       <div
         className={`flex flex-col h-full min-h-0 border-r border-border flex-1 ${rowBgColor}`}>
-        {/* Caja de búsqueda dentro de la columna */}
+        {/* Search box inside the column */}
         {showSearch && (
           <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
             <div className="relative w-full h-12">
@@ -183,7 +183,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
             </li>
           ) : (
             filteredFiles.map((file, idx) => {
-              // Normaliza el status a los valores permitidos
+              // Normalize the status to the allowed values
               const allowedStatuses = [
                 "added",
                 "deleted",
@@ -199,12 +199,12 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                 ...file,
                 status: normalizedStatus,
               };
-              // Determinar clases de fila
+              // Determine row classes
               let rowClass = `${rowTextColor} ${rowBgColor}`;
               if (highlightSelected && internalSelectedIndex === idx) {
                 rowClass = `${rowHighlightColor}`;
               }
-              // Calcular estado del checkbox aquí
+              // Compute the checkbox state here
               let checkboxState: "checked" | "indeterminate" | "unchecked" =
                 "unchecked";
               const fileStaged = stagedLines[file.path] || {};
@@ -219,7 +219,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
               for (const hunkIdx in fileStaged) {
                 stagedCount += fileStaged[hunkIdx]?.size || 0;
               }
-              // Detectar archivo nuevo vacío
+              // Detect an empty new file
               const isNewFile =
                 file.status === "added" &&
                 hunks.length === 1 &&
@@ -248,7 +248,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                     }
                   }}>
                   <div className="flex items-center min-w-0 gap-2">
-                    {/* Checkbox por archivo, solo si showFileCheckboxes */}
+                    {/* Per-file checkbox, only when showFileCheckboxes is enabled */}
                     {showFileCheckboxes && (
                       <Checkbox
                         checked={checkboxState === "checked"}
@@ -258,7 +258,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                           if (isNewFile) {
                             setStagedNewFile(file.path, e.target.checked);
                           } else if (e.target.checked) {
-                            // Agregar todas las líneas stageables (Add o Del) de todos los hunks
+                            // Add all stageable lines (Add or Del) from all hunks
                             const hunks = (file as any).hunks || [];
                             const allHunks: { [hunkIdx: number]: number[] } =
                               {};
@@ -276,7 +276,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                             });
                             setAllStagedLinesForFile(file.path, allHunks);
                           } else {
-                            // Limpiar todas las líneas staged de este archivo
+                            // Clear all staged lines for this file
                             clearStagedLinesForFile(file.path);
                           }
                         }}

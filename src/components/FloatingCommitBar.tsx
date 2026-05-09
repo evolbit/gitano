@@ -20,7 +20,7 @@ const FloatingCommitBar: React.FC<{
   const [localLoading, setLocalLoading] = useState(false);
   const isLoading = loading || commitLoading || localLoading;
 
-  // Cerrar con Escape si está expandido
+  // Close on Escape when expanded
   useEffect(() => {
     if (!expanded) return;
     const handler = (e: KeyboardEvent) => {
@@ -42,7 +42,7 @@ const FloatingCommitBar: React.FC<{
       onCollapse();
       if (onCommit) onCommit(message, push, amend);
     } catch (e) {
-      // El error se muestra abajo
+      // The error is shown below
     } finally {
       setLocalLoading(false);
     }

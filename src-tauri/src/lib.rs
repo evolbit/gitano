@@ -2,17 +2,11 @@ pub mod git;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            // Crea los items del menú
+            // Create the menu items
             let new_tab = MenuItemBuilder::new("New Tab")
                 .id("new_tab")
                 .accelerator("CmdOrCtrl+T")
@@ -53,7 +47,7 @@ pub fn run() {
                 .id("sign_in")
                 .build(app)?;
 
-            // Crea el submenu 'File'
+            // Create the 'File' submenu
             let file_submenu = SubmenuBuilder::new(app, "File")
                 .item(&new_tab)
                 .item(&close_tab)
@@ -70,7 +64,7 @@ pub fn run() {
                 .item(&sign_in)
                 .build()?;
 
-            // Crea el menú principal
+            // Create the main menu
             let menu = MenuBuilder::new(app).item(&file_submenu).build()?;
 
             app.set_menu(menu)?;

@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileChangeWithHunks } from "../types/git";
 
 interface UseWorkingDirectoryChangesOptions {
-  pollInterval?: number; // Intervalo en milisegundos para el polling
-  enabled?: boolean; // Si el polling está habilitado
-  pauseOnInactive?: boolean; // (No se usará)
-  cacheKey?: string; // Clave única para cachear resultados
-  showNotifications?: boolean; // (No se usará)
+  pollInterval?: number; // Polling interval in milliseconds
+  enabled?: boolean; // Whether polling is enabled
+  pauseOnInactive?: boolean; // (Unused)
+  cacheKey?: string; // Unique key for caching results
+  showNotifications?: boolean; // (Unused)
 }
 
 export const useWorkingDirectoryChanges = (
@@ -22,7 +22,7 @@ export const useWorkingDirectoryChanges = (
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
 
-  // Asegura que isMountedRef.current sea true al montar
+  // Ensure isMountedRef.current is true on mount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -33,7 +33,7 @@ export const useWorkingDirectoryChanges = (
     };
   }, []);
 
-  // Función para obtener los cambios y los hunks
+  // Function to fetch changes and hunks
   const fetchChanges = useCallback(async () => {
     if (!repoPath) return;
     setLoading(true);
@@ -60,13 +60,13 @@ export const useWorkingDirectoryChanges = (
     }
   }, [repoPath]);
 
-  // Polling automático
+  // Automatic polling
   useEffect(() => {
     if (!repoPath || !enabled) {
       setChanges([]);
       return;
     }
-    fetchChanges(); // Carga inicial
+    fetchChanges(); // Initial load
     intervalRef.current = setInterval(fetchChanges, pollInterval);
     return () => {
       if (intervalRef.current) {
