@@ -7,10 +7,10 @@ import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
 import { FileChangeWithHunks } from "../types/git";
 import { BranchList } from "./BranchList";
+import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
 import DiffModal from "./DiffModal";
-import DiffFileList from "./DiffFileList";
 import { IconFolder, IconGitBranch, IconStack2 } from "./icons";
 import TopToolbar from "./TopToolbar";
 
@@ -32,6 +32,8 @@ const RepoTabLayout: React.FC = () => {
   // State for the file selected from Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChangeWithHunks | null>(null);
+  const [changesViewMode, setChangesViewMode] =
+    useState<ChangesExplorerViewMode>("tree");
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
     REPO_LAYOUT.panes.right.initial,
@@ -161,28 +163,16 @@ const RepoTabLayout: React.FC = () => {
                       </div>
                     )}
                     {changes.length > 0 && (
-                      <DiffFileList
+                      <ChangesExplorer
                         files={changes}
-                        selectedIndex={
-                          selectedWorkingFile
-                            ? changes.findIndex(
-                                (f) => f.path === selectedWorkingFile.path,
-                              )
-                            : 0
-                        }
-                        showSearch={true}
-                        onSelect={(file, _idx) =>
+                        selectedPath={selectedWorkingFile?.path ?? changes[0]?.path ?? null}
+                        onSelectFile={(file) =>
                           handleSelectWorkingFile(file as FileChangeWithHunks)
                         }
-                        onAction={(file, _idx) =>
-                          handleSelectWorkingFile(file as FileChangeWithHunks)
-                        }
-                        rowBgColor="bg-background"
-                        rowTextColor="text-foreground"
-                        highlightSelected={true}
-                        rowDividerColor="divide-border"
-                        rowPadding="px-2 py-1"
+                        viewMode={changesViewMode}
+                        onViewModeChange={setChangesViewMode}
                         showFileCheckboxes={false}
+                        surface="main"
                       />
                     )}
                   </Accordion.Panel>
@@ -266,6 +256,8 @@ const RepoTabLayout: React.FC = () => {
               handleSelectWorkingFile(file);
             }
           }}
+          changesViewMode={changesViewMode}
+          onChangesViewModeChange={setChangesViewMode}
           repoPath={repoPath}
         />
       )}

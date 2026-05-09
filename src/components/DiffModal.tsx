@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useRepoStore } from "../store/repo";
 import { useFileHunksStore } from "../store/hunks";
 import { FileChange, FileChangeWithHunks } from "../types/git";
+import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
 import DiffFileList from "./DiffFileList";
 import DiffViewer from "./DiffViewer";
 import { IconX } from "./icons";
@@ -19,6 +20,8 @@ interface DiffModalProps {
   onFileSelect?: (file: DiffModalFile) => void;
   repoPath?: string;
   sha?: string;
+  changesViewMode?: ChangesExplorerViewMode;
+  onChangesViewModeChange?: (mode: ChangesExplorerViewMode) => void;
 }
 
 const DiffModal = ({
@@ -29,6 +32,8 @@ const DiffModal = ({
   onFileSelect,
   repoPath,
   sha,
+  changesViewMode = "tree",
+  onChangesViewModeChange,
 }: DiffModalProps) => {
   const [search, setSearch] = useState("");
   const [selectedPath, setSelectedPath] = useState(initialFile.path);
@@ -163,15 +168,29 @@ const DiffModal = ({
             initialWidth={340}
             minWidth={220}
             maxWidth={500}>
-            <DiffFileList
-              ref={listRef}
-              files={normalizedFiles}
-              selectedIndex={selectedIndex}
-              onSelect={(file) => handleSelectFile(file)}
-              onAction={(file) => handleSelectFile(file)}
-              autoFocusSearch={true}
-              showFileCheckboxes={sha === undefined}
-            />
+            {sha === undefined ? (
+              <ChangesExplorer
+                files={normalizedFiles}
+                selectedPath={selected?.path ?? initialFile.path}
+                onSelectFile={handleSelectFile}
+                viewMode={changesViewMode}
+                onViewModeChange={(mode) => onChangesViewModeChange?.(mode)}
+                showFileCheckboxes={true}
+                surface="modal"
+                showHeader={true}
+                autoFocusSearch={true}
+              />
+            ) : (
+              <DiffFileList
+                ref={listRef}
+                files={normalizedFiles}
+                selectedIndex={selectedIndex}
+                onSelect={(file) => handleSelectFile(file)}
+                onAction={(file) => handleSelectFile(file)}
+                autoFocusSearch={true}
+                showFileCheckboxes={false}
+              />
+            )}
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
           {/* Right panel: diff */}
