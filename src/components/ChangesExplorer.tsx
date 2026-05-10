@@ -23,6 +23,7 @@ export type ChangesExplorerViewMode = "flat" | "tree";
 type ChangesExplorerFile = FileChange | FileChangeWithHunks;
 type ChangesExplorerSurface = "main" | "modal";
 type SectionName = "Tracked" | "Untracked";
+type SectionMode = "tracked-untracked" | "single";
 
 type TreeNode =
   | {
@@ -49,6 +50,7 @@ interface ChangesExplorerProps {
   showHeader?: boolean;
   autoFocusSearch?: boolean;
   className?: string;
+  sectionMode?: SectionMode;
 }
 
 const ALLOWED_STATUSES = [
@@ -104,7 +106,16 @@ function isUntrackedFile(file: ChangesExplorerFile) {
   return false;
 }
 
-function partitionFiles(files: ChangesExplorerFile[]) {
+function partitionFiles(
+  files: ChangesExplorerFile[],
+  sectionMode: SectionMode,
+) {
+  if (sectionMode === "single") {
+    return files.length > 0
+      ? [{ name: "Tracked" as const, files }]
+      : [];
+  }
+
   const tracked: ChangesExplorerFile[] = [];
   const untracked: ChangesExplorerFile[] = [];
 
@@ -269,6 +280,7 @@ function ChangesExplorer({
   showHeader = false,
   autoFocusSearch = false,
   className = "",
+  sectionMode = "tracked-untracked",
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -294,7 +306,10 @@ function ChangesExplorer({
     () => normalizedFiles.filter((file) => fileMatchesSearch(file, search)),
     [normalizedFiles, search],
   );
-  const sections = useMemo(() => partitionFiles(filteredFiles), [filteredFiles]);
+  const sections = useMemo(
+    () => partitionFiles(filteredFiles, sectionMode),
+    [filteredFiles, sectionMode],
+  );
   const sectionTrees = useMemo(
     () =>
       sections.map((section) => ({
@@ -594,9 +609,11 @@ function ChangesExplorer({
     content: React.ReactNode,
   ) => (
     <section key={name} className="pb-2">
-      <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {name}
-      </div>
+      {sectionMode === "tracked-untracked" ? (
+        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {name}
+        </div>
+      ) : null}
       <div>{content}</div>
     </section>
   );

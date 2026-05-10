@@ -32,7 +32,7 @@ const RepoTabLayout: React.FC = () => {
   // State for the file selected from Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChangeWithHunks | null>(null);
-  const [changesViewMode, setChangesViewMode] =
+  const [workingChangesViewMode, setWorkingChangesViewMode] =
     useState<ChangesExplorerViewMode>("tree");
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
@@ -169,8 +169,8 @@ const RepoTabLayout: React.FC = () => {
                         onSelectFile={(file) =>
                           handleSelectWorkingFile(file as FileChangeWithHunks)
                         }
-                        viewMode={changesViewMode}
-                        onViewModeChange={setChangesViewMode}
+                        viewMode={workingChangesViewMode}
+                        onViewModeChange={setWorkingChangesViewMode}
                         showFileCheckboxes={false}
                         surface="main"
                       />
@@ -256,8 +256,8 @@ const RepoTabLayout: React.FC = () => {
               handleSelectWorkingFile(file);
             }
           }}
-          changesViewMode={changesViewMode}
-          onChangesViewModeChange={setChangesViewMode}
+          changesViewMode={workingChangesViewMode}
+          onChangesViewModeChange={setWorkingChangesViewMode}
           repoPath={repoPath}
         />
       )}

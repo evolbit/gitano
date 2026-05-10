@@ -3,7 +3,7 @@ import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
 import { CommitDiff, FileChange } from "../types/git";
-import DiffFileList from "./DiffFileList";
+import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
 import DiffModal from "./DiffModal";
 import TextArea from "./form/TextArea";
 
@@ -23,6 +23,8 @@ const ChangesPanel: React.FC = () => {
 
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
+  const [commitChangesViewMode, setCommitChangesViewMode] =
+    useState<ChangesExplorerViewMode>("tree");
 
   useEffect(() => {
     if (selectedCommit) {
@@ -119,8 +121,7 @@ const ChangesPanel: React.FC = () => {
     }
   };
 
-  // Handler to open the diff modal
-  const handleOpenDiffModal = (file: FileChange) => {
+  const handleSelectCommitFile = (file: FileChange) => {
     setDiffModalFile(file);
     setDiffModalOpen(true);
   };
@@ -191,23 +192,17 @@ const ChangesPanel: React.FC = () => {
             {error && <p className="text-red-500">Error: {error}</p>}
 
             {diff && (
-              <div>
-                <h3 className="font-bold mb-2">
-                  Changed files ({diff.changes.length})
-                </h3>
-                <DiffFileList
+              <div className="h-full min-h-0">
+                <ChangesExplorer
                   files={diff.changes}
-                  selectedIndex={0}
-                  showSearch={false}
-                  onSelect={() => {
-                    // Selection only, no action
-                  }}
-                  onAction={(file) => handleOpenDiffModal(file)}
-                  rowBgColor="bg-background"
-                  rowTextColor="text-foreground"
-                  highlightSelected={false}
-                  rowDividerColor="divide-transparent"
-                  rowPadding="px-0 py-1"
+                  selectedPath={diffModalFile?.path ?? diff.changes[0]?.path ?? null}
+                  onSelectFile={(file) => handleSelectCommitFile(file as FileChange)}
+                  viewMode={commitChangesViewMode}
+                  onViewModeChange={setCommitChangesViewMode}
+                  showFileCheckboxes={false}
+                  surface="main"
+                  className="border-r-0"
+                  sectionMode="single"
                 />
               </div>
             )}
@@ -223,6 +218,8 @@ const ChangesPanel: React.FC = () => {
           initialFile={diffModalFile}
           onClose={() => setDiffModalOpen(false)}
           sha={selectedCommit.sha}
+          changesViewMode={commitChangesViewMode}
+          onChangesViewModeChange={setCommitChangesViewMode}
         />
       )}
     </div>
