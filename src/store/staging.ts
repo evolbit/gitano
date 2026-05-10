@@ -5,6 +5,7 @@ export type StagedLinesState = {
     [filePath: string]: {
       [hunkIdx: number]: Set<number>;
       isNewFile?: boolean;
+      isWholeFileStaged?: boolean;
     };
   };
   setStagedLines: (
@@ -20,6 +21,8 @@ export type StagedLinesState = {
   clearAllStagedLines: () => void;
   setStagedNewFile: (filePath: string, value: boolean) => void;
   isStagedNewFile: (filePath: string) => boolean;
+  setWholeFileStaged: (filePath: string, value: boolean) => void;
+  isWholeFileStaged: (filePath: string) => boolean;
 };
 
 export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
@@ -43,7 +46,7 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
             Number(hunkIdx),
             new Set(lineIdxs),
           ])
-        ),
+        ) as { [hunkIdx: number]: Set<number> },
       },
     })),
   clearStagedLinesForFile: (filePath) =>
@@ -83,4 +86,38 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
   isStagedNewFile: (filePath) => {
     return !!get().stagedLines[filePath]?.isNewFile;
   },
+  setWholeFileStaged: (filePath, value) =>
+    set((state) => {
+      if (value) {
+        return {
+          stagedLines: {
+            ...state.stagedLines,
+            [filePath]: {
+              ...(state.stagedLines[filePath] || {}),
+              isWholeFileStaged: true,
+            },
+          },
+        };
+      }
+
+      const prev = state.stagedLines[filePath] || {};
+      const { isWholeFileStaged, ...rest } = prev;
+      const hasLineSelections = Object.keys(rest).some(
+        (key) => key !== "isNewFile" && rest[key as unknown as number] instanceof Set,
+      );
+
+      if (!prev.isNewFile && !hasLineSelections) {
+        const next = { ...state.stagedLines };
+        delete next[filePath];
+        return { stagedLines: next };
+      }
+
+      return {
+        stagedLines: {
+          ...state.stagedLines,
+          [filePath]: rest,
+        },
+      };
+    }),
+  isWholeFileStaged: (filePath) => !!get().stagedLines[filePath]?.isWholeFileStaged,
 }));

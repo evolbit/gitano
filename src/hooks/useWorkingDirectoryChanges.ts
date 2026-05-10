@@ -80,5 +80,6 @@ export const useWorkingDirectoryChanges = (
     changes,
     loading,
     error,
+    refreshChanges: fetchChanges,
   };
 };

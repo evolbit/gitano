@@ -43,7 +43,7 @@ const RepoTabLayout: React.FC = () => {
   );
 
   // Constant automatic polling, without controls or notifications
-  const { changes, loading, error } = useWorkingDirectoryChanges(repoPath, {
+  const { changes, loading, error, refreshChanges } = useWorkingDirectoryChanges(repoPath, {
     pollInterval: 2000,
     enabled: !!repoPath,
     pauseOnInactive: false,
@@ -230,6 +230,8 @@ const RepoTabLayout: React.FC = () => {
                         }}
                         showFileCheckboxes={false}
                         surface="main"
+                        repoPath={repoPath}
+                        onImmediateStageChange={refreshChanges}
                         expandedState={workspaceState.mainChangesExpanded}
                         onExpandedStateChange={(expanded) => {
                           if (!repoPath) return;
@@ -330,6 +332,7 @@ const RepoTabLayout: React.FC = () => {
             setWorkingChangesViewMode(repoPath, mode);
           }}
           repoPath={repoPath}
+          onWorkingTreeStageChange={refreshChanges}
         />
       )}
     </div>

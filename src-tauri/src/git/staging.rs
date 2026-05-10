@@ -51,42 +51,19 @@ pub fn get_working_directory_changes(path: String) -> Result<Vec<FileChangeWithH
             ChangeType::Modified // Default
         };
 
-        // Calculate insertions and deletions using git diff --numstat
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&path)
-            .arg("diff")
-            .arg("--numstat")
-            .arg("--")
-            .arg(&file_path)
-            .output();
-
-        let (insertions, deletions) = if let Ok(output) = output {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Find the line corresponding to the file
-            let line = stdout.lines().find(|l| l.contains(&file_path));
-            if let Some(line) = line {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    (
-                        parts[0].parse::<u32>().unwrap_or(0),
-                        parts[1].parse::<u32>().unwrap_or(0),
-                    )
-                } else {
-                    (0, 0)
-                }
-            } else {
-                (0, 0)
-            }
-        } else {
-            (0, 0)
-        };
-
         // Get the hunks for this file
         let hunks = match get_file_diff_hunks(path.clone(), file_path.clone(), 3) {
             Ok(h) => h,
             Err(_) => vec![],
         };
+
+        let (insertions, deletions) = hunks.iter().fold((0u32, 0u32), |acc, hunk| {
+            hunk.lines.iter().fold(acc, |(adds, dels), line| match line.kind {
+                DiffLineKind::Add => (adds + 1, dels),
+                DiffLineKind::Del => (adds, dels + 1),
+                DiffLineKind::Context => (adds, dels),
+            })
+        });
 
         changes.push(FileChangeWithHunks {
             path: file_path,
@@ -109,13 +86,145 @@ pub fn git_add_file(path: String, file_path: String) -> Result<(), String> {
         .arg(&file_path)
         .output()
         .map_err(|e| e.to_string())?;
-    if !output.status.success() {
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let full_path = Path::new(&path).join(&file_path);
+    if !full_path.exists() {
+        let remove_cached_output = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("rm")
+            .arg("--cached")
+            .arg("--ignore-unmatch")
+            .arg("--quiet")
+            .arg("--")
+            .arg(&file_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if remove_cached_output.status.success() {
+            return Ok(());
+        }
+
+        let add_all_output = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("add")
+            .arg("-A")
+            .arg("--")
+            .arg(&file_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if add_all_output.status.success() {
+            return Ok(());
+        }
+
+        let update_output = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .arg("add")
+            .arg("-u")
+            .arg("--")
+            .arg(&file_path)
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if update_output.status.success() {
+            return Ok(());
+        }
+
         return Err(format!(
-            "git add failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "git add failed: {}\ngit rm --cached failed: {}\ngit add -A failed: {}\ngit add -u failed: {}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&remove_cached_output.stderr),
+            String::from_utf8_lossy(&add_all_output.stderr),
+            String::from_utf8_lossy(&update_output.stderr)
         ));
     }
-    Ok(())
+
+    Err(format!(
+        "git add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+#[tauri::command]
+pub fn git_unstage_file(path: String, file_path: String) -> Result<(), String> {
+    let restore_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("restore")
+        .arg("--staged")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if restore_output.status.success() {
+        return Ok(());
+    }
+
+    let reset_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("reset")
+        .arg("HEAD")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if reset_output.status.success() {
+        return Ok(());
+    }
+
+    let remove_cached_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("rm")
+        .arg("--cached")
+        .arg("--quiet")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if remove_cached_output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git unstage failed:\nrestore: {}\nreset: {}\nrm --cached: {}",
+        String::from_utf8_lossy(&restore_output.stderr),
+        String::from_utf8_lossy(&reset_output.stderr),
+        String::from_utf8_lossy(&remove_cached_output.stderr)
+    ))
+}
+
+#[tauri::command]
+pub fn git_has_staged_changes(path: String) -> Result<bool, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("diff")
+        .arg("--cached")
+        .arg("--quiet")
+        .arg("--exit-code")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    match output.status.code() {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => Err(format!(
+            "git diff --cached failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
+    }
 }
 
 #[tauri::command]
@@ -128,14 +237,18 @@ pub fn git_stage_lines(
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
 
-    // 2. Read the staged content (index) as the base for building the new staged state
-    let index_content = if let Some(entry) = index.get_path(Path::new(&file_path), 0) {
-        let blob = repo.find_blob(entry.id).map_err(|e| e.to_string())?;
-        str::from_utf8(blob.content()).unwrap_or("").to_string()
-    } else {
-        // The file is not in the index, so start with empty content
-        String::new()
-    };
+    // 2. Read the HEAD content as the stable baseline for rebuilding the desired
+    // staged state from the full working diff selection.
+    let head_content = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("show")
+        .arg(format!("HEAD:./{}", file_path))
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+        .unwrap_or_default();
 
     // 3. Read the current working directory contents
     let full_path = Path::new(&path).join(&file_path);
@@ -145,8 +258,8 @@ pub fn git_stage_lines(
         String::new()
     };
 
-    // 4. Get the diff between the index and the working directory
-    let diff_hunks = get_index_working_diff(&repo, &file_path)?;
+    // 4. Get the full diff between HEAD and the working directory
+    let diff_hunks = get_file_diff_hunks(path.clone(), file_path.clone(), 3)?;
 
     // 5. Parse the selected lines (hunks: { hunkIdx: [lineIdx, ...], ... })
     let mut selected_lines = std::collections::HashMap::new();
@@ -169,20 +282,20 @@ pub fn git_stage_lines(
     }
 
     // 6. Build the new staged content by applying the partial diff
-    let index_lines: Vec<&str> = index_content.lines().collect();
+    let head_lines: Vec<&str> = head_content.lines().collect();
     let working_lines: Vec<&str> = working_content.lines().collect();
 
     let mut new_staged_lines = Vec::new();
-    let mut index_line_idx = 0;
+    let mut head_line_idx = 0;
     let mut working_line_idx = 0;
 
     for (hunk_idx, hunk) in diff_hunks.iter().enumerate() {
         // Add context lines before the hunk when present
-        while index_line_idx < hunk.old_start.saturating_sub(1)
-            && index_line_idx < index_lines.len()
+        while head_line_idx < hunk.old_start.saturating_sub(1)
+            && head_line_idx < head_lines.len()
         {
-            new_staged_lines.push(index_lines[index_line_idx].to_string());
-            index_line_idx += 1;
+            new_staged_lines.push(head_lines[head_line_idx].to_string());
+            head_line_idx += 1;
             working_line_idx += 1;
         }
 
@@ -195,45 +308,37 @@ pub fn git_stage_lines(
 
             match line.kind {
                 DiffLineKind::Context => {
-                    // Context line: always include it from the index
-                    if index_line_idx < index_lines.len() {
-                        new_staged_lines.push(index_lines[index_line_idx].to_string());
+                    if head_line_idx < head_lines.len() {
+                        new_staged_lines.push(head_lines[head_line_idx].to_string());
                     }
-                    index_line_idx += 1;
+                    head_line_idx += 1;
                     working_line_idx += 1;
                 }
                 DiffLineKind::Del => {
-                    // Deleted line
                     if is_selected {
-                        // If selected, omit it (do not include it in staged)
-                        index_line_idx += 1;
+                        head_line_idx += 1;
                     } else {
-                        // If not selected, keep it in staged
-                        if index_line_idx < index_lines.len() {
-                            new_staged_lines.push(index_lines[index_line_idx].to_string());
+                        if head_line_idx < head_lines.len() {
+                            new_staged_lines.push(head_lines[head_line_idx].to_string());
                         }
-                        index_line_idx += 1;
+                        head_line_idx += 1;
                     }
                 }
                 DiffLineKind::Add => {
-                    // Added line
                     if is_selected {
-                        // If selected, include it in staged
                         if working_line_idx < working_lines.len() {
                             new_staged_lines.push(working_lines[working_line_idx].to_string());
                         }
                     }
-                    // Always advance in the working directory
                     working_line_idx += 1;
                 }
             }
         }
     }
 
-    // Add the remaining lines from the index
-    while index_line_idx < index_lines.len() {
-        new_staged_lines.push(index_lines[index_line_idx].to_string());
-        index_line_idx += 1;
+    while head_line_idx < head_lines.len() {
+        new_staged_lines.push(head_lines[head_line_idx].to_string());
+        head_line_idx += 1;
     }
 
     // 7. Build the final content

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useFileHunksStore } from "../store/hunks";
 import { useStagedLinesStore } from "../store/staging";
@@ -54,6 +54,7 @@ interface DiffViewerProps {
    * Example: <DiffViewer fileActionsBar={<MyBar filePath=... ... />} ... />
    */
   fileActionsBar?: React.ReactNode;
+  onWorkingTreeStageChange?: () => Promise<void> | void;
 }
 
 const CONTEXT_DEFAULT = 3;
@@ -64,6 +65,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   sha,
   context = CONTEXT_DEFAULT,
   onFileActionsData,
+  onWorkingTreeStageChange,
 }) => {
   // Local state for hunks when sha is defined
   const [localHunks, setLocalHunks] = useState<DiffHunk[]>([]);
@@ -86,6 +88,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
+  const syncInFlightRef = useRef(false);
   // Read hunks from the global store only when there is no sha
   const { hunks: storeHunks } = useFileHunksStore();
   const hunks = sha ? localHunks : storeHunks;
@@ -98,6 +101,41 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     );
   const canSelectLines = canStage && !isDeletedFile;
   const [commitBarOpen, setCommitBarOpen] = useState(false);
+
+  const syncLineSelection = async (
+    nextSelection?: Record<number, Set<number>>,
+  ) => {
+    if (!canSelectLines || syncInFlightRef.current) return;
+
+    syncInFlightRef.current = true;
+    setError(null);
+
+    try {
+      const sourceSelection =
+        nextSelection ??
+        ((useStagedLinesStore.getState().stagedLines[filePath] || {}) as Record<
+          number,
+          Set<number>
+        >);
+
+      const hunksPayload: Record<number, number[]> = {};
+      Object.entries(sourceSelection).forEach(([hunkIdx, lineSet]) => {
+        if (!(lineSet instanceof Set) || lineSet.size === 0) return;
+        hunksPayload[Number(hunkIdx)] = Array.from(lineSet).sort((a, b) => a - b);
+      });
+
+      await invoke("git_stage_lines", {
+        path: repoPath,
+        filePath,
+        hunks: hunksPayload,
+      });
+      await onWorkingTreeStageChange?.();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  };
 
   // Clear extra context when the file or commit changes
   useEffect(() => {
@@ -243,31 +281,42 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       prevSet.add(lineIdx);
     }
     setStagedLinesGlobal(filePath, hunkIdx, prevSet);
+    return prevSet;
   };
 
   // Handler to stage or deselect a contiguous block within a hunk
-  const handleStageBlock = (hunkIdx: number, lineIdxs: number[]) => {
+  const handleStageBlock = async (hunkIdx: number, lineIdxs: number[]) => {
     if (!canSelectLines) return;
     const currentStaged = stagedLines[hunkIdx] || new Set<number>();
     const areAllLinesStaged = lineIdxs.every((lineIdx) =>
       currentStaged.has(lineIdx)
     );
 
+    const nextSelection = {
+      ...(useStagedLinesStore.getState().stagedLines[filePath] || {}),
+    } as Record<number, Set<number>>;
+
     if (areAllLinesStaged) {
       const updated = new Set(currentStaged);
       lineIdxs.forEach((lineIdx) => updated.delete(lineIdx));
       setStagedLinesGlobal(filePath, hunkIdx, updated);
-    } else {
-      const updated = new Set(currentStaged);
-      lineIdxs.forEach((lineIdx) => updated.add(lineIdx));
-      setStagedLinesGlobal(filePath, hunkIdx, updated);
+      nextSelection[hunkIdx] = updated;
+      await syncLineSelection(nextSelection);
+      return;
     }
+
+    const updated = new Set(currentStaged);
+    lineIdxs.forEach((lineIdx) => updated.add(lineIdx));
+    setStagedLinesGlobal(filePath, hunkIdx, updated);
+    nextSelection[hunkIdx] = updated;
+    await syncLineSelection(nextSelection);
   };
 
   // Global mouseup handler to finish a drag gesture
   useEffect(() => {
     if (!isDragging) return;
     const handleUp = () => {
+      void syncLineSelection();
       setIsDragging(false);
       setDragHunkIdx(null);
       setDragMode(null);
@@ -287,7 +336,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setIsDragging(true);
     setDragHunkIdx(hunkIdx);
     setDragMode(isStaged ? "remove" : "add");
-    // Select or deselect the initial line
     handleToggleLineStage(hunkIdx, lineIdx);
   };
 

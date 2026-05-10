@@ -162,12 +162,14 @@ pub fn get_file_diff_hunks(
         return Ok(vec![hunk]);
     }
 
-    // Tracked file: get the regular diff
+    // Tracked file: get the full working diff against HEAD so staged selections
+    // remain visible and reversible after refresh.
     let output = Command::new("git")
         .arg("-C")
         .arg(&path)
         .arg("diff")
         .arg(format!("-U{}", context))
+        .arg("HEAD")
         .arg("--")
         .arg(&file_path)
         .output()

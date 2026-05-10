@@ -1,5 +1,6 @@
-import ReactDOM from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import ReactDOM from "react-dom";
 import { useStagedLinesStore } from "../store/staging";
 import { DiffLine, FileChange, FileChangeWithHunks } from "../types/git";
 import {
@@ -53,6 +54,8 @@ interface ChangesExplorerProps {
   sectionMode?: SectionMode;
   expandedState?: Record<string, boolean>;
   onExpandedStateChange?: (expanded: Record<string, boolean>) => void;
+  repoPath?: string;
+  onImmediateStageChange?: () => Promise<void> | void;
 }
 
 const ALLOWED_STATUSES = [
@@ -113,9 +116,7 @@ function partitionFiles(
   sectionMode: SectionMode,
 ) {
   if (sectionMode === "single") {
-    return files.length > 0
-      ? [{ name: "Tracked" as const, files }]
-      : [];
+    return files.length > 0 ? [{ name: "Tracked" as const, files }] : [];
   }
 
   const tracked: ChangesExplorerFile[] = [];
@@ -184,10 +185,7 @@ function buildCompressedTree(files: ChangesExplorerFile[]): TreeNode[] {
         let path = entry.path;
         let children = folderChildren;
 
-        while (
-          children.length === 1 &&
-          children[0].kind === "folder"
-        ) {
+        while (children.length === 1 && children[0].kind === "folder") {
           const child = children[0];
           name = `${name}/${child.name}`;
           path = child.path;
@@ -225,22 +223,42 @@ function fileMatchesSearch(file: ChangesExplorerFile, search: string) {
 
 function getStatusIcon(file: ChangesExplorerFile) {
   if (isUntrackedFile(file)) {
-    return <IconPlus size={16} className="h-4 w-4 flex-shrink-0 text-lime-400" />;
+    return (
+      <IconPlus size={16} className="h-4 w-4 flex-shrink-0 text-lime-400" />
+    );
   }
 
   switch (file.status) {
     case "added":
-      return <IconPlus size={16} className="h-4 w-4 flex-shrink-0 text-green-500" />;
+      return (
+        <IconPlus size={16} className="h-4 w-4 flex-shrink-0 text-green-500" />
+      );
     case "deleted":
-      return <IconMinus size={16} className="h-4 w-4 flex-shrink-0 text-red-500" />;
+      return (
+        <IconMinus size={16} className="h-4 w-4 flex-shrink-0 text-red-500" />
+      );
     case "modified":
-      return <IconPoint size={16} className="h-4 w-4 flex-shrink-0 text-yellow-500" />;
+      return (
+        <IconPoint
+          size={16}
+          className="h-4 w-4 flex-shrink-0 text-yellow-500"
+        />
+      );
     case "renamed":
-      return <IconPencil size={16} className="h-4 w-4 flex-shrink-0 text-blue-500" />;
+      return (
+        <IconPencil size={16} className="h-4 w-4 flex-shrink-0 text-blue-500" />
+      );
     case "copied":
-      return <IconCopy size={16} className="h-4 w-4 flex-shrink-0 text-purple-500" />;
+      return (
+        <IconCopy size={16} className="h-4 w-4 flex-shrink-0 text-purple-500" />
+      );
     case "typeChanged":
-      return <IconExchange size={16} className="h-4 w-4 flex-shrink-0 text-orange-500" />;
+      return (
+        <IconExchange
+          size={16}
+          className="h-4 w-4 flex-shrink-0 text-orange-500"
+        />
+      );
     default:
       return (
         <IconQuestionMark
@@ -271,6 +289,21 @@ function buildAllStageableLineMap(file: ChangesExplorerFile) {
   return allHunks;
 }
 
+function serializeLineSelection(
+  selection: Record<number, Set<number>> | undefined,
+): Record<number, number[]> {
+  const hunks: Record<number, number[]> = {};
+
+  if (!selection) return hunks;
+
+  Object.entries(selection).forEach(([hunkIdx, lineSet]) => {
+    if (!(lineSet instanceof Set) || lineSet.size === 0) return;
+    hunks[Number(hunkIdx)] = Array.from(lineSet).sort((a, b) => a - b);
+  });
+
+  return hunks;
+}
+
 function ChangesExplorer({
   files,
   selectedPath,
@@ -285,11 +318,16 @@ function ChangesExplorer({
   sectionMode = "tracked-untracked",
   expandedState,
   onExpandedStateChange,
+  repoPath,
+  onImmediateStageChange,
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
-  const [localExpanded, setLocalExpanded] = useState<Record<string, boolean>>({});
+  const [localExpanded, setLocalExpanded] = useState<Record<string, boolean>>(
+    {},
+  );
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -320,6 +358,8 @@ function ChangesExplorer({
   );
   const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
   const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
+  const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
+  const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
 
   const normalizedFiles = useMemo(() => normalizeFiles(files), [files]);
   const filteredFiles = useMemo(
@@ -468,27 +508,93 @@ function ChangesExplorer({
         : ("unchecked" as const);
     }
 
+    if (file.status === "deleted" && isWholeFileStaged(file.path)) {
+      return "checked" as const;
+    }
+
     if (stagedCount === 0) return "unchecked" as const;
+    if (totalStageable === 0) return "checked" as const;
     if (stagedCount === totalStageable && totalStageable > 0) {
       return "checked" as const;
     }
     return "indeterminate" as const;
   };
 
-  const toggleFileSelection = (file: ChangesExplorerFile) => {
-    const checkboxState = getCheckboxState(file);
+  const toggleFileSelection = async (file: ChangesExplorerFile) => {
+    if (!repoPath) return;
+    setActionError(null);
 
-    if (isUntrackedFile(file)) {
-      setStagedNewFile(file.path, checkboxState !== "checked");
-      return;
+    try {
+      const checkboxState = getCheckboxState(file);
+
+      if (isUntrackedFile(file)) {
+        if (checkboxState === "checked") {
+          await invoke("git_unstage_file", {
+            path: repoPath,
+            filePath: file.path,
+          });
+          setStagedNewFile(file.path, false);
+        } else {
+          await invoke("git_add_file", { path: repoPath, filePath: file.path });
+          setStagedNewFile(file.path, true);
+        }
+        await onImmediateStageChange?.();
+        return;
+      }
+
+      if (file.status === "deleted") {
+        if (checkboxState === "checked") {
+          await invoke("git_unstage_file", {
+            path: repoPath,
+            filePath: file.path,
+          });
+          clearStagedLinesForFile(file.path);
+          setWholeFileStaged(file.path, false);
+        } else {
+          await invoke("git_add_file", { path: repoPath, filePath: file.path });
+          setAllStagedLinesForFile(file.path, buildAllStageableLineMap(file));
+          setWholeFileStaged(file.path, true);
+        }
+        await onImmediateStageChange?.();
+        return;
+      }
+
+      if (checkboxState === "checked") {
+        if ("hunks" in file && file.hunks.length > 0) {
+          await invoke("git_stage_lines", {
+            path: repoPath,
+            filePath: file.path,
+            hunks: {},
+          });
+        } else {
+          await invoke("git_unstage_file", {
+            path: repoPath,
+            filePath: file.path,
+          });
+        }
+        clearStagedLinesForFile(file.path);
+        await onImmediateStageChange?.();
+        return;
+      }
+
+      const nextSelection = buildAllStageableLineMap(file);
+      await invoke("git_stage_lines", {
+        path: repoPath,
+        filePath: file.path,
+        hunks: serializeLineSelection(
+          Object.fromEntries(
+            Object.entries(nextSelection).map(([hunkIdx, lineIdxs]) => [
+              Number(hunkIdx),
+              new Set(lineIdxs),
+            ]),
+          ) as Record<number, Set<number>>,
+        ),
+      });
+      setAllStagedLinesForFile(file.path, nextSelection);
+      await onImmediateStageChange?.();
+    } catch (error) {
+      setActionError(String(error));
     }
-
-    if (checkboxState !== "checked") {
-      setAllStagedLinesForFile(file.path, buildAllStageableLineMap(file));
-      return;
-    }
-
-    clearStagedLinesForFile(file.path);
   };
 
   const renderCheckbox = (file: ChangesExplorerFile) => {
@@ -505,7 +611,7 @@ function ChangesExplorer({
         }`}
         onClick={(e) => {
           e.stopPropagation();
-          toggleFileSelection(file);
+          void toggleFileSelection(file);
         }}
         aria-checked={
           checkboxState === "indeterminate"
@@ -545,7 +651,9 @@ function ChangesExplorer({
           <div className="flex min-w-0 items-baseline gap-2">
             <span className="truncate font-medium">{fileName}</span>
             {parentPath ? (
-              <span className="truncate text-muted-foreground">{parentPath}</span>
+              <span className="truncate text-muted-foreground">
+                {parentPath}
+              </span>
             ) : null}
           </div>
         </div>
@@ -608,7 +716,9 @@ function ChangesExplorer({
           onClick={() => onSelectFile(node.file)}
         >
           {getStatusIcon(node.file)}
-          <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {node.name}
+          </span>
           {!isUntrackedFile(node.file) ? (
             <div className="ml-3 flex w-16 flex-shrink-0 items-center justify-end gap-2 text-xs">
               <span className="min-w-0 text-right text-lime-400">
@@ -624,10 +734,7 @@ function ChangesExplorer({
       );
     });
 
-  const renderSection = (
-    name: SectionName,
-    content: React.ReactNode,
-  ) => (
+  const renderSection = (name: SectionName, content: React.ReactNode) => (
     <section key={name} className="pb-2">
       {sectionMode === "tracked-untracked" ? (
         <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-zinc-500/90">
@@ -653,51 +760,55 @@ function ChangesExplorer({
     "__separator__",
   ];
 
-  const contextMenu = contextMenuOpen && menuPos
-    ? ReactDOM.createPortal(
-        <div
-          ref={menuRef}
-          className="fixed z-[100001] min-w-[220px] rounded border border-zinc-700 bg-zinc-900/95 py-1 text-sm text-zinc-200 shadow-lg"
-          style={{ left: menuPos.x, top: menuPos.y }}
-        >
-          {surface === "modal"
-            ? modalMenuItems.map((item, index) =>
-                item === "__separator__" ? (
-                  <div key={`separator-${index}`} className="my-1 border-t border-zinc-700" />
-                ) : (
-                  <button
-                    key={item}
-                    type="button"
-                    className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
-                    disabled
-                  >
-                    <span>{item}</span>
-                  </button>
-                ),
-              )
-            : null}
-          {(["flat", "tree"] as ChangesExplorerViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors ${
-                viewMode === mode
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-200 hover:bg-zinc-800"
-              }`}
-              onClick={() => {
-                onViewModeChange(mode);
-                setContextMenuOpen(false);
-              }}
-            >
-              <span>{mode === "flat" ? "Flat View" : "Tree View"}</span>
-              {viewMode === mode ? <IconCheck size={14} /> : null}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )
-    : null;
+  const contextMenu =
+    contextMenuOpen && menuPos
+      ? ReactDOM.createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[100001] min-w-[220px] rounded border border-zinc-700 bg-zinc-900/95 py-1 text-sm text-zinc-200 shadow-lg"
+            style={{ left: menuPos.x, top: menuPos.y }}
+          >
+            {surface === "modal"
+              ? modalMenuItems.map((item, index) =>
+                  item === "__separator__" ? (
+                    <div
+                      key={`separator-${index}`}
+                      className="my-1 border-t border-zinc-700"
+                    />
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+                      disabled
+                    >
+                      <span>{item}</span>
+                    </button>
+                  ),
+                )
+              : null}
+            {(["flat", "tree"] as ChangesExplorerViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors ${
+                  viewMode === mode
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-200 hover:bg-zinc-800"
+                }`}
+                onClick={() => {
+                  onViewModeChange(mode);
+                  setContextMenuOpen(false);
+                }}
+              >
+                <span>{mode === "flat" ? "Flat View" : "Tree View"}</span>
+                {viewMode === mode ? <IconCheck size={14} /> : null}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div
@@ -718,7 +829,9 @@ function ChangesExplorer({
               type="button"
               className="rounded p-1 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
               onClick={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const rect = (
+                  e.currentTarget as HTMLElement
+                ).getBoundingClientRect();
                 openContextMenu(rect.left, rect.bottom + 4);
               }}
               aria-label="Open changes menu"
@@ -751,6 +864,11 @@ function ChangesExplorer({
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {actionError ? (
+          <div className="border-b border-rose-900/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+            {actionError}
+          </div>
+        ) : null}
         {sections.length === 0 ? (
           <div className="px-4 py-6 text-center text-sm text-muted-foreground">
             No files found

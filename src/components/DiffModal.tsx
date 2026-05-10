@@ -27,6 +27,7 @@ interface DiffModalProps {
   changesViewMode?: ChangesExplorerViewMode;
   onChangesViewModeChange?: (mode: ChangesExplorerViewMode) => void;
   sectionMode?: DiffModalSectionMode;
+  onWorkingTreeStageChange?: () => Promise<void> | void;
 }
 
 const DiffModal = ({
@@ -40,6 +41,7 @@ const DiffModal = ({
   changesViewMode = "tree",
   onChangesViewModeChange,
   sectionMode = "tracked-untracked",
+  onWorkingTreeStageChange,
 }: DiffModalProps) => {
   const [selectedPath, setSelectedPath] = useState(initialFile.path);
   const [internalChangesViewMode, setInternalChangesViewMode] =
@@ -175,6 +177,8 @@ const DiffModal = ({
               showHeader={sha === undefined}
               autoFocusSearch={true}
               sectionMode={sectionMode}
+              repoPath={sha === undefined ? effectiveRepoPath : undefined}
+              onImmediateStageChange={sha === undefined ? onWorkingTreeStageChange : undefined}
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
@@ -189,6 +193,9 @@ const DiffModal = ({
                   repoPath={effectiveRepoPath}
                   filePath={selected.path}
                   sha={sha}
+                  onWorkingTreeStageChange={
+                    sha === undefined ? onWorkingTreeStageChange : undefined
+                  }
                 />
               ) : (
                 <div className="text-red-400">Repository path or file not found</div>

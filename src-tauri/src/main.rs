@@ -24,6 +24,8 @@ fn main() {
             git::get_commit_file_diff,
             git::get_working_directory_changes,
             git::git_add_file,
+            git::git_unstage_file,
+            git::git_has_staged_changes,
             git::git_stage_lines,
             git::git_commit,
             git::git_push,
