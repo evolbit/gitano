@@ -6,7 +6,7 @@ import {
   PhysicalSize,
   getCurrentWindow,
 } from "@tauri-apps/api/window";
-import { MantineProvider } from "@mantine/core";
+import { MantineProvider, createTheme } from "@mantine/core";
 import i18n from "i18next";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -62,6 +62,14 @@ i18n.use(initReactI18next).init({
         },
       },
     },
+  },
+});
+
+const theme = createTheme({
+  fontFamily: '"IBM Plex Sans", sans-serif',
+  fontFamilyMonospace: '"IBM Plex Mono", monospace',
+  headings: {
+    fontFamily: '"IBM Plex Sans", sans-serif',
   },
 });
 
@@ -156,7 +164,9 @@ async function bootstrap() {
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <MantineProvider defaultColorScheme="dark">
+      <MantineProvider
+        theme={theme}
+        defaultColorScheme="dark">
         <I18nextProvider i18n={i18n}>
           <App />
         </I18nextProvider>

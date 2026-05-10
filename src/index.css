@@ -1,7 +1,58 @@
 @import "@mantine/core/styles.layer.css";
 @import "tailwindcss";
 
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/IBMPlexSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/IBMPlexSans-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/IBMPlexMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/IBMPlexMono-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/IBMPlexMono-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
+  --font-sans: "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
   --color-background: oklch(0.24 0 0); /* gris oscuro (oklch) */
   --color-background-emphasis: oklch(0.2 0 0); /* gris más oscuro (oklch) */
   --color-foreground: oklch(0.85 0 0); /* gris claro (oklch) */
@@ -35,12 +86,15 @@
 html,
 body,
 #root {
-  /* background-color: hsl(var(--color-background)); */
-  /* color: hsl(var(--color-foreground)); */
   height: 100%;
   width: 100%;
 }
 
 html {
-  font-size: 15px;
+  font-size: 16px;
+  --diff-font-size: 13px;
+}
+
+body {
+  font-family: var(--font-sans);
 }

@@ -313,7 +313,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   };
 
   return (
-    <div className="bg-background-emphasis h-full flex flex-col font-mono text-sm">
+    <div className="bg-background-emphasis h-full flex flex-col text-sm">
       {/* Scrollable diff area */}
       <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
         {loading && <div className="text-blue-400">Loading diff...</div>}

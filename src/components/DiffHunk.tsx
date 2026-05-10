@@ -74,7 +74,11 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
       onMouseLeave={() => setHoveredHunkIdx(null)}>
       {/* Hunk header with secondary actions */}
       <div className="flex items-center justify-between px-4 py-1 bg-zinc-800 gap-2">
-        <span className="text-purple-300 text-xs font-mono">{hunk.header}</span>
+        <span
+          className="text-purple-300 font-mono"
+          style={{ fontSize: "var(--diff-font-size)" }}>
+          {hunk.header}
+        </span>
         {canStage && (
           <div className="flex items-center gap-2 ml-auto">
             {hunk.is_new_file ? (
@@ -287,8 +291,9 @@ const DiffLineRow: React.FC<{
   else baseColor = "text-zinc-200";
   return (
     <div
-      className={`flex items-center px-4 ${baseColor} text-xs font-mono group transition-colors duration-100`}
+      className={`flex items-center px-4 ${baseColor} font-mono group transition-colors duration-100`}
       style={{
+        fontSize: "var(--diff-font-size)",
         fontVariantNumeric: "tabular-nums",
         cursor: showLineGutter ? "pointer" : undefined,
       }}
