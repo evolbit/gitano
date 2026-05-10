@@ -558,6 +558,53 @@ function ChangesExplorer({
     return "indeterminate" as const;
   };
 
+  const areAllFilesFullySelected =
+    showFileCheckboxes &&
+    normalizedFiles.length > 0 &&
+    normalizedFiles.every((file) => getCheckboxState(file) === "checked");
+
+  const applyStageAllOptimistic = (targetFiles: ChangesExplorerFile[]) => {
+    targetFiles.forEach((file) => {
+      if (isUntrackedFile(file)) {
+        setStagedNewFile(file.path, true);
+        return;
+      }
+
+      setLineSelectionForFile(file.path, {});
+      setWholeFileStaged(file.path, true);
+    });
+  };
+
+  const applyUnstageAllOptimistic = (targetFiles: ChangesExplorerFile[]) => {
+    targetFiles.forEach((file) => {
+      clearStagedLinesForFile(file.path);
+    });
+  };
+
+  const toggleAllFilesSelection = async () => {
+    if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0) return;
+    setActionError(null);
+
+    const previousStagedLines = cloneStagedLinesState(
+      useStagedLinesStore.getState().stagedLines,
+    );
+
+    try {
+      if (areAllFilesFullySelected) {
+        applyUnstageAllOptimistic(normalizedFiles);
+        await invoke("git_unstage_all", { path: repoPath });
+      } else {
+        applyStageAllOptimistic(normalizedFiles);
+        await invoke("git_stage_all", { path: repoPath });
+      }
+
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      useStagedLinesStore.setState({ stagedLines: previousStagedLines });
+      setActionError(String(error));
+    }
+  };
+
   const toggleFileSelection = async (file: ChangesExplorerFile) => {
     if (!repoPath) return;
     setActionError(null);
@@ -882,10 +929,17 @@ function ChangesExplorer({
             </button>
             <button
               type="button"
-              className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-zinc-400"
-              disabled
+              className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                showFileCheckboxes && repoPath && normalizedFiles.length > 0
+                  ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                  : "bg-zinc-800 text-zinc-400"
+              }`}
+              onClick={() => {
+                void toggleAllFilesSelection();
+              }}
+              disabled={!showFileCheckboxes || !repoPath || normalizedFiles.length === 0}
             >
-              Stage All
+              {areAllFilesFullySelected ? "Unstage All" : "Stage All"}
             </button>
           </div>
         </div>

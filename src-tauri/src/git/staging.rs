@@ -153,6 +153,26 @@ pub fn git_add_file(path: String, file_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn git_stage_all(path: String) -> Result<(), String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("add")
+        .arg("-A")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git add -A failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+#[tauri::command]
 pub fn git_unstage_file(path: String, file_path: String) -> Result<(), String> {
     let restore_output = Command::new("git")
         .arg("-C")
@@ -202,6 +222,43 @@ pub fn git_unstage_file(path: String, file_path: String) -> Result<(), String> {
         String::from_utf8_lossy(&restore_output.stderr),
         String::from_utf8_lossy(&reset_output.stderr),
         String::from_utf8_lossy(&remove_cached_output.stderr)
+    ))
+}
+
+#[tauri::command]
+pub fn git_unstage_all(path: String) -> Result<(), String> {
+    let restore_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("restore")
+        .arg("--staged")
+        .arg("--")
+        .arg(".")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if restore_output.status.success() {
+        return Ok(());
+    }
+
+    let reset_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("reset")
+        .arg("HEAD")
+        .arg("--")
+        .arg(".")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if reset_output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git unstage all failed:\nrestore: {}\nreset: {}",
+        String::from_utf8_lossy(&restore_output.stderr),
+        String::from_utf8_lossy(&reset_output.stderr)
     ))
 }
 
