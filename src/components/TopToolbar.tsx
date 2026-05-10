@@ -22,6 +22,79 @@ import {
   IconTerminal2,
 } from "./icons";
 
+const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
+
+type ToolbarDropdownProps = {
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  children: React.ReactNode;
+};
+
+const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
+  searchValue,
+  onSearchChange,
+  children,
+}) => (
+  <Menu.Dropdown className="p-0 bg-background border border-zinc-700 rounded-b transition-colors overflow-hidden">
+    <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t bg-background">
+      <TextInput
+        value={searchValue}
+        onChange={(e) => onSearchChange(e.currentTarget.value)}
+        placeholder="Search"
+        leftSection={
+          <IconSearch
+            size={16}
+            className="text-zinc-400"
+          />
+        }
+        leftSectionPointerEvents="none"
+        leftSectionWidth={28}
+        size="xs"
+        classNames={{
+          input: "bg-background text-zinc-200 placeholder-zinc-400 pl-8",
+        }}
+        radius="md"
+        autoFocus
+      />
+    </div>
+    <div
+      className="overflow-y-auto overflow-x-hidden overscroll-contain"
+      style={{ maxHeight: TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT }}>
+      {children}
+    </div>
+  </Menu.Dropdown>
+);
+
+type ToolbarDropdownItemProps = {
+  label: string;
+  onClick: () => void;
+};
+
+const ToolbarDropdownItem: React.FC<ToolbarDropdownItemProps> = ({
+  label,
+  onClick,
+}) => (
+  <Menu.Item
+    className="px-4 py-2"
+    styles={{
+      item: {
+        overflow: "hidden",
+      },
+      itemLabel: {
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      },
+    }}
+    onClick={onClick}>
+    <Text
+      size="sm"
+      className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+      {label}
+    </Text>
+  </Menu.Item>
+);
+
 const TopToolbar: React.FC = () => {
   // Search state for dropdowns
   const [repoSearch, setRepoSearch] = useState("");
@@ -121,10 +194,9 @@ const TopToolbar: React.FC = () => {
                 />
                 <Text
                   size="sm"
-                  className="text-sm text-zinc-400 font-medium">
+                  className="text-sm text-zinc-400 font-medium truncate min-w-0 flex-1">
                   {repoPath ? getRepoName(repoPath) : "No repository"}
                 </Text>
-                <span className="flex-1" />
                 <HiChevronDown
                   className="text-zinc-400 h-6 w-6 flex items-center justify-center"
                   size={18}
@@ -132,41 +204,20 @@ const TopToolbar: React.FC = () => {
               </Box>
             </Stack>
           </Menu.Target>
-          <Menu.Dropdown className="p-0 bg-background border border-zinc-700 rounded-b transition-colors">
-            <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t">
-              <TextInput
-                value={repoSearch}
-                onChange={(e) => setRepoSearch(e.currentTarget.value)}
-                placeholder="Search"
-                leftSection={
-                  <IconSearch
-                    size={16}
-                    className="text-zinc-400"
-                  />
-                }
-                leftSectionPointerEvents="none"
-                leftSectionWidth={28}
-                size="xs"
-                classNames={{
-                  input:
-                    "bg-background text-zinc-200 placeholder-zinc-400 pl-8",
-                }}
-                radius="md"
-                autoFocus
-              />
-            </div>
+          <ToolbarDropdownBody
+            searchValue={repoSearch}
+            onSearchChange={setRepoSearch}>
             {filteredRepos.length === 0 && (
               <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
             )}
             {filteredRepos.map((t) => (
-              <Menu.Item
+              <ToolbarDropdownItem
                 key={t.id}
-                className="px-4 py-2"
-                onClick={() => handleRepoSelect(t.id)}>
-                <span className="text-sm">{getRepoName(t.repoPath)}</span>
-              </Menu.Item>
+                label={getRepoName(t.repoPath)}
+                onClick={() => handleRepoSelect(t.id)}
+              />
             ))}
-          </Menu.Dropdown>
+          </ToolbarDropdownBody>
         </Menu>
         {/* Branch dropdown with label */}
         <Menu
@@ -194,13 +245,12 @@ const TopToolbar: React.FC = () => {
                 />
                 <Text
                   size="sm"
-                  className="text-sm text-zinc-400 font-medium truncate">
+                  className="text-sm text-zinc-400 font-medium truncate min-w-0 flex-1">
                   {selectedBranch ||
                     (branchesLoading
                       ? "Loading..."
                       : branches[0] || "No branch")}
                 </Text>
-                <span className="flex-1" />
                 <HiChevronDown
                   className="text-zinc-400 h-6 w-6 flex items-center justify-center"
                   size={18}
@@ -208,29 +258,9 @@ const TopToolbar: React.FC = () => {
               </Box>
             </Stack>
           </Menu.Target>
-          <Menu.Dropdown className="p-0 bg-background border border-zinc-700 rounded-b transition-colors">
-            <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t">
-              <TextInput
-                value={branchSearch}
-                onChange={(e) => setBranchSearch(e.currentTarget.value)}
-                placeholder="Search"
-                leftSection={
-                  <IconSearch
-                    size={16}
-                    className="text-zinc-400"
-                  />
-                }
-                leftSectionPointerEvents="none"
-                leftSectionWidth={28}
-                size="xs"
-                classNames={{
-                  input:
-                    "bg-background text-zinc-200 placeholder-zinc-400 pl-8",
-                }}
-                radius="md"
-                autoFocus
-              />
-            </div>
+          <ToolbarDropdownBody
+            searchValue={branchSearch}
+            onSearchChange={setBranchSearch}>
             {branchesLoading && (
               <div className="px-4 py-2 text-zinc-400 text-sm">Loading...</div>
             )}
@@ -247,14 +277,13 @@ const TopToolbar: React.FC = () => {
                 </div>
               )}
             {filteredBranches.map((branch) => (
-              <Menu.Item
+              <ToolbarDropdownItem
                 key={branch}
-                className="px-4 py-2"
-                onClick={() => handleBranchSelect(branch)}>
-                <span className="text-sm">{branch}</span>
-              </Menu.Item>
+                label={branch}
+                onClick={() => handleBranchSelect(branch)}
+              />
             ))}
-          </Menu.Dropdown>
+          </ToolbarDropdownBody>
         </Menu>
       </Group>
       <Group
