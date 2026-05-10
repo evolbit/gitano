@@ -33,6 +33,8 @@ fn main() {
             git::git_stage_lines,
             git::trash_untracked_file,
             git::git_commit,
+            git::git_fetch,
+            git::git_pull,
             git::git_push,
         ])
         .run(tauri::generate_context!())

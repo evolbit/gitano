@@ -4,6 +4,11 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
+export type PullStrategy =
+  | "fetch-all"
+  | "pull-ff-if-possible"
+  | "pull-ff-only"
+  | "pull-rebase";
 
 export interface WindowBoundsState {
   width: number;
@@ -25,7 +30,9 @@ export interface RepoWorkspaceState {
 interface WorkspaceUiStore {
   window: WindowBoundsState;
   repoStateByPath: Record<string, RepoWorkspaceState>;
+  pullStrategy: PullStrategy;
   setWindowBounds: (bounds: Partial<WindowBoundsState>) => void;
+  setPullStrategy: (strategy: PullStrategy) => void;
   updateRepoState: (repoPath: string, data: Partial<RepoWorkspaceState>) => void;
   setLeftAccordionOpen: (repoPath: string, value: string[]) => void;
   setBranchTreeExpanded: (
@@ -52,6 +59,8 @@ export const DEFAULT_WINDOW_BOUNDS: WindowBoundsState = {
   width: REPO_LAYOUT.window.width,
   height: REPO_LAYOUT.window.height,
 };
+
+export const DEFAULT_PULL_STRATEGY: PullStrategy = "pull-ff-if-possible";
 
 export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   leftAccordionOpen: ["changes"],
@@ -80,11 +89,13 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
   persist(
     (set, get) => ({
       window: DEFAULT_WINDOW_BOUNDS,
+      pullStrategy: DEFAULT_PULL_STRATEGY,
       repoStateByPath: {},
       setWindowBounds: (bounds) =>
         set((state) => ({
           window: { ...state.window, ...bounds },
         })),
+      setPullStrategy: (strategy) => set({ pullStrategy: strategy }),
       updateRepoState: (repoPath, data) =>
         set((state) => ({
           repoStateByPath: {
@@ -115,6 +126,7 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
       storage: createJSONStorage(() => tauriStorage),
       partialize: (state) => ({
         window: state.window,
+        pullStrategy: state.pullStrategy,
         repoStateByPath: state.repoStateByPath,
       }),
       skipHydration: true,
