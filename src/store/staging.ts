@@ -17,6 +17,10 @@ export type StagedLinesState = {
     filePath: string,
     hunks: { [hunkIdx: number]: number[] }
   ) => void;
+  setLineSelectionForFile: (
+    filePath: string,
+    selection: { [hunkIdx: number]: Set<number> }
+  ) => void;
   clearStagedLinesForFile: (filePath: string) => void;
   clearAllStagedLines: () => void;
   setStagedNewFile: (filePath: string, value: boolean) => void;
@@ -49,6 +53,33 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
         ) as { [hunkIdx: number]: Set<number> },
       },
     })),
+  setLineSelectionForFile: (filePath, selection) =>
+    set((state) => {
+      const prev = state.stagedLines[filePath] || {};
+      const next: {
+        [hunkIdx: number]: Set<number>;
+        isNewFile?: boolean;
+        isWholeFileStaged?: boolean;
+      } = {};
+
+      if (prev.isNewFile) {
+        next.isNewFile = true;
+      }
+      if (prev.isWholeFileStaged) {
+        next.isWholeFileStaged = true;
+      }
+
+      Object.entries(selection).forEach(([hunkIdx, lines]) => {
+        next[Number(hunkIdx)] = new Set(lines);
+      });
+
+      return {
+        stagedLines: {
+          ...state.stagedLines,
+          [filePath]: next,
+        },
+      };
+    }),
   clearStagedLinesForFile: (filePath) =>
     set((state) => {
       const newStaged = { ...state.stagedLines };

@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Editable diff uses hierarchical staging selection
 The system SHALL present editable diff staging controls as a three-level hierarchy across file, block, and line selection.
@@ -36,27 +36,3 @@ The system SHALL allow users to select contiguous changed blocks independently w
 - **WHEN** the user toggles a block-level selection control while the diff viewer is in `Split` mode
 - **THEN** the system MUST apply that selection to the full logical block
 - **THEN** the selected state MUST appear across both the left and right rendered sides of that block when those sides exist
-
-### Requirement: File-level checkbox reflects partial selection state
-The system SHALL show file-level checked, unchecked, and indeterminate states in the left file list.
-
-#### Scenario: File is partially selected
-- **WHEN** some but not all selectable changes in a file are selected
-- **THEN** the file-level checkbox in the left panel MUST render an indeterminate state
-
-#### Scenario: File is fully selected or fully deselected
-- **WHEN** all selectable changes in a file are selected or none are selected
-- **THEN** the file-level checkbox MUST render the corresponding checked or unchecked state
-
-### Requirement: Existing staging behavior remains the source of truth
-The system SHALL preserve the existing staging semantics while exposing the hierarchical selection UI.
-
-#### Scenario: User toggles file, block, or line selection
-- **WHEN** the user interacts with the file, block, or line staging controls
-- **THEN** the existing staged-line selection model MUST continue to drive the resulting selection state
-- **THEN** this change MUST NOT require a new backend staging model
-
-#### Scenario: User stages a deleted working-tree file
-- **WHEN** the user stages or unstages a deleted working-tree file
-- **THEN** the file checkbox MUST reflect the file-level staged state
-- **THEN** the deleted file MUST NOT require block or line selection state to appear checked

@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useFileHunksStore } from "../store/hunks";
 import { useStagedLinesStore } from "../store/staging";
 import DiffHunk from "./DiffHunk";
 import FloatingCommitBar from "./FloatingCommitBar";
+
+export type DiffDisplayMode = "unified" | "split";
 
 // Types for backend data
 interface DiffLine {
@@ -55,6 +57,8 @@ interface DiffViewerProps {
    */
   fileActionsBar?: React.ReactNode;
   onWorkingTreeStageChange?: () => Promise<void> | void;
+  displayMode?: DiffDisplayMode;
+  onDisplayModeChange?: (mode: DiffDisplayMode) => void;
 }
 
 const CONTEXT_DEFAULT = 3;
@@ -66,6 +70,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   context = CONTEXT_DEFAULT,
   onFileActionsData,
   onWorkingTreeStageChange,
+  displayMode = "unified",
+  onDisplayModeChange,
 }) => {
   // Local state for hunks when sha is defined
   const [localHunks, setLocalHunks] = useState<DiffHunk[]>([]);
@@ -76,11 +82,26 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     Record<number, { above: DiffLine[]; below: DiffLine[] }>
   >({});
   // Global state for staged lines
-  const stagedLines = useStagedLinesStore(
-    useShallow((s) => s.stagedLines[filePath] || {})
-  );
   const setStagedLinesGlobal = useStagedLinesStore(
     useShallow((s) => s.setStagedLines)
+  );
+  const setLineSelectionForFile = useStagedLinesStore(
+    useShallow((s) => s.setLineSelectionForFile)
+  );
+  const setWholeFileStaged = useStagedLinesStore(
+    useShallow((s) => s.setWholeFileStaged)
+  );
+  const hasAnyStagedLines = useStagedLinesStore(
+    useShallow((s) => {
+      const fileSelection = s.stagedLines[filePath] || {};
+      return Object.values(fileSelection).some(
+        (value) =>
+          value === true || (value instanceof Set && value.size > 0)
+      );
+    })
+  );
+  const wholeFileStaged = useStagedLinesStore(
+    (s) => !!s.stagedLines[filePath]?.isWholeFileStaged
   );
   // Hunk hover state
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
@@ -89,6 +110,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
   const [dragMode, setDragMode] = useState<"add" | "remove" | null>(null);
   const syncInFlightRef = useRef(false);
+  const syncFrameRef = useRef<number | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Read hunks from the global store only when there is no sha
   const { hunks: storeHunks } = useFileHunksStore();
   const hunks = sha ? localHunks : storeHunks;
@@ -102,7 +125,39 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const canSelectLines = canStage && !isDeletedFile;
   const [commitBarOpen, setCommitBarOpen] = useState(false);
 
-  const syncLineSelection = async (
+  const buildStageableSelection = useCallback(
+    (excludedKeys?: Set<string>) => {
+      const selection: Record<number, Set<number>> = {};
+
+      hunks.forEach((hunk, hunkIdx) => {
+        const lineSelection = new Set<number>();
+        hunk.lines.forEach((line, lineIdx) => {
+          if (line.kind !== "Add" && line.kind !== "Del") return;
+          if (excludedKeys?.has(`${hunkIdx}:${lineIdx}`)) return;
+          lineSelection.add(lineIdx);
+        });
+        if (lineSelection.size > 0) {
+          selection[hunkIdx] = lineSelection;
+        }
+      });
+
+      return selection;
+    },
+    [hunks],
+  );
+
+  const scheduleWorkingTreeRefresh = useCallback(() => {
+    if (!onWorkingTreeStageChange) return;
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      void onWorkingTreeStageChange();
+    }, 120);
+  }, [onWorkingTreeStageChange]);
+
+  const syncLineSelection = useCallback(async (
     nextSelection?: Record<number, Set<number>>,
   ) => {
     if (!canSelectLines || syncInFlightRef.current) return;
@@ -129,13 +184,27 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         filePath,
         hunks: hunksPayload,
       });
-      await onWorkingTreeStageChange?.();
+      scheduleWorkingTreeRefresh();
     } catch (err) {
       setError(String(err));
     } finally {
       syncInFlightRef.current = false;
     }
-  };
+  }, [canSelectLines, filePath, repoPath, scheduleWorkingTreeRefresh]);
+
+  const scheduleSelectionSync = useCallback(
+    (nextSelection?: Record<number, Set<number>>) => {
+      if (syncFrameRef.current !== null) {
+        cancelAnimationFrame(syncFrameRef.current);
+      }
+
+      syncFrameRef.current = requestAnimationFrame(() => {
+        syncFrameRef.current = null;
+        void syncLineSelection(nextSelection);
+      });
+    },
+    [syncLineSelection],
+  );
 
   // Clear extra context when the file or commit changes
   useEffect(() => {
@@ -184,9 +253,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       });
     });
     const canRemove = onlyAdd || onlyDel;
-    const canStage = Object.values(stagedLines).some(
-      (set) => set instanceof Set && set.size > 0
-    );
+    const canStage = hasAnyStagedLines;
     const canDiscard = hunks.length > 0;
     onFileActionsData({
       filePath,
@@ -196,7 +263,9 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       canDiscard,
       canRemove,
       onStage: () => {
-        const staged = Object.entries(stagedLines).flatMap(([hunkIdx, set]) =>
+        const staged = Object.entries(
+          useStagedLinesStore.getState().stagedLines[filePath] || {}
+        ).flatMap(([hunkIdx, set]) =>
           set instanceof Set
             ? Array.from(set).map((lineIdx) => ({
                 hunkIdx: Number(hunkIdx),
@@ -213,7 +282,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         console.log("Remove file", filePath);
       },
     });
-  }, [filePath, hunks, stagedLines, onFileActionsData]);
+  }, [filePath, hasAnyStagedLines, hunks, onFileActionsData]);
 
   // Always compute modification counts
   let insertions = 0;
@@ -226,7 +295,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   });
 
   // Request more context above or below
-  const handleExpandContext = async (
+  const handleExpandContext = useCallback(async (
     hunkIdx: number,
     direction: ContextDirection,
     lines: number
@@ -267,13 +336,22 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     } catch (e) {
       setError(String(e));
     }
-  };
+  }, [context, extraContext, filePath, repoPath]);
 
   // Handler to select or deselect a line
-  const handleToggleLineStage = (hunkIdx: number, lineIdx: number) => {
+  const handleToggleLineStage = useCallback((hunkIdx: number, lineIdx: number) => {
     if (!canSelectLines) return;
-    const prevSet: Set<number> = stagedLines[hunkIdx]
-      ? new Set<number>(Array.from(stagedLines[hunkIdx] as Set<number>))
+    if (wholeFileStaged) {
+      const nextSelection = buildStageableSelection(
+        new Set([`${hunkIdx}:${lineIdx}`]),
+      );
+      setWholeFileStaged(filePath, false);
+      setLineSelectionForFile(filePath, nextSelection);
+      return nextSelection[hunkIdx];
+    }
+    const currentSelection = useStagedLinesStore.getState().stagedLines[filePath] || {};
+    const prevSet: Set<number> = currentSelection[hunkIdx]
+      ? new Set<number>(Array.from(currentSelection[hunkIdx] as Set<number>))
       : new Set<number>();
     if (prevSet.has(lineIdx)) {
       prevSet.delete(lineIdx);
@@ -282,12 +360,30 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     }
     setStagedLinesGlobal(filePath, hunkIdx, prevSet);
     return prevSet;
-  };
+  }, [
+    buildStageableSelection,
+    canSelectLines,
+    filePath,
+    setLineSelectionForFile,
+    setStagedLinesGlobal,
+    setWholeFileStaged,
+    wholeFileStaged,
+  ]);
 
   // Handler to stage or deselect a contiguous block within a hunk
-  const handleStageBlock = async (hunkIdx: number, lineIdxs: number[]) => {
+  const handleStageBlock = useCallback(async (hunkIdx: number, lineIdxs: number[]) => {
     if (!canSelectLines) return;
-    const currentStaged = stagedLines[hunkIdx] || new Set<number>();
+    if (wholeFileStaged) {
+      const nextSelection = buildStageableSelection(
+        new Set(lineIdxs.map((lineIdx) => `${hunkIdx}:${lineIdx}`)),
+      );
+      setWholeFileStaged(filePath, false);
+      setLineSelectionForFile(filePath, nextSelection);
+      scheduleSelectionSync(nextSelection);
+      return;
+    }
+    const currentSelection = useStagedLinesStore.getState().stagedLines[filePath] || {};
+    const currentStaged = (currentSelection[hunkIdx] as Set<number> | undefined) || new Set<number>();
     const areAllLinesStaged = lineIdxs.every((lineIdx) =>
       currentStaged.has(lineIdx)
     );
@@ -301,7 +397,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       lineIdxs.forEach((lineIdx) => updated.delete(lineIdx));
       setStagedLinesGlobal(filePath, hunkIdx, updated);
       nextSelection[hunkIdx] = updated;
-      await syncLineSelection(nextSelection);
+      scheduleSelectionSync(nextSelection);
       return;
     }
 
@@ -309,24 +405,45 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     lineIdxs.forEach((lineIdx) => updated.add(lineIdx));
     setStagedLinesGlobal(filePath, hunkIdx, updated);
     nextSelection[hunkIdx] = updated;
-    await syncLineSelection(nextSelection);
-  };
+    scheduleSelectionSync(nextSelection);
+  }, [
+    buildStageableSelection,
+    canSelectLines,
+    filePath,
+    scheduleSelectionSync,
+    setLineSelectionForFile,
+    setStagedLinesGlobal,
+    setWholeFileStaged,
+    wholeFileStaged,
+  ]);
 
   // Global mouseup handler to finish a drag gesture
   useEffect(() => {
     if (!isDragging) return;
     const handleUp = () => {
-      void syncLineSelection();
+      scheduleSelectionSync();
       setIsDragging(false);
       setDragHunkIdx(null);
       setDragMode(null);
     };
     window.addEventListener("mouseup", handleUp);
     return () => window.removeEventListener("mouseup", handleUp);
-  }, [isDragging]);
+  }, [isDragging, scheduleSelectionSync]);
+
+  useEffect(
+    () => () => {
+      if (syncFrameRef.current !== null) {
+        cancelAnimationFrame(syncFrameRef.current);
+      }
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   // Handler for mousedown on a line
-  const handleLineMouseDown = (
+  const handleLineMouseDown = useCallback((
     hunkIdx: number,
     lineIdx: number,
     isStageable: boolean,
@@ -337,10 +454,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     setDragHunkIdx(hunkIdx);
     setDragMode(isStaged ? "remove" : "add");
     handleToggleLineStage(hunkIdx, lineIdx);
-  };
+  }, [canSelectLines, handleToggleLineStage]);
 
   // Handler for mouseenter on a line during drag
-  const handleLineMouseEnter = (
+  const handleLineMouseEnter = useCallback((
     hunkIdx: number,
     lineIdx: number,
     isStageable: boolean,
@@ -358,12 +475,28 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     } else if (dragMode === "remove" && isStaged) {
       handleToggleLineStage(hunkIdx, lineIdx);
     }
-  };
+  }, [canSelectLines, dragHunkIdx, dragMode, handleToggleLineStage, isDragging]);
 
   return (
     <div className="bg-background-emphasis h-full flex flex-col text-sm">
+      <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-border bg-background">
+        {(["unified", "split"] as DiffDisplayMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={`rounded px-2 py-1 text-xs transition-colors ${
+              displayMode === mode
+                ? "bg-zinc-700 text-white"
+                : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            }`}
+            onClick={() => onDisplayModeChange?.(mode)}
+          >
+            {mode === "unified" ? "Unified" : "Split"}
+          </button>
+        ))}
+      </div>
       {/* Scrollable diff area */}
-      <div className={`flex-1 overflow-auto px-4${canStage ? " pb-40" : ""}`}>
+      <div className={`flex-1 overflow-auto px-4 pt-4${canStage ? " pb-40" : ""}`}>
         {loading && <div className="text-blue-400">Loading diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
         {hunks.length === 0 && !loading && !error && <div>No changes.</div>}
@@ -371,16 +504,17 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
           <DiffHunk
             key={idx}
             hunk={hunk}
+            filePath={filePath}
             hunkIdx={idx}
-            stagedLines={stagedLines}
-            extraContext={extraContext}
-            hoveredHunkIdx={hoveredHunkIdx}
+            extraContext={extraContext[idx]}
+            isHovered={hoveredHunkIdx === idx}
             setHoveredHunkIdx={setHoveredHunkIdx}
             handleExpandContext={handleExpandContext}
             handleLineMouseDown={handleLineMouseDown}
             handleLineMouseEnter={handleLineMouseEnter}
             handleStageBlock={handleStageBlock}
             canStage={canSelectLines}
+            displayMode={displayMode}
           />
         ))}
       </div>

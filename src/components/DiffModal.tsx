@@ -6,7 +6,7 @@ import { useRepoStore } from "../store/repo";
 import { useFileHunksStore } from "../store/hunks";
 import { FileChange, FileChangeWithHunks } from "../types/git";
 import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
-import DiffViewer from "./DiffViewer";
+import DiffViewer, { DiffDisplayMode } from "./DiffViewer";
 import { IconX } from "./icons";
 
 type DiffModalFile = FileChange | FileChangeWithHunks;
@@ -46,6 +46,8 @@ const DiffModal = ({
   const [selectedPath, setSelectedPath] = useState(initialFile.path);
   const [internalChangesViewMode, setInternalChangesViewMode] =
     useState<ChangesExplorerViewMode>(changesViewMode);
+  const [diffDisplayMode, setDiffDisplayMode] =
+    useState<DiffDisplayMode>("unified");
   const modalRef = useRef<HTMLDivElement>(null);
   const setFileHunks = useFileHunksStore((s) => s.setFileHunks);
 
@@ -196,6 +198,8 @@ const DiffModal = ({
                   onWorkingTreeStageChange={
                     sha === undefined ? onWorkingTreeStageChange : undefined
                   }
+                  displayMode={diffDisplayMode}
+                  onDisplayModeChange={setDiffDisplayMode}
                 />
               ) : (
                 <div className="text-red-400">Repository path or file not found</div>

@@ -104,11 +104,12 @@ function getAncestorFolderPaths(path: string) {
 
 function isUntrackedFile(file: ChangesExplorerFile) {
   if (file.status !== "added") return false;
-  if (file.insertions === 0 && file.deletions === 0) return true;
-  if ("hunks" in file) {
-    return file.hunks.length === 1 && file.hunks[0].is_new_file;
-  }
-  return false;
+  if (!("hunks" in file)) return false;
+
+  // In the working-changes explorer, any added file represents a new/untracked
+  // path relative to HEAD and should stay grouped under "Untracked", even after
+  // it has staged content and non-zero insertions.
+  return true;
 }
 
 function partitionFiles(
@@ -304,6 +305,22 @@ function serializeLineSelection(
   return hunks;
 }
 
+function cloneStagedLinesState(
+  stagedLines: ReturnType<typeof useStagedLinesStore.getState>["stagedLines"],
+) {
+  return Object.fromEntries(
+    Object.entries(stagedLines).map(([filePath, fileSelection]) => [
+      filePath,
+      Object.fromEntries(
+        Object.entries(fileSelection).map(([key, value]) => [
+          key,
+          value instanceof Set ? new Set(value) : value,
+        ]),
+      ),
+    ]),
+  ) as ReturnType<typeof useStagedLinesStore.getState>["stagedLines"];
+}
+
 function ChangesExplorer({
   files,
   selectedPath,
@@ -332,6 +349,7 @@ function ChangesExplorer({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const revealFrameRef = useRef<number | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expanded = expandedState ?? localExpanded;
 
   const setExpanded = (
@@ -350,16 +368,36 @@ function ChangesExplorer({
   };
 
   const stagedLines = useStagedLinesStore((s) => s.stagedLines);
-  const setAllStagedLinesForFile = useStagedLinesStore(
-    (s) => s.setAllStagedLinesForFile,
-  );
   const clearStagedLinesForFile = useStagedLinesStore(
     (s) => s.clearStagedLinesForFile,
+  );
+  const setLineSelectionForFile = useStagedLinesStore(
+    (s) => s.setLineSelectionForFile,
   );
   const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
   const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
   const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
   const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
+
+  useEffect(
+    () => () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleImmediateStageRefresh = () => {
+    if (!onImmediateStageChange) return;
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      void onImmediateStageChange();
+    }, 120);
+  };
 
   const normalizedFiles = useMemo(() => normalizeFiles(files), [files]);
   const filteredFiles = useMemo(
@@ -508,7 +546,7 @@ function ChangesExplorer({
         : ("unchecked" as const);
     }
 
-    if (file.status === "deleted" && isWholeFileStaged(file.path)) {
+    if (isWholeFileStaged(file.path)) {
       return "checked" as const;
     }
 
@@ -523,43 +561,46 @@ function ChangesExplorer({
   const toggleFileSelection = async (file: ChangesExplorerFile) => {
     if (!repoPath) return;
     setActionError(null);
+    const previousStagedLines = cloneStagedLinesState(
+      useStagedLinesStore.getState().stagedLines,
+    );
 
     try {
       const checkboxState = getCheckboxState(file);
 
       if (isUntrackedFile(file)) {
         if (checkboxState === "checked") {
+          setStagedNewFile(file.path, false);
           await invoke("git_unstage_file", {
             path: repoPath,
             filePath: file.path,
           });
-          setStagedNewFile(file.path, false);
         } else {
-          await invoke("git_add_file", { path: repoPath, filePath: file.path });
           setStagedNewFile(file.path, true);
+          await invoke("git_add_file", { path: repoPath, filePath: file.path });
         }
-        await onImmediateStageChange?.();
+        scheduleImmediateStageRefresh();
         return;
       }
 
       if (file.status === "deleted") {
         if (checkboxState === "checked") {
+          clearStagedLinesForFile(file.path);
+          setWholeFileStaged(file.path, false);
           await invoke("git_unstage_file", {
             path: repoPath,
             filePath: file.path,
           });
-          clearStagedLinesForFile(file.path);
-          setWholeFileStaged(file.path, false);
         } else {
-          await invoke("git_add_file", { path: repoPath, filePath: file.path });
-          setAllStagedLinesForFile(file.path, buildAllStageableLineMap(file));
           setWholeFileStaged(file.path, true);
+          await invoke("git_add_file", { path: repoPath, filePath: file.path });
         }
-        await onImmediateStageChange?.();
+        scheduleImmediateStageRefresh();
         return;
       }
 
       if (checkboxState === "checked") {
+        clearStagedLinesForFile(file.path);
         if ("hunks" in file && file.hunks.length > 0) {
           await invoke("git_stage_lines", {
             path: repoPath,
@@ -572,12 +613,13 @@ function ChangesExplorer({
             filePath: file.path,
           });
         }
-        clearStagedLinesForFile(file.path);
-        await onImmediateStageChange?.();
+        scheduleImmediateStageRefresh();
         return;
       }
 
       const nextSelection = buildAllStageableLineMap(file);
+      setWholeFileStaged(file.path, true);
+      setLineSelectionForFile(file.path, {});
       await invoke("git_stage_lines", {
         path: repoPath,
         filePath: file.path,
@@ -590,9 +632,9 @@ function ChangesExplorer({
           ) as Record<number, Set<number>>,
         ),
       });
-      setAllStagedLinesForFile(file.path, nextSelection);
-      await onImmediateStageChange?.();
+      scheduleImmediateStageRefresh();
     } catch (error) {
+      useStagedLinesStore.setState({ stagedLines: previousStagedLines });
       setActionError(String(error));
     }
   };
