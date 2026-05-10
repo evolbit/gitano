@@ -51,9 +51,10 @@ const RepoTabLayout: React.FC = () => {
     showNotifications: false,
   });
 
-  // State for the file selected from Changes
-  const [selectedWorkingFile, setSelectedWorkingFile] =
-    useState<FileChangeWithHunks | null>(null);
+  // Track working-tree selection by path so modal state can rebind to the
+  // refreshed live changes list instead of holding stale file objects.
+  const [selectedWorkingFilePath, setSelectedWorkingFilePath] =
+    useState<string | null>(null);
   const leftSidebarPaneRef = useRef<HTMLDivElement | null>(null);
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
@@ -62,38 +63,42 @@ const RepoTabLayout: React.FC = () => {
 
   // Close DiffViewer when the active branch changes
   useEffect(() => {
-    setSelectedWorkingFile(null);
+    setSelectedWorkingFilePath(null);
   }, [tab?.selectedBranch]);
+
+  const selectedWorkingFile =
+    selectedWorkingFilePath === null
+      ? null
+      : changes.find((f) => f.path === selectedWorkingFilePath) ?? null;
 
   // Close DiffViewer if the selected file no longer exists in changes
   useEffect(() => {
-    if (
-      selectedWorkingFile &&
-      !changes.some((f) => f.path === selectedWorkingFile.path)
-    ) {
-      setSelectedWorkingFile(null);
+    if (!selectedWorkingFilePath) return;
+
+    const updated = changes.find((f) => f.path === selectedWorkingFilePath);
+    if (!updated) {
+      setSelectedWorkingFilePath(null);
       useFileHunksStore.getState().clearFileHunks();
     }
-  }, [changes, selectedWorkingFile]);
+  }, [changes, selectedWorkingFilePath]);
 
-  // Update the selected file reference if the diff or hunks change
+  // Rebind hunks to the fresh file entry whenever the selected path still
+  // exists in the live working changes list.
   useEffect(() => {
     if (!selectedWorkingFile) return;
-    const updated = changes.find((f) => f.path === selectedWorkingFile.path);
-    if (updated && updated !== selectedWorkingFile) {
-      setSelectedWorkingFile(updated);
-      useFileHunksStore.getState().setFileHunks(updated.path, updated.hunks);
-    }
-  }, [changes, selectedWorkingFile]);
+    useFileHunksStore
+      .getState()
+      .setFileHunks(selectedWorkingFile.path, selectedWorkingFile.hunks);
+  }, [selectedWorkingFile]);
 
   // Handler to open the diff for a working directory file
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
-    setSelectedWorkingFile(file);
+    setSelectedWorkingFilePath(file.path);
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
   const handleCloseDiffModal = () => {
-    setSelectedWorkingFile(null);
+    setSelectedWorkingFilePath(null);
     useFileHunksStore.getState().clearFileHunks();
   };
 

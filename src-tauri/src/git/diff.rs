@@ -1,6 +1,6 @@
 use crate::git::types::*;
-use git2::Repository;
 use regex::Regex;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -378,104 +378,19 @@ pub fn get_commit_file_diff(
     }
 }
 
-// Helper function to get the diff between the index and the working directory
-pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<DiffHunk>, String> {
-    let full_path = Path::new(repo.path().parent().unwrap()).join(file_path);
-
-    // Check whether the file is in the Git index
-    let ls_files_output = Command::new("git")
-        .arg("-C")
-        .arg(repo.path().parent().unwrap())
-        .arg("ls-files")
-        .arg(file_path)
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    let is_tracked = !ls_files_output.stdout.is_empty();
-
-    if !full_path.exists() {
-        if !is_tracked {
-            return Ok(vec![]);
-        }
-
-        let show_output = Command::new("git")
-            .arg("-C")
-            .arg(repo.path().parent().unwrap())
-            .arg("show")
-            .arg(format!("HEAD:./{}", file_path))
-            .output()
-            .map_err(|e| e.to_string())?;
-
-        if !show_output.status.success() {
-            return Ok(vec![]);
-        }
-
-        let file_content = String::from_utf8_lossy(&show_output.stdout);
-        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
-
-        let diff_lines: Vec<DiffLine> = lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| DiffLine {
-                kind: DiffLineKind::Del,
-                content: line.clone(),
-                old_lineno: Some(i + 1),
-                new_lineno: None,
-            })
-            .collect();
-
-        let hunk = DiffHunk {
-            header: format!("@@ -1,{} +0,0 @@", lines.len()),
-            old_start: 1,
-            old_lines: lines.len(),
-            new_start: 0,
-            new_lines: 0,
-            lines: diff_lines,
-            is_new_file: false,
-        };
-
-        return Ok(vec![hunk]);
-    }
-
-    // If the file is not tracked, it is a new file
-    if !is_tracked {
-        // Read the file contents
-        let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
-        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
-
-        // Create a special hunk for a new file
-        let diff_lines: Vec<DiffLine> = lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| DiffLine {
-                kind: DiffLineKind::Add,
-                content: line.clone(),
-                old_lineno: None,
-                new_lineno: Some(i + 1),
-            })
-            .collect();
-
-        let hunk = DiffHunk {
-            header: format!("@@ -0,0 +1,{} @@", lines.len()),
-            old_start: 0,
-            old_lines: 0,
-            new_start: 1,
-            new_lines: lines.len(),
-            lines: diff_lines,
-            is_new_file: true,
-        };
-
-        return Ok(vec![hunk]);
-    }
-
-    // Tracked file: get the regular diff between the index and the working directory
+pub fn get_index_file_diff_hunks(
+    path: String,
+    file_path: String,
+    context: usize,
+) -> Result<Vec<DiffHunk>, String> {
     let output = Command::new("git")
         .arg("-C")
-        .arg(repo.path().parent().unwrap())
+        .arg(&path)
         .arg("diff")
-        .arg("-U3")
+        .arg("--cached")
+        .arg(format!("-U{}", context))
         .arg("--")
-        .arg(file_path)
+        .arg(&file_path)
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -492,4 +407,21 @@ pub fn get_index_working_diff(repo: &Repository, file_path: &str) -> Result<Vec<
     }
 
     Ok(hunks)
+}
+
+pub fn get_index_diffs_for_files(
+    path: String,
+    file_paths: Vec<String>,
+    context: usize,
+) -> Result<HashMap<String, Vec<DiffHunk>>, String> {
+    let mut result = HashMap::new();
+
+    for file_path in file_paths {
+        let hunks = get_index_file_diff_hunks(path.clone(), file_path.clone(), context)?;
+        if !hunks.is_empty() {
+            result.insert(file_path, hunks);
+        }
+    }
+
+    Ok(result)
 }

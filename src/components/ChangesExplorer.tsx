@@ -513,7 +513,7 @@ function ChangesExplorer({
         revealFrameRef.current = null;
       }
     };
-  }, [expanded, search, selectedPath, viewMode]);
+  }, [search, selectedPath, viewMode]);
 
   const openContextMenu = (x: number, y: number) => {
     setMenuPos({ x, y });
@@ -541,9 +541,15 @@ function ChangesExplorer({
     }
 
     if (isUntrackedFile(file)) {
-      return isStagedNewFile(file.path)
-        ? ("checked" as const)
-        : ("unchecked" as const);
+      if (isStagedNewFile(file.path) || isWholeFileStaged(file.path)) {
+        return "checked" as const;
+      }
+      if (stagedCount === 0) return "unchecked" as const;
+      if (totalStageable === 0) return "checked" as const;
+      if (stagedCount === totalStageable && totalStageable > 0) {
+        return "checked" as const;
+      }
+      return "indeterminate" as const;
     }
 
     if (isWholeFileStaged(file.path)) {

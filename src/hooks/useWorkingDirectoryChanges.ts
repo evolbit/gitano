@@ -1,6 +1,8 @@
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileChangeWithHunks } from "../types/git";
+import { useStagedLinesStore } from "../store/staging";
+import { buildSyncedStagedLinesState } from "../utils/stagedSelectionSync";
 
 interface UseWorkingDirectoryChangesOptions {
   pollInterval?: number; // Polling interval in milliseconds
@@ -45,7 +47,25 @@ export const useWorkingDirectoryChanges = (
           path: repoPath,
         }
       );
+
+      const stagedDiffsByFile = result.length
+        ? await core.invoke<Record<string, FileChangeWithHunks["hunks"]>>(
+            "get_index_diffs_for_files",
+            {
+              path: repoPath,
+              filePaths: result.map((file) => file.path),
+              context: 3,
+            },
+          )
+        : {};
+
+      const nextStagedState = buildSyncedStagedLinesState(
+        result,
+        stagedDiffsByFile,
+      );
+
       if (isMountedRef.current) {
+        useStagedLinesStore.getState().replaceStagedLines(nextStagedState);
         setChanges(result);
       }
     } catch (err) {

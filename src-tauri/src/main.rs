@@ -23,6 +23,7 @@ fn main() {
             git::get_diff_context,
             git::get_commit_file_diff,
             git::get_working_directory_changes,
+            git::get_index_diffs_for_files,
             git::git_add_file,
             git::git_stage_all,
             git::git_unstage_file,

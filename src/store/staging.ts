@@ -23,6 +23,9 @@ export type StagedLinesState = {
   ) => void;
   clearStagedLinesForFile: (filePath: string) => void;
   clearAllStagedLines: () => void;
+  replaceStagedLines: (
+    stagedLines: StagedLinesState["stagedLines"],
+  ) => void;
   setStagedNewFile: (filePath: string, value: boolean) => void;
   isStagedNewFile: (filePath: string) => boolean;
   setWholeFileStaged: (filePath: string, value: boolean) => void;
@@ -87,6 +90,7 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
       return { stagedLines: newStaged };
     }),
   clearAllStagedLines: () => set({ stagedLines: {} }),
+  replaceStagedLines: (stagedLines) => set({ stagedLines }),
   setStagedNewFile: (filePath, value) =>
     set((state) => {
       if (value) {
