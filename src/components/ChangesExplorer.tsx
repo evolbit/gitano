@@ -51,6 +51,8 @@ interface ChangesExplorerProps {
   autoFocusSearch?: boolean;
   className?: string;
   sectionMode?: SectionMode;
+  expandedState?: Record<string, boolean>;
+  onExpandedStateChange?: (expanded: Record<string, boolean>) => void;
 }
 
 const ALLOWED_STATUSES = [
@@ -281,15 +283,33 @@ function ChangesExplorer({
   autoFocusSearch = false,
   className = "",
   sectionMode = "tracked-untracked",
+  expandedState,
+  onExpandedStateChange,
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [localExpanded, setLocalExpanded] = useState<Record<string, boolean>>({});
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const revealFrameRef = useRef<number | null>(null);
+  const expanded = expandedState ?? localExpanded;
+
+  const setExpanded = (
+    updater:
+      | Record<string, boolean>
+      | ((prev: Record<string, boolean>) => Record<string, boolean>),
+  ) => {
+    const next = typeof updater === "function" ? updater(expanded) : updater;
+
+    if (onExpandedStateChange) {
+      onExpandedStateChange(next);
+      return;
+    }
+
+    setLocalExpanded(next);
+  };
 
   const stagedLines = useStagedLinesStore((s) => s.stagedLines);
   const setAllStagedLinesForFile = useStagedLinesStore(

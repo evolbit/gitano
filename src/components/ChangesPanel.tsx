@@ -2,8 +2,12 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/repo";
+import {
+  DEFAULT_REPO_WORKSPACE_STATE,
+  useWorkspaceUiStore,
+} from "../store/workspaceUi";
 import { CommitDiff, FileChange } from "../types/git";
-import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
+import ChangesExplorer from "./ChangesExplorer";
 import DiffModal from "./DiffModal";
 import TextArea from "./form/TextArea";
 
@@ -12,6 +16,15 @@ const ChangesPanel: React.FC = () => {
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const selectedCommit = tab?.selectedCommit;
   const repoPath = tab?.repoPath;
+  const commitChangesViewMode = useWorkspaceUiStore((s) =>
+    repoPath
+      ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
+          .commitChangesViewMode
+      : DEFAULT_REPO_WORKSPACE_STATE.commitChangesViewMode
+  );
+  const setCommitChangesViewMode = useWorkspaceUiStore(
+    (s) => s.setCommitChangesViewMode
+  );
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +36,6 @@ const ChangesPanel: React.FC = () => {
 
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
-  const [commitChangesViewMode, setCommitChangesViewMode] =
-    useState<ChangesExplorerViewMode>("tree");
 
   useEffect(() => {
     if (selectedCommit) {
@@ -198,7 +209,10 @@ const ChangesPanel: React.FC = () => {
                   selectedPath={diffModalFile?.path ?? diff.changes[0]?.path ?? null}
                   onSelectFile={(file) => handleSelectCommitFile(file as FileChange)}
                   viewMode={commitChangesViewMode}
-                  onViewModeChange={setCommitChangesViewMode}
+                  onViewModeChange={(mode) => {
+                    if (!repoPath) return;
+                    setCommitChangesViewMode(repoPath, mode);
+                  }}
                   showFileCheckboxes={false}
                   surface="main"
                   className="border-r-0"
@@ -219,7 +233,10 @@ const ChangesPanel: React.FC = () => {
           onClose={() => setDiffModalOpen(false)}
           sha={selectedCommit.sha}
           changesViewMode={commitChangesViewMode}
-          onChangesViewModeChange={setCommitChangesViewMode}
+          onChangesViewModeChange={(mode) => {
+            if (!repoPath) return;
+            setCommitChangesViewMode(repoPath, mode);
+          }}
         />
       )}
     </div>

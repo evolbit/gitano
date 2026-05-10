@@ -5,9 +5,13 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../store/hunks";
 import { useRepoStore } from "../store/repo";
+import {
+  DEFAULT_REPO_WORKSPACE_STATE,
+  useWorkspaceUiStore,
+} from "../store/workspaceUi";
 import { FileChangeWithHunks } from "../types/git";
 import { BranchList } from "./BranchList";
-import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
+import ChangesExplorer from "./ChangesExplorer";
 import ChangesPanel from "./ChangesPanel";
 import CommitList from "./CommitList";
 import DiffModal from "./DiffModal";
@@ -19,6 +23,24 @@ const RepoTabLayout: React.FC = () => {
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
   const selectedCommit = tab?.selectedCommit;
+  const workspaceState = useWorkspaceUiStore((s) =>
+    repoPath
+      ? s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE
+      : DEFAULT_REPO_WORKSPACE_STATE
+  );
+  const setLeftAccordionOpen = useWorkspaceUiStore(
+    (s) => s.setLeftAccordionOpen
+  );
+  const setWorkingChangesViewMode = useWorkspaceUiStore(
+    (s) => s.setWorkingChangesViewMode
+  );
+  const setMainChangesExpanded = useWorkspaceUiStore(
+    (s) => s.setMainChangesExpanded
+  );
+  const setLeftPaneWidth = useWorkspaceUiStore((s) => s.setLeftPaneWidth);
+  const setCommitDetailsWidth = useWorkspaceUiStore(
+    (s) => s.setCommitDetailsWidth
+  );
 
   // Constant automatic polling, without controls or notifications
   const { changes, loading, error } = useWorkingDirectoryChanges(repoPath, {
@@ -32,11 +54,10 @@ const RepoTabLayout: React.FC = () => {
   // State for the file selected from Changes
   const [selectedWorkingFile, setSelectedWorkingFile] =
     useState<FileChangeWithHunks | null>(null);
-  const [workingChangesViewMode, setWorkingChangesViewMode] =
-    useState<ChangesExplorerViewMode>("tree");
+  const leftSidebarPaneRef = useRef<HTMLDivElement | null>(null);
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
-    REPO_LAYOUT.panes.right.initial,
+    workspaceState.commitDetailsWidth ?? REPO_LAYOUT.panes.right.initial,
   );
 
   // Close DiffViewer when the active branch changes
@@ -77,11 +98,28 @@ const RepoTabLayout: React.FC = () => {
   };
 
   useEffect(() => {
+    const leftSidebarPane = leftSidebarPaneRef.current;
+
+    if (!leftSidebarPane) return;
+
+    const restoredWidth =
+      workspaceState.leftPaneWidth ?? REPO_LAYOUT.panes.left.initial;
+
+    leftSidebarPane.style.width =
+      typeof restoredWidth === "number"
+        ? `${Math.max(restoredWidth, REPO_LAYOUT.panes.left.min)}px`
+        : restoredWidth;
+  }, [repoPath, workspaceState.leftPaneWidth]);
+
+  useEffect(() => {
     if (selectedWorkingFile) return;
 
     const commitDetailsPane = commitDetailsPaneRef.current;
 
     if (!commitDetailsPane) return;
+
+    lastCommitDetailsPaneWidthRef.current =
+      workspaceState.commitDetailsWidth ?? REPO_LAYOUT.panes.right.initial;
 
     if (selectedCommit) {
       const restoredWidth = lastCommitDetailsPaneWidthRef.current;
@@ -102,7 +140,12 @@ const RepoTabLayout: React.FC = () => {
     }
 
     commitDetailsPane.style.width = "0px";
-  }, [selectedCommit, selectedWorkingFile]);
+  }, [
+    repoPath,
+    selectedCommit,
+    selectedWorkingFile,
+    workspaceState.commitDetailsWidth,
+  ]);
 
   if (!tab) return null;
 
@@ -113,15 +156,26 @@ const RepoTabLayout: React.FC = () => {
         <Split className="h-full w-full min-h-0 flex-1">
           {/* Left sidebar */}
           <Split.Pane
-            initialWidth={REPO_LAYOUT.panes.left.initial}
+            ref={leftSidebarPaneRef}
+            initialWidth={
+              workspaceState.leftPaneWidth ?? REPO_LAYOUT.panes.left.initial
+            }
             minWidth={REPO_LAYOUT.panes.left.min}
             maxWidth={REPO_LAYOUT.panes.left.max}
+            onResizeEnd={(size) => {
+              if (!repoPath || size.width <= 1) return;
+              setLeftPaneWidth(repoPath, size.width);
+            }}
             className="!h-full !min-h-0 flex flex-col"
           >
             <Box className="flex-1 text-foreground flex flex-col min-h-0">
               <Accordion
                 multiple
-                defaultValue={["changes"]}
+                value={workspaceState.leftAccordionOpen}
+                onChange={(value) => {
+                  if (!repoPath) return;
+                  setLeftAccordionOpen(repoPath, value);
+                }}
                 variant="contained"
                 chevronPosition="left"
                 classNames={{
@@ -169,10 +223,18 @@ const RepoTabLayout: React.FC = () => {
                         onSelectFile={(file) =>
                           handleSelectWorkingFile(file as FileChangeWithHunks)
                         }
-                        viewMode={workingChangesViewMode}
-                        onViewModeChange={setWorkingChangesViewMode}
+                        viewMode={workspaceState.workingChangesViewMode}
+                        onViewModeChange={(mode) => {
+                          if (!repoPath) return;
+                          setWorkingChangesViewMode(repoPath, mode);
+                        }}
                         showFileCheckboxes={false}
                         surface="main"
+                        expandedState={workspaceState.mainChangesExpanded}
+                        onExpandedStateChange={(expanded) => {
+                          if (!repoPath) return;
+                          setMainChangesExpanded(repoPath, expanded);
+                        }}
                       />
                     )}
                   </Accordion.Panel>
@@ -230,11 +292,17 @@ const RepoTabLayout: React.FC = () => {
               />
               <Split.Pane
                 ref={commitDetailsPaneRef}
-                initialWidth={REPO_LAYOUT.panes.right.initial}
+                initialWidth={
+                  workspaceState.commitDetailsWidth ??
+                  REPO_LAYOUT.panes.right.initial
+                }
                 minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
                 onResizeEnd={(size) => {
                   if (size.width > 1) {
                     lastCommitDetailsPaneWidthRef.current = size.width;
+                    if (repoPath) {
+                      setCommitDetailsWidth(repoPath, size.width);
+                    }
                   }
                 }}
                 className={selectedCommit ? "overflow-hidden" : "hidden overflow-hidden"}
@@ -256,8 +324,11 @@ const RepoTabLayout: React.FC = () => {
               handleSelectWorkingFile(file);
             }
           }}
-          changesViewMode={workingChangesViewMode}
-          onChangesViewModeChange={setWorkingChangesViewMode}
+          changesViewMode={workspaceState.workingChangesViewMode}
+          onChangesViewModeChange={(mode) => {
+            if (!repoPath) return;
+            setWorkingChangesViewMode(repoPath, mode);
+          }}
           repoPath={repoPath}
         />
       )}

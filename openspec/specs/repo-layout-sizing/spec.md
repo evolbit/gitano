@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the sizing rules and window constraints for the main three-pane repo layout.
-
 ## Requirements
-
 ### Requirement: Main repo layout sizing is centralized
 The system SHALL define the main repo view pane sizing in a centralized configuration instead of scattering sizing literals across layout components.
 
@@ -27,20 +25,10 @@ The system SHALL enforce minimum widths for the three logical panes in the main 
 - **THEN** the middle pane MUST occupy the remaining available space after left and right pane constraints are satisfied
 
 ### Requirement: Window minimum width matches pane minimums
-The system SHALL derive the minimum application window width from the sum of the logical pane minimum widths used by the main repo layout.
+The system SHALL enforce a minimum window width derived from the configured pane minimums.
 
-#### Scenario: Window minimum width is computed
-- **WHEN** the application applies its minimum window size for the main repo experience
-- **THEN** the minimum window width MUST equal the sum of the left, middle, and right pane minimum widths
-- **THEN** with pane minimums of `300`, `500`, and `300`, the resulting minimum window width MUST be `1100`
+#### Scenario: Window size is restored from persisted state
+- **WHEN** the app restores a persisted window size on launch
+- **THEN** the restored width MUST be clamped so it is never smaller than the configured minimum window width
+- **THEN** the restored height MUST be clamped so it is never smaller than the configured minimum window height
 
-#### Scenario: Window constraints are declared statically
-- **WHEN** the Tauri window configuration is defined
-- **THEN** the main window MUST declare `minWidth` and `minHeight`
-- **THEN** `minWidth` MUST be `1100`
-- **THEN** `minHeight` MUST remain aligned with the shared window minimum height
-
-#### Scenario: Window constraints are enforced at runtime
-- **WHEN** the application initializes the main window
-- **THEN** it MUST apply runtime window size constraints using the same shared minimum width and height values
-- **THEN** the window MUST NOT be resizable to a width smaller than `1100`

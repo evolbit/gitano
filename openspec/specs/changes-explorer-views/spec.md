@@ -37,19 +37,13 @@ The system SHALL use the same changes explorer model in the main workspace chang
 ### Requirement: View switching is available from a context menu
 The system SHALL expose `Flat View` and `Tree View` switching from a context menu in both changes explorer surfaces.
 
-#### Scenario: Explorer is shown before the user changes modes
-- **WHEN** the changes explorer is first rendered in a pane
-- **THEN** it MUST default to `Tree View`
+#### Scenario: User reopens a repository after changing explorer modes
+- **WHEN** the user previously changed the working changes or commit changes explorer mode for a repository
+- **THEN** the system MUST restore those view modes independently for that repository
 
-#### Scenario: User changes the working-tree pane view mode
-- **WHEN** the user switches the current working changes pane between `Flat View` and `Tree View`
-- **THEN** the working-tree changes pane MUST keep that selected mode
-- **THEN** the commit changes pane MUST NOT change modes as a side effect
-
-#### Scenario: User changes the commit changes pane view mode
-- **WHEN** the user switches the commit changes pane between `Flat View` and `Tree View`
-- **THEN** the commit changes pane MUST keep that selected mode
-- **THEN** the working-tree changes pane MUST NOT change modes as a side effect
+#### Scenario: User reopens a repository after changing tree expansion
+- **WHEN** the user previously expanded or collapsed durable tree groups in the main workspace explorer for a repository
+- **THEN** the system MUST restore that durable expansion state for the same repository
 
 ### Requirement: Surface capabilities remain distinct
 The system SHALL allow the shared explorer to expose different controls depending on where it is used.

@@ -3,6 +3,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useRepoStore } from "../store/repo";
 import {
+  DEFAULT_REPO_WORKSPACE_STATE,
+  useWorkspaceUiStore,
+} from "../store/workspaceUi";
+import {
   IconChevronDown,
   IconChevronRight,
   IconCloud,
@@ -69,11 +73,19 @@ export function BranchList() {
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
+  const branchTreeExpanded = useWorkspaceUiStore((s) =>
+    repoPath
+      ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
+          .branchTreeExpanded
+      : DEFAULT_REPO_WORKSPACE_STATE.branchTreeExpanded
+  );
+  const setBranchTreeExpanded = useWorkspaceUiStore(
+    (s) => s.setBranchTreeExpanded
+  );
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<"local" | "remote">("local");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -181,7 +193,7 @@ export function BranchList() {
       <ul className={`select-none min-w-0`}>
         {nodes.map((node) => {
           if (node.type === "group") {
-            const isOpen = expanded[node.full] ?? true;
+            const isOpen = branchTreeExpanded[node.full] ?? true;
             return (
               <li
                 key={node.full}
@@ -189,9 +201,13 @@ export function BranchList() {
                 <div
                   className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300 min-w-0"
                   style={{ fontSize: "13px", fontWeight: 500 }}
-                  onClick={() =>
-                    setExpanded((exp) => ({ ...exp, [node.full]: !isOpen }))
-                  }
+                  onClick={() => {
+                    if (!repoPath) return;
+                    setBranchTreeExpanded(repoPath, {
+                      ...branchTreeExpanded,
+                      [node.full]: !isOpen,
+                    });
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setContextMenu({ x: e.clientX, y: e.clientY, node });
