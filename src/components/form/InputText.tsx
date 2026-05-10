@@ -38,7 +38,7 @@ const InputText: React.FC<InputTextProps> = ({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
-        className="bg-transparent border-none outline-none text-foreground w-full text-[15px] placeholder-muted-foreground"
+        className="bg-transparent border-none outline-none text-foreground w-full text-base placeholder-muted-foreground"
         {...rest}
       />
       {rightIcon && (

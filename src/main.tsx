@@ -68,6 +68,13 @@ i18n.use(initReactI18next).init({
 const theme = createTheme({
   fontFamily: '"IBM Plex Sans", sans-serif',
   fontFamilyMonospace: '"IBM Plex Mono", monospace',
+  fontSizes: {
+    xs: "var(--ui-font-size-xs)",
+    sm: "var(--ui-font-size-sm)",
+    md: "var(--ui-font-size-md)",
+    lg: "var(--ui-font-size-lg)",
+    xl: "var(--ui-font-size-xl)",
+  },
   headings: {
     fontFamily: '"IBM Plex Sans", sans-serif',
   },

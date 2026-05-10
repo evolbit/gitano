@@ -10,6 +10,7 @@ import DiffViewer from "./DiffViewer";
 import { IconX } from "./icons";
 
 type DiffModalFile = FileChange | FileChangeWithHunks;
+type DiffModalSectionMode = "tracked-untracked" | "single";
 
 function isFileChangeWithHunks(file: DiffModalFile): file is FileChangeWithHunks {
   return "hunks" in file;
@@ -25,6 +26,7 @@ interface DiffModalProps {
   sha?: string;
   changesViewMode?: ChangesExplorerViewMode;
   onChangesViewModeChange?: (mode: ChangesExplorerViewMode) => void;
+  sectionMode?: DiffModalSectionMode;
 }
 
 const DiffModal = ({
@@ -37,6 +39,7 @@ const DiffModal = ({
   sha,
   changesViewMode = "tree",
   onChangesViewModeChange,
+  sectionMode = "tracked-untracked",
 }: DiffModalProps) => {
   const [selectedPath, setSelectedPath] = useState(initialFile.path);
   const [internalChangesViewMode, setInternalChangesViewMode] =
@@ -171,6 +174,7 @@ const DiffModal = ({
               surface={sha === undefined ? "modal" : "main"}
               showHeader={sha === undefined}
               autoFocusSearch={true}
+              sectionMode={sectionMode}
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />

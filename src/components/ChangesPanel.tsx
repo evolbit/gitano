@@ -232,6 +232,7 @@ const ChangesPanel: React.FC = () => {
           initialFile={diffModalFile}
           onClose={() => setDiffModalOpen(false)}
           sha={selectedCommit.sha}
+          sectionMode="single"
           changesViewMode={commitChangesViewMode}
           onChangesViewModeChange={(mode) => {
             if (!repoPath) return;

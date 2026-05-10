@@ -200,7 +200,10 @@ export function BranchList() {
                 className="mb-0.5 group">
                 <div
                   className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300 min-w-0"
-                  style={{ fontSize: "13px", fontWeight: 500 }}
+                  style={{
+                    fontSize: "var(--ui-font-size-sm)",
+                    fontWeight: 500,
+                  }}
                   onClick={() => {
                     if (!repoPath) return;
                     setBranchTreeExpanded(repoPath, {
@@ -268,7 +271,7 @@ export function BranchList() {
                     ? "bg-blue-400 text-zinc-900 font-bold"
                     : "hover:bg-zinc-700 text-zinc-200"
                 }`}
-                style={{ fontSize: "13px" }}
+                style={{ fontSize: "var(--ui-font-size-sm)" }}
                 tabIndex={0}
                 onClick={() => {
                   if (activeTabId) setTabBranch(activeTabId, node.full);

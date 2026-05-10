@@ -91,10 +91,37 @@ body,
 }
 
 html {
-  font-size: 16px;
+  --ui-font-size-xs: 12px;
+  --ui-font-size-sm: 14px;
+  --ui-font-size-md: 16px;
+  --ui-font-size-lg: 18px;
+  --ui-font-size-xl: 20px;
   --diff-font-size: 13px;
 }
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--ui-font-size-md);
+}
+
+@layer utilities {
+  .text-xs {
+    font-size: var(--ui-font-size-xs);
+  }
+
+  .text-sm {
+    font-size: var(--ui-font-size-sm);
+  }
+
+  .text-base {
+    font-size: var(--ui-font-size-md);
+  }
+
+  .text-lg {
+    font-size: var(--ui-font-size-lg);
+  }
+
+  .text-xl {
+    font-size: var(--ui-font-size-xl);
+  }
 }
