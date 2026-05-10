@@ -25,6 +25,15 @@ type ChangesExplorerFile = FileChange | FileChangeWithHunks;
 type ChangesExplorerSurface = "main" | "modal";
 type SectionName = "Tracked" | "Untracked";
 type SectionMode = "tracked-untracked" | "single";
+type ContextMenuScope =
+  | { kind: "pane" }
+  | { kind: "file"; file: ChangesExplorerFile }
+  | {
+      kind: "folder";
+      folderPath: string;
+      files: ChangesExplorerFile[];
+      isUntracked: boolean;
+    };
 
 type TreeNode =
   | {
@@ -110,6 +119,24 @@ function isUntrackedFile(file: ChangesExplorerFile) {
   // path relative to HEAD and should stay grouped under "Untracked", even after
   // it has staged content and non-zero insertions.
   return true;
+}
+
+function getShowInFileManagerLabel() {
+  if (typeof navigator === "undefined") {
+    return "Show in File Manager";
+  }
+
+  const platform = navigator.userAgent.toLowerCase();
+
+  if (platform.includes("mac")) {
+    return "Show in Finder";
+  }
+
+  if (platform.includes("win")) {
+    return "Show in Explorer";
+  }
+
+  return "Show in File Manager";
 }
 
 function partitionFiles(
@@ -215,6 +242,12 @@ function collectFolderPaths(nodes: TreeNode[], acc = new Set<string>()) {
     collectFolderPaths(node.children, acc);
   });
   return acc;
+}
+
+function collectFilesFromTree(nodes: TreeNode[]): ChangesExplorerFile[] {
+  return nodes.flatMap((node) =>
+    node.kind === "file" ? [node.file] : collectFilesFromTree(node.children),
+  );
 }
 
 function fileMatchesSearch(file: ChangesExplorerFile, search: string) {
@@ -342,7 +375,8 @@ function ChangesExplorer({
   const [localExpanded, setLocalExpanded] = useState<Record<string, boolean>>(
     {},
   );
-  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [activeContextMenu, setActiveContextMenu] =
+    useState<ContextMenuScope | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -459,20 +493,20 @@ function ChangesExplorer({
   }, [selectedPath, viewMode]);
 
   useEffect(() => {
-    if (!contextMenuOpen) return;
+    if (!activeContextMenu) return;
 
     function handleClick(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setContextMenuOpen(false);
+        setActiveContextMenu(null);
       }
     }
 
     window.addEventListener("mousedown", handleClick);
     return () => window.removeEventListener("mousedown", handleClick);
-  }, [contextMenuOpen]);
+  }, [activeContextMenu]);
 
   useLayoutEffect(() => {
-    if (!contextMenuOpen || !menuRef.current || !menuPos) return;
+    if (!activeContextMenu || !menuRef.current || !menuPos) return;
     const rect = menuRef.current.getBoundingClientRect();
     const maxX = window.innerWidth - rect.width - 8;
     const maxY = window.innerHeight - rect.height - 8;
@@ -482,7 +516,7 @@ function ChangesExplorer({
     if (x !== menuPos.x || y !== menuPos.y) {
       setMenuPos({ x, y });
     }
-  }, [contextMenuOpen, menuPos]);
+  }, [activeContextMenu, menuPos]);
 
   useEffect(() => {
     if (!containerRef.current || !selectedPath) return;
@@ -515,9 +549,9 @@ function ChangesExplorer({
     };
   }, [search, selectedPath, viewMode]);
 
-  const openContextMenu = (x: number, y: number) => {
+  const openContextMenu = (x: number, y: number, scope: ContextMenuScope) => {
     setMenuPos({ x, y });
-    setContextMenuOpen(true);
+    setActiveContextMenu(scope);
   };
 
   const toggleFolder = (path: string) => {
@@ -692,6 +726,120 @@ function ChangesExplorer({
     }
   };
 
+  const getFolderCheckboxState = (filesInFolder: ChangesExplorerFile[]) => {
+    if (filesInFolder.length === 0) return "unchecked" as const;
+
+    const checkedCount = filesInFolder.filter(
+      (file) => getCheckboxState(file) === "checked",
+    ).length;
+
+    if (checkedCount === 0) return "unchecked" as const;
+    if (checkedCount === filesInFolder.length) return "checked" as const;
+    return "indeterminate" as const;
+  };
+
+  const toggleFolderSelection = async (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+  ) => {
+    if (!repoPath || filesInFolder.length === 0) return;
+    setActionError(null);
+    const previousStagedLines = cloneStagedLinesState(
+      useStagedLinesStore.getState().stagedLines,
+    );
+
+    try {
+      if (getFolderCheckboxState(filesInFolder) === "checked") {
+        applyUnstageAllOptimistic(filesInFolder);
+        await invoke("git_unstage_file", {
+          path: repoPath,
+          filePath: folderPath,
+        });
+      } else {
+        applyStageAllOptimistic(filesInFolder);
+        await invoke("git_add_file", {
+          path: repoPath,
+          filePath: folderPath,
+        });
+      }
+
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      useStagedLinesStore.setState({ stagedLines: previousStagedLines });
+      setActionError(String(error));
+    }
+  };
+
+  const handleDiscardTrackedFolder = async (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+  ) => {
+    if (!repoPath) return;
+    setActionError(null);
+
+    try {
+      filesInFolder.forEach((file) => clearStagedLinesForFile(file.path));
+      await invoke("git_discard_file_changes", {
+        path: repoPath,
+        filePath: folderPath,
+      });
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      setActionError(String(error));
+    }
+  };
+
+  const handleTrashUntrackedFolder = async (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+  ) => {
+    if (!repoPath) return;
+    setActionError(null);
+
+    try {
+      filesInFolder.forEach((file) => clearStagedLinesForFile(file.path));
+      await invoke("trash_untracked_file", {
+        path: repoPath,
+        filePath: folderPath,
+      });
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      setActionError(String(error));
+    }
+  };
+
+  const handleDiscardTrackedFile = async (file: ChangesExplorerFile) => {
+    if (!repoPath) return;
+    setActionError(null);
+
+    try {
+      clearStagedLinesForFile(file.path);
+      await invoke("git_discard_file_changes", {
+        path: repoPath,
+        filePath: file.path,
+      });
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      setActionError(String(error));
+    }
+  };
+
+  const handleTrashUntrackedFile = async (file: ChangesExplorerFile) => {
+    if (!repoPath) return;
+    setActionError(null);
+
+    try {
+      clearStagedLinesForFile(file.path);
+      await invoke("trash_untracked_file", {
+        path: repoPath,
+        filePath: file.path,
+      });
+      scheduleImmediateStageRefresh();
+    } catch (error) {
+      setActionError(String(error));
+    }
+  };
+
   const renderCheckbox = (file: ChangesExplorerFile) => {
     if (!showFileCheckboxes) return null;
     const checkboxState = getCheckboxState(file);
@@ -740,6 +888,12 @@ function ChangesExplorer({
             : "text-foreground hover:bg-background-emphasis"
         }`}
         onClick={() => onSelectFile(file)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelectFile(file);
+          openContextMenu(e.clientX, e.clientY, { kind: "file", file });
+        }}
       >
         {getStatusIcon(file)}
         <div className="min-w-0 flex-1">
@@ -771,6 +925,10 @@ function ChangesExplorer({
     nodes.map((node) => {
       if (node.kind === "folder") {
         const isOpen = search ? true : (expanded[node.path] ?? true);
+        const folderFiles = collectFilesFromTree(node.children);
+        const sectionIsUntracked =
+          folderFiles.length > 0 &&
+          folderFiles.every((file) => isUntrackedFile(file));
 
         return (
           <div key={node.path}>
@@ -779,6 +937,16 @@ function ChangesExplorer({
               className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
               style={{ paddingLeft: `${12 + depth * 22}px` }}
               onClick={() => toggleFolder(node.path)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openContextMenu(e.clientX, e.clientY, {
+                  kind: "folder",
+                  folderPath: node.path,
+                  files: folderFiles,
+                  isUntracked: sectionIsUntracked,
+                });
+              }}
             >
               <span className="inline-flex h-4 w-4 items-center justify-center">
                 {isOpen ? (
@@ -809,6 +977,15 @@ function ChangesExplorer({
           }`}
           style={{ paddingLeft: `${40 + depth * 22}px` }}
           onClick={() => onSelectFile(node.file)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelectFile(node.file);
+            openContextMenu(e.clientX, e.clientY, {
+              kind: "file",
+              file: node.file,
+            });
+          }}
         >
           {getStatusIcon(node.file)}
           <span className="min-w-0 flex-1 truncate font-medium">
@@ -855,15 +1032,156 @@ function ChangesExplorer({
     "__separator__",
   ];
 
-  const contextMenu =
-    contextMenuOpen && menuPos
+  const renderFileContextMenu = (file: ChangesExplorerFile) => {
+    const checkboxState = getCheckboxState(file);
+    const isUntracked = isUntrackedFile(file);
+    const stageLabel =
+      checkboxState === "checked" ? "Unstage File" : "Stage File";
+    const showInFileManagerLabel = getShowInFileManagerLabel();
+
+    return (
+      <>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+          onClick={() => {
+            setActiveContextMenu(null);
+            void toggleFileSelection(file);
+          }}
+        >
+          <span>{stageLabel}</span>
+        </button>
+        {isUntracked ? (
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setActiveContextMenu(null);
+              void handleTrashUntrackedFile(file);
+            }}
+          >
+            <span>Trash File</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setActiveContextMenu(null);
+              void handleDiscardTrackedFile(file);
+            }}
+          >
+            <span>Discard Changes</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+          disabled
+        >
+          <span>Stash File</span>
+        </button>
+        <button
+          type="button"
+          className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+          disabled
+        >
+          <span>{showInFileManagerLabel}</span>
+        </button>
+        {!isUntracked ? (
+          <button
+            type="button"
+            className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+            disabled
+          >
+            <span>View File Blame</span>
+          </button>
+        ) : null}
+      </>
+    );
+  };
+
+  const renderFolderContextMenu = (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+    isUntracked: boolean,
+  ) => {
+    const checkboxState = getFolderCheckboxState(filesInFolder);
+    const stageLabel =
+      checkboxState === "checked" ? "Unstage Folder" : "Stage Folder";
+    const showInFileManagerLabel = getShowInFileManagerLabel();
+
+    return (
+      <>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+          onClick={() => {
+            setActiveContextMenu(null);
+            void toggleFolderSelection(folderPath, filesInFolder);
+          }}
+        >
+          <span>{stageLabel}</span>
+        </button>
+        {isUntracked ? (
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setActiveContextMenu(null);
+              void handleTrashUntrackedFolder(folderPath, filesInFolder);
+            }}
+          >
+            <span>Trash Folder</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setActiveContextMenu(null);
+              void handleDiscardTrackedFolder(folderPath, filesInFolder);
+            }}
+          >
+            <span>Discard Changes</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+          disabled
+        >
+          <span>Stash File</span>
+        </button>
+        <button
+          type="button"
+          className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+          disabled
+        >
+          <span>{showInFileManagerLabel}</span>
+        </button>
+        {!isUntracked ? (
+          <button
+            type="button"
+            className="flex w-full cursor-default items-center justify-between px-3 py-1.5 text-left text-zinc-500"
+            disabled
+          >
+            <span>View File Blame</span>
+          </button>
+        ) : null}
+      </>
+    );
+  };
+
+  const contextMenuPortal =
+    activeContextMenu && menuPos
       ? ReactDOM.createPortal(
           <div
             ref={menuRef}
             className="fixed z-[100001] min-w-[220px] rounded border border-zinc-700 bg-zinc-900/95 py-1 text-sm text-zinc-200 shadow-lg"
             style={{ left: menuPos.x, top: menuPos.y }}
           >
-            {surface === "modal"
+            {activeContextMenu.kind === "pane" && surface === "modal"
               ? modalMenuItems.map((item, index) =>
                   item === "__separator__" ? (
                     <div
@@ -882,7 +1200,8 @@ function ChangesExplorer({
                   ),
                 )
               : null}
-            {(["flat", "tree"] as ChangesExplorerViewMode[]).map((mode) => (
+            {activeContextMenu.kind === "pane"
+              ? (["flat", "tree"] as ChangesExplorerViewMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -893,13 +1212,20 @@ function ChangesExplorer({
                 }`}
                 onClick={() => {
                   onViewModeChange(mode);
-                  setContextMenuOpen(false);
+                  setActiveContextMenu(null);
                 }}
               >
                 <span>{mode === "flat" ? "Flat View" : "Tree View"}</span>
                 {viewMode === mode ? <IconCheck size={14} /> : null}
               </button>
-            ))}
+            ))
+              : activeContextMenu.kind === "file"
+                ? renderFileContextMenu(activeContextMenu.file)
+                : renderFolderContextMenu(
+                    activeContextMenu.folderPath,
+                    activeContextMenu.files,
+                    activeContextMenu.isUntracked,
+                  )}
           </div>,
           document.body,
         )
@@ -911,7 +1237,7 @@ function ChangesExplorer({
       className={`flex h-full min-h-0 flex-1 flex-col border-r border-border bg-background ${className}`}
       onContextMenu={(e) => {
         e.preventDefault();
-        openContextMenu(e.clientX, e.clientY);
+        openContextMenu(e.clientX, e.clientY, { kind: "pane" });
       }}
     >
       {showHeader ? (
@@ -927,7 +1253,7 @@ function ChangesExplorer({
                 const rect = (
                   e.currentTarget as HTMLElement
                 ).getBoundingClientRect();
-                openContextMenu(rect.left, rect.bottom + 4);
+                openContextMenu(rect.left, rect.bottom + 4, { kind: "pane" });
               }}
               aria-label="Open changes menu"
             >
@@ -989,7 +1315,7 @@ function ChangesExplorer({
         )}
       </div>
 
-      {contextMenu}
+      {contextMenuPortal}
     </div>
   );
 }

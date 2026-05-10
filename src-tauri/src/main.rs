@@ -29,7 +29,9 @@ fn main() {
             git::git_unstage_file,
             git::git_unstage_all,
             git::git_has_staged_changes,
+            git::git_discard_file_changes,
             git::git_stage_lines,
+            git::trash_untracked_file,
             git::git_commit,
             git::git_push,
         ])

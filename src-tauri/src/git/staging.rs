@@ -285,6 +285,58 @@ pub fn git_has_staged_changes(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn git_discard_file_changes(path: String, file_path: String) -> Result<(), String> {
+    let restore_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("restore")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if restore_output.status.success() {
+        return Ok(());
+    }
+
+    let checkout_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("checkout")
+        .arg("--")
+        .arg(&file_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if checkout_output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git discard failed:\nrestore: {}\ncheckout: {}",
+        String::from_utf8_lossy(&restore_output.stderr),
+        String::from_utf8_lossy(&checkout_output.stderr)
+    ))
+}
+
+#[tauri::command]
+pub fn trash_untracked_file(path: String, file_path: String) -> Result<(), String> {
+    let full_path = Path::new(&path).join(&file_path);
+
+    if !full_path.exists() {
+        return Ok(());
+    }
+
+    if full_path.is_dir() {
+        fs::remove_dir_all(&full_path).map_err(|e| e.to_string())?;
+    } else {
+        fs::remove_file(&full_path).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn git_stage_lines(
     path: String,
     file_path: String,
