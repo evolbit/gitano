@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactDOM from "react-dom";
 import { useStagedLinesStore } from "../../store/staging";
 import { FileChange } from "../../types/git";
@@ -258,6 +265,7 @@ function ChangesExplorer({
   const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
   const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
   const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
+  const deferredFiles = useDeferredValue(files);
 
   useEffect(
     () => () => {
@@ -279,7 +287,10 @@ function ChangesExplorer({
     }, 120);
   };
 
-  const normalizedFiles = useMemo(() => normalizeFiles(files), [files]);
+  const normalizedFiles = useMemo(
+    () => normalizeFiles(deferredFiles),
+    [deferredFiles],
+  );
   const filteredFiles = useMemo(
     () => normalizedFiles.filter((file) => fileMatchesSearch(file, search)),
     [normalizedFiles, search],

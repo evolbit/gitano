@@ -6,7 +6,6 @@ export { default as FileTree } from "./file-tree/FileTree";
 export { default as HomePage } from "./home-page/HomePage";
 export { default as Launchpad } from "./launchpad/Launchpad";
 export { OpenRepoButton } from "./open-repo-button/OpenRepoButton";
-export { default as Sidebar } from "./sidebar/Sidebar";
 export { default as TabBar } from "./tab-bar/TabBar";
 export { default as TopToolbar } from "./top-toolbar/TopToolbar";
 

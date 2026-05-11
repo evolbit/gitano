@@ -5,6 +5,10 @@ export type ChangesExplorerViewMode = "flat" | "tree";
 export type ChangesExplorerSurface = "main" | "modal";
 export type SectionName = "Tracked" | "Untracked";
 export type SectionMode = "tracked-untracked" | "single";
+export type ChangesExplorerSection = {
+  name: SectionName;
+  files: ChangesExplorerFile[];
+};
 export type ContextMenuScope =
   | { kind: "pane" }
   | { kind: "file"; file: ChangesExplorerFile }

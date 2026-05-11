@@ -1,8 +1,21 @@
 import { core } from "@tauri-apps/api";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileChangeWithHunks } from "../types/git";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useStagedLinesStore } from "../store/staging";
-import { buildSyncedStagedLinesState } from "../utils/stagedSelectionSync";
+import {
+  FileChangeWithHunks,
+  WorkingDirectoryChangesResponse,
+} from "../types/git";
+import {
+  buildWorkingChangesFileSnapshotSignature,
+  buildWorkingChangesStagedSnapshotSignature,
+  mergeWorkingChangesPreservingIdentity,
+} from "../utils/workingChangesSnapshot";
 
 interface UseWorkingDirectoryChangesOptions {
   pollInterval?: number; // Polling interval in milliseconds
@@ -12,9 +25,13 @@ interface UseWorkingDirectoryChangesOptions {
   showNotifications?: boolean; // (Unused)
 }
 
+type StagedLinesStoreState = ReturnType<
+  typeof useStagedLinesStore.getState
+>["stagedLines"];
+
 export const useWorkingDirectoryChanges = (
   repoPath: string | undefined,
-  options: UseWorkingDirectoryChangesOptions = {}
+  options: UseWorkingDirectoryChangesOptions = {},
 ) => {
   const { pollInterval = 2000, enabled = true } = options;
 
@@ -23,6 +40,10 @@ export const useWorkingDirectoryChanges = (
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const lastFileSnapshotSignatureRef = useRef<string | null>(null);
+  const lastStagedSnapshotSignatureRef = useRef<string | null>(null);
+  const lastChangesRef = useRef<FileChangeWithHunks[]>([]);
+  const hasLoadedOnceRef = useRef(false);
 
   // Ensure isMountedRef.current is true on mount
   useEffect(() => {
@@ -38,43 +59,92 @@ export const useWorkingDirectoryChanges = (
   // Function to fetch changes and hunks
   const fetchChanges = useCallback(async () => {
     if (!repoPath) return;
-    setLoading(true);
+    const shouldToggleLoading = !hasLoadedOnceRef.current;
+    if (shouldToggleLoading) {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const result: FileChangeWithHunks[] = await core.invoke(
+      const response = await core.invoke<WorkingDirectoryChangesResponse>(
         "get_working_directory_changes",
         {
           path: repoPath,
-        }
+        },
       );
+      const { changes: result } = response;
 
-      const stagedDiffsByFile = result.length
-        ? await core.invoke<Record<string, FileChangeWithHunks["hunks"]>>(
-            "get_index_diffs_for_files",
-            {
-              path: repoPath,
-              filePaths: result.map((file) => file.path),
-              context: 3,
+      const nextFileSnapshotSignature =
+        buildWorkingChangesFileSnapshotSignature(result);
+
+      const nextStagedSnapshotSignature =
+        buildWorkingChangesStagedSnapshotSignature(
+          response.staged_state_by_file,
+        );
+
+      const fileSnapshotChanged =
+        nextFileSnapshotSignature !== lastFileSnapshotSignatureRef.current;
+
+      const stagedSnapshotChanged =
+        nextStagedSnapshotSignature !== lastStagedSnapshotSignatureRef.current;
+
+      if (isMountedRef.current && fileSnapshotChanged) {
+        const mergedChanges = mergeWorkingChangesPreservingIdentity(
+          lastChangesRef.current,
+          result,
+        );
+        lastFileSnapshotSignatureRef.current = nextFileSnapshotSignature;
+        lastChangesRef.current = mergedChanges;
+        startTransition(() => {
+          setChanges(mergedChanges);
+        });
+      }
+
+      if (
+        isMountedRef.current &&
+        (fileSnapshotChanged || stagedSnapshotChanged)
+      ) {
+        lastStagedSnapshotSignatureRef.current = nextStagedSnapshotSignature;
+        const nextStagedState = Object.fromEntries(
+          Object.entries(response.staged_state_by_file).map(
+            ([filePath, stagedState]) => {
+              const next: StagedLinesStoreState[string] = {};
+
+              if (stagedState.isNewFile) {
+                next.isNewFile = true;
+              }
+
+              if (stagedState.isWholeFileStaged) {
+                next.isWholeFileStaged = true;
+              }
+
+              Object.entries(stagedState.hunks).forEach(([hunkIdx, lineIdxs]) => {
+                next[Number(hunkIdx)] = new Set(lineIdxs);
+              });
+
+              return [filePath, next];
             },
-          )
-        : {};
+          ),
+        ) as StagedLinesStoreState;
 
-      const nextStagedState = buildSyncedStagedLinesState(
-        result,
-        stagedDiffsByFile,
-      );
+        startTransition(() => {
+          useStagedLinesStore.getState().replaceStagedLines(nextStagedState);
+        });
+      }
 
       if (isMountedRef.current) {
-        useStagedLinesStore.getState().replaceStagedLines(nextStagedState);
-        setChanges(result);
+        hasLoadedOnceRef.current = true;
       }
     } catch (err) {
       if (isMountedRef.current) {
         setError(String(err));
         setChanges([]);
+        lastChangesRef.current = [];
+        lastFileSnapshotSignatureRef.current = null;
+        lastStagedSnapshotSignatureRef.current = null;
+        hasLoadedOnceRef.current = false;
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && shouldToggleLoading) {
         setLoading(false);
       }
     }
@@ -84,6 +154,12 @@ export const useWorkingDirectoryChanges = (
   useEffect(() => {
     if (!repoPath || !enabled) {
       setChanges([]);
+      setError(null);
+      setLoading(false);
+      lastChangesRef.current = [];
+      lastFileSnapshotSignatureRef.current = null;
+      lastStagedSnapshotSignatureRef.current = null;
+      hasLoadedOnceRef.current = false;
       return;
     }
     fetchChanges(); // Initial load

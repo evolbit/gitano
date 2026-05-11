@@ -89,6 +89,17 @@ export interface FileChangeWithHunks extends FileChange {
   hunks: DiffHunk[];
 }
 
+export interface StagedFileSelectionState {
+  isNewFile?: boolean;
+  isWholeFileStaged?: boolean;
+  hunks: Record<number, number[]>;
+}
+
+export interface WorkingDirectoryChangesResponse {
+  changes: FileChangeWithHunks[];
+  staged_state_by_file: Record<string, StagedFileSelectionState>;
+}
+
 export interface DiffLine {
   kind: "Add" | "Del" | "Context";
   content: string;

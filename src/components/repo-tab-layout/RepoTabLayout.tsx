@@ -45,7 +45,7 @@ const RepoTabLayout: React.FC = () => {
   // Constant automatic polling, without controls or notifications
   const { changes, loading, error, refreshChanges } =
     useWorkingDirectoryChanges(repoPath, {
-      pollInterval: 2000,
+      pollInterval: 5000,
       enabled: !!repoPath,
       pauseOnInactive: false,
       cacheKey: activeTabId ? `changes-${activeTabId}` : undefined,

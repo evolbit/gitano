@@ -1,5 +1,6 @@
 use git2;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(serde::Serialize)]
 pub struct CommitInfo {
@@ -165,6 +166,23 @@ pub struct FileChangeWithHunks {
     pub insertions: u32,
     pub deletions: u32,
     pub hunks: Vec<DiffHunk>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedFileSelectionState {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_new_file: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_whole_file_staged: Option<bool>,
+    #[serde(default)]
+    pub hunks: HashMap<usize, Vec<usize>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkingDirectoryChangesResponse {
+    pub changes: Vec<FileChangeWithHunks>,
+    pub staged_state_by_file: HashMap<String, StagedFileSelectionState>,
 }
 
 #[derive(Deserialize)]
