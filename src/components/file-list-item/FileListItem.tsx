@@ -1,6 +1,4 @@
-import { useState } from "react";
-import { FileChange } from "../types/git";
-import { getFileName, getParentPath } from "./utils/path";
+import { getFileName, getParentPath } from "../../utils/path";
 import {
   IconCopy,
   IconExchange,
@@ -9,15 +7,10 @@ import {
   IconPlus,
   IconPoint,
   IconQuestionMark,
-} from "./icons";
-
-interface FileListItemProps {
-  file: FileChange;
-}
+} from "../icons";
+import { FileListItemProps } from "./types";
 
 const FileListItem = ({ file }: FileListItemProps) => {
-  const [isHovered, setIsHovered] = useState(false);
-
   const getStatusIcon = () => {
     // If this is a new file (added with 0 insertions/deletions), show a question mark
     if (
@@ -88,9 +81,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
 
   return (
     <div
-      className="flex items-center p-1 rounded min-w-0 flex-1"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}>
+      className="flex items-center p-1 rounded min-w-0 flex-1">
       {getStatusIcon()}
       <span className="ml-2 flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
         {(() => {

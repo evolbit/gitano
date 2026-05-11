@@ -1,22 +1,22 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Accordion, Box } from "@mantine/core";
 import React, { useEffect, useRef, useState } from "react";
-import { REPO_LAYOUT } from "../constants/layout";
-import { useWorkingDirectoryChanges } from "../hooks/useWorkingDirectoryChanges";
-import { useFileHunksStore } from "../store/hunks";
-import { useRepoStore } from "../store/repo";
+import { REPO_LAYOUT } from "../../constants/layout";
+import { useWorkingDirectoryChanges } from "../../hooks/useWorkingDirectoryChanges";
+import { useFileHunksStore } from "../../store/hunks";
+import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
-} from "../store/workspaceUi";
-import { FileChangeWithHunks } from "../types/git";
-import { BranchList } from "./BranchList";
-import ChangesExplorer from "./ChangesExplorer";
-import ChangesPanel from "./ChangesPanel";
-import CommitList from "./CommitList";
-import DiffModal from "./DiffModal";
-import { IconFolder, IconGitBranch, IconStack2 } from "./icons";
-import TopToolbar from "./TopToolbar";
+} from "../../store/workspaceUi";
+import { FileChangeWithHunks } from "../../types/git";
+import { BranchList } from "../branch-list/BranchList";
+import ChangesExplorer from "../changes-explorer/ChangesExplorer";
+import ChangesPanel from "../changes-panel/ChangesPanel";
+import CommitList from "../commit-list/CommitList";
+import DiffModal from "../diff-viewer/DiffModal";
+import { IconFolder, IconGitBranch, IconStack2 } from "../icons";
+import TopToolbar from "../top-toolbar/TopToolbar";
 
 const RepoTabLayout: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -220,7 +220,10 @@ const RepoTabLayout: React.FC = () => {
                   icon: "mr-2",
                 }}
               >
-                <Accordion.Item value="changes" className="border-b-0">
+                <Accordion.Item
+                  value="changes"
+                  className="border-b-0 min-h-0 flex flex-1 flex-col"
+                >
                   <Accordion.Control>
                     <div className="flex flex-row items-center w-full justify-between">
                       <span className="flex items-center gap-2">
@@ -231,48 +234,52 @@ const RepoTabLayout: React.FC = () => {
                       </span>
                     </div>
                   </Accordion.Control>
-                  <Accordion.Panel className="min-w-0">
-                    {error && (
-                      <div className="p-4 text-center text-red-500">
-                        Error: {error}
-                      </div>
-                    )}
-                    {loading && changes.length === 0 && (
-                      <div className="p-4 text-center text-muted-foreground">
-                        Loading changes...
-                      </div>
-                    )}
-                    {!error && changes.length === 0 && !loading && (
-                      <div className="p-4 text-center text-muted-foreground">
-                        No changes in the working directory
-                      </div>
-                    )}
-                    {changes.length > 0 && (
-                      <ChangesExplorer
-                        className="min-w-0 border-r-0"
-                        files={changes}
-                        selectedPath={
-                          selectedWorkingFile?.path ?? changes[0]?.path ?? null
-                        }
-                        onSelectFile={(file) =>
-                          handleSelectWorkingFile(file as FileChangeWithHunks)
-                        }
-                        viewMode={workspaceState.workingChangesViewMode}
-                        onViewModeChange={(mode) => {
-                          if (!repoPath) return;
-                          setWorkingChangesViewMode(repoPath, mode);
-                        }}
-                        showFileCheckboxes={false}
-                        surface="main"
-                        repoPath={repoPath}
-                        onImmediateStageChange={refreshChanges}
-                        expandedState={workspaceState.mainChangesExpanded}
-                        onExpandedStateChange={(expanded) => {
-                          if (!repoPath) return;
-                          setMainChangesExpanded(repoPath, expanded);
-                        }}
-                      />
-                    )}
+                  <Accordion.Panel className="flex flex-1 flex-col">
+                    <div className="flex h-full w-full flex-col">
+                      {error && (
+                        <div className="p-4 text-center text-red-500">
+                          Error: {error}
+                        </div>
+                      )}
+                      {loading && changes.length === 0 && (
+                        <div className="p-4 text-center text-muted-foreground">
+                          Loading changes...
+                        </div>
+                      )}
+                      {!error && changes.length === 0 && !loading && (
+                        <div className="p-4 text-center text-muted-foreground">
+                          No changes in the working directory
+                        </div>
+                      )}
+                      {changes.length > 0 && (
+                        <ChangesExplorer
+                          className="min-w-0 border-r-0"
+                          files={changes}
+                          selectedPath={
+                            selectedWorkingFile?.path ??
+                            changes[0]?.path ??
+                            null
+                          }
+                          onSelectFile={(file) =>
+                            handleSelectWorkingFile(file as FileChangeWithHunks)
+                          }
+                          viewMode={workspaceState.workingChangesViewMode}
+                          onViewModeChange={(mode) => {
+                            if (!repoPath) return;
+                            setWorkingChangesViewMode(repoPath, mode);
+                          }}
+                          showFileCheckboxes={false}
+                          surface="main"
+                          repoPath={repoPath}
+                          onImmediateStageChange={refreshChanges}
+                          expandedState={workspaceState.mainChangesExpanded}
+                          onExpandedStateChange={(expanded) => {
+                            if (!repoPath) return;
+                            setMainChangesExpanded(repoPath, expanded);
+                          }}
+                        />
+                      )}
+                    </div>
                   </Accordion.Panel>
                 </Accordion.Item>
                 <Accordion.Item value="branches">

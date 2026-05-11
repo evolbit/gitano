@@ -10,7 +10,7 @@ export type TableColumn<T> = {
   render?: (value: any, row: T) => React.ReactNode;
 };
 
-export interface TableVirtualResizableProps<T> {
+export type TableVirtualResizableProps<T> = {
   columns: TableColumn<T>[];
   data: T[];
   rowHeight?: number;
@@ -25,7 +25,7 @@ export interface TableVirtualResizableProps<T> {
   selectedRowIndex?: number;
   keyboardNavigation?: boolean;
   setKeyboardNavigation?: (v: boolean) => void;
-}
+};
 
 export default function TableVirtualResizable<
   T extends { [key: string]: any }

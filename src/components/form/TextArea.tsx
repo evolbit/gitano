@@ -1,13 +1,12 @@
 import React, { forwardRef } from "react";
 
-interface TextAreaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+type TextAreaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   className?: string;
   rows?: number;
-}
+};
 
 const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
   (

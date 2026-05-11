@@ -1,65 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useFileHunksStore } from "../store/hunks";
-import { useStagedLinesStore } from "../store/staging";
+import { useFileHunksStore } from "../../store/hunks";
+import { useStagedLinesStore } from "../../store/staging";
 import DiffHunk from "./DiffHunk";
-import FloatingCommitBar from "./FloatingCommitBar";
-
-export type DiffDisplayMode = "unified" | "split";
-
-// Types for backend data
-interface DiffLine {
-  kind: "Add" | "Del" | "Context";
-  content: string;
-  old_lineno: number | null;
-  new_lineno: number | null;
-}
-
-interface DiffHunk {
-  header: string;
-  old_start: number;
-  old_lines: number;
-  new_start: number;
-  new_lines: number;
-  lines: DiffLine[];
-  is_new_file: boolean;
-}
-
-type ContextDirection = "Above" | "Below";
-
-/**
- * To move the controls to the external top bar:
- * 1. Remove this component's internal header (name, counters, buttons).
- * 2. Expose a getFileActionsData() function that returns the data needed for the top bar.
- * 3. The parent should call getFileActionsData() and render the controls where appropriate.
- * 4. Alternatively, you can pass the prebuilt visual block as 'fileActionsBar' and it will render above the diff.
- */
-interface DiffViewerProps {
-  repoPath: string;
-  filePath: string;
-  sha?: string;
-  context?: number;
-  onFileActionsData?: (data: {
-    filePath: string;
-    insertions: number;
-    deletions: number;
-    canStage: boolean;
-    canDiscard: boolean;
-    canRemove: boolean;
-    onStage: () => void;
-    onDiscard: () => void;
-    onRemove: () => void;
-  }) => void;
-  /**
-   * If provided, this visual block is rendered above the scrollable diff area.
-   * Example: <DiffViewer fileActionsBar={<MyBar filePath=... ... />} ... />
-   */
-  fileActionsBar?: React.ReactNode;
-  onWorkingTreeStageChange?: () => Promise<void> | void;
-  displayMode?: DiffDisplayMode;
-  onDisplayModeChange?: (mode: DiffDisplayMode) => void;
-}
+import FloatingCommitBar from "../floating-commit-bar/FloatingCommitBar";
+import {
+  ContextDirection,
+  DiffDisplayMode,
+  DiffHunk as DiffHunkData,
+  DiffLine as DiffLineData,
+  DiffViewerProps,
+} from "./types";
 
 const CONTEXT_DEFAULT = 3;
 
@@ -74,12 +26,12 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   onDisplayModeChange,
 }) => {
   // Local state for hunks when sha is defined
-  const [localHunks, setLocalHunks] = useState<DiffHunk[]>([]);
+  const [localHunks, setLocalHunks] = useState<DiffHunkData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Store extra context above and below for each hunk
   const [extraContext, setExtraContext] = useState<
-    Record<number, { above: DiffLine[]; below: DiffLine[] }>
+    Record<number, { above: DiffLineData[]; below: DiffLineData[] }>
   >({});
   // Global state for staged lines
   const setStagedLinesGlobal = useStagedLinesStore(
@@ -216,7 +168,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     if (!sha) return;
     setLoading(true);
     setError(null);
-    invoke<DiffHunk[]>("get_commit_file_diff", {
+    invoke<DiffHunkData[]>("get_commit_file_diff", {
       path: repoPath,
       sha,
       filePath,
@@ -302,12 +254,12 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   ) => {
     try {
       const prevHunk = extraContext[hunkIdx] || {
-        above: [] as DiffLine[],
-        below: [] as DiffLine[],
+        above: [] as DiffLineData[],
+        below: [] as DiffLineData[],
       };
       const offset =
         direction === "Above" ? prevHunk.above.length : prevHunk.below.length;
-      const res = await invoke<DiffLine[]>("get_diff_context", {
+      const res = await invoke<DiffLineData[]>("get_diff_context", {
         path: repoPath,
         filePath,
         hunkIndex: hunkIdx,
@@ -318,8 +270,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       });
       setExtraContext((prev) => {
         const prevHunk = prev[hunkIdx] || {
-          above: [] as DiffLine[],
-          below: [] as DiffLine[],
+          above: [] as DiffLineData[],
+          below: [] as DiffLineData[],
         };
         if (direction === "Above") {
           return {

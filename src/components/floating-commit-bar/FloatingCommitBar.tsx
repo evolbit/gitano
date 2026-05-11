@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useStageAndCommit } from "../hooks/useStageAndCommit";
+import { useStageAndCommit } from "../../hooks/useStageAndCommit";
 
 const FloatingCommitBar: React.FC<{
   expanded: boolean;

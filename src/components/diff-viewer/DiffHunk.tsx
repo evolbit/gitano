@@ -1,75 +1,13 @@
 import React from "react";
-import type { DiffDisplayMode } from "./DiffViewer";
-import { useStagedLinesStore } from "../store/staging";
-import { IconCheck } from "./icons";
-
-interface DiffLine {
-  kind: "Add" | "Del" | "Context";
-  content: string;
-  old_lineno: number | null;
-  new_lineno: number | null;
-}
-
-interface DiffHunkType {
-  header: string;
-  old_start: number;
-  old_lines: number;
-  new_start: number;
-  new_lines: number;
-  lines: DiffLine[];
-  is_new_file?: boolean;
-}
-
-type ContextDirection = "Above" | "Below";
-
-interface DiffHunkProps {
-  hunk: DiffHunkType;
-  filePath: string;
-  hunkIdx: number;
-  extraContext?: { above: DiffLine[]; below: DiffLine[] };
-  isHovered: boolean;
-  setHoveredHunkIdx: React.Dispatch<React.SetStateAction<number | null>>;
-  handleExpandContext: (
-    hunkIdx: number,
-    direction: ContextDirection,
-    lines: number,
-  ) => void;
-  handleLineMouseDown: (
-    hunkIdx: number,
-    lineIdx: number,
-    isStageable: boolean,
-    isStaged: boolean,
-  ) => void;
-  handleLineMouseEnter: (
-    hunkIdx: number,
-    lineIdx: number,
-    isStageable: boolean,
-    isStaged: boolean,
-  ) => void;
-  handleStageBlock: (hunkIdx: number, lineIdxs: number[]) => void;
-  canStage?: boolean;
-  displayMode?: DiffDisplayMode;
-}
-
-interface StageableBlock {
-  startLineIdx: number;
-  endLineIdx: number;
-  lineIdxs: number[];
-}
-
-interface SplitCell {
-  line: DiffLine;
-  lineIdx: number;
-}
-
-interface SplitRow {
-  key: string;
-  left?: SplitCell;
-  right?: SplitCell;
-  lineIdxs: number[];
-  block?: StageableBlock;
-  isBlockStart: boolean;
-}
+import { useStagedLinesStore } from "../../store/staging";
+import { IconCheck } from "../icons";
+import type {
+  DiffHunkProps,
+  DiffLine,
+  SplitCell,
+  SplitRow,
+  StageableBlock,
+} from "./types";
 
 const DiffHunk: React.FC<DiffHunkProps> = ({
   hunk,

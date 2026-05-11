@@ -1,4 +1,4 @@
-import Launchpad from "./Launchpad";
+import Launchpad from "../launchpad/Launchpad";
 
 export const HomePage = ({
   onRepoOpened,

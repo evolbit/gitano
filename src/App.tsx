@@ -1,24 +1,14 @@
 import "@gfazioli/mantine-split-pane/styles.css";
 import { Tabs } from "@mantine/core";
 import { listen } from "@tauri-apps/api/event";
-import { ReactNode, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import HomePage from "./components/HomePage";
-import RepoTabLayout from "./components/RepoTabLayout";
-import TabBar from "./components/TabBar";
+import { useEffect } from "react";
+import HomePage from "./components/home-page/HomePage";
+import RepoTabLayout from "./components/repo-tab-layout/RepoTabLayout";
+import TabBar from "./components/tab-bar/TabBar";
 import "./index.css";
 import { useRepoStore } from "./store/repo";
 
-type TabType = {
-  id: string;
-  label?: string;
-  icon?: ReactNode;
-};
-
-type RepoTabType = TabType & { repoPath?: string };
-
 export default function App() {
-  const { t } = useTranslation();
   const tabs = useRepoStore((s) => s.tabs);
   const activeTab = useRepoStore((s) => s.activeTabId);
   const addTab = useRepoStore((s) => s.addTab);

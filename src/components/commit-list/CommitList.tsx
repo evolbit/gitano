@@ -1,17 +1,17 @@
 import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRepoStore } from "../store/repo";
+import { useRepoStore } from "../../store/repo";
 import {
   CommitHistoryMode,
   CommitListItem,
   CommitListPage,
-} from "../types/git";
-import InputText from "./form/InputText";
-import { IconGitBranch, IconSearch } from "./icons";
+} from "../../types/git";
+import InputText from "../form/InputText";
+import { IconGitBranch, IconSearch } from "../icons";
 import TableVirtualResizable, {
   TableColumn,
-} from "./tables/TableVirtualResizable";
+} from "../tables/TableVirtualResizable";
 
 const PAGE_SIZE = 50;
 

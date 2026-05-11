@@ -1,11 +1,11 @@
 import { core } from "@tauri-apps/api";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
-import { useRepoStore } from "../store/repo";
+import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
-} from "../store/workspaceUi";
+} from "../../store/workspaceUi";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -15,8 +15,8 @@ import {
   IconFolder,
   IconGitBranch,
   IconGitMerge,
-} from "./icons";
-import { BranchTreeNode, groupBranches } from "./utils/branchTree";
+} from "../icons";
+import { BranchTreeNode, groupBranches } from "../../utils/branchTree";
 
 function BranchIcon({ name, selected }: { name: string; selected: boolean }) {
   const lower = name.toLowerCase();

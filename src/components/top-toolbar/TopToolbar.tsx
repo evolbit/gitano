@@ -10,11 +10,11 @@ import {
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
-import { useRepoStore } from "../store/repo";
+import { useRepoStore } from "../../store/repo";
 import {
   PullStrategy,
   useWorkspaceUiStore,
-} from "../store/workspaceUi";
+} from "../../store/workspaceUi";
 import {
   IconArrowBarToUp,
   IconBrandGit,
@@ -26,34 +26,18 @@ import {
   IconStack2,
   IconTerminal2,
   IconX,
-} from "./icons";
+} from "../icons";
+import {
+  PullStrategyOption,
+  RemoteActionButtonProps,
+  RemoteNotice,
+  TopToolbarProps,
+  ToolbarDropdownProps,
+} from "./types";
 
 const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
 const REMOTE_SUCCESS_SNACKBAR_MS = 3200;
 const REMOTE_ERROR_SNACKBAR_MS = 8000;
-
-type ToolbarDropdownProps = {
-  searchValue: string;
-  onSearchChange: (value: string) => void;
-  children: React.ReactNode;
-};
-
-type RemoteNotice = {
-  kind: "success" | "error";
-  title: string;
-  details: string;
-  expanded: boolean;
-};
-
-type RemoteActionButtonProps = {
-  label: string;
-  icon: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-  tooltip?: string;
-  rightSlot?: React.ReactNode;
-};
 
 function waitForNextFrame() {
   return new Promise<void>((resolve) => {
@@ -63,10 +47,7 @@ function waitForNextFrame() {
   });
 }
 
-const PULL_STRATEGIES: Array<{
-  value: PullStrategy;
-  label: string;
-}> = [
+const PULL_STRATEGIES: PullStrategyOption[] = [
   { value: "fetch-all", label: "Fetch All" },
   {
     value: "pull-ff-if-possible",
@@ -203,10 +184,6 @@ function getPullStrategyLabel(strategy: PullStrategy) {
     PULL_STRATEGIES.find((option) => option.value === strategy)?.label ??
     PULL_STRATEGIES[1].label
   );
-}
-
-interface TopToolbarProps {
-  selectorRegionWidth?: number;
 }
 
 const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {

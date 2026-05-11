@@ -1,15 +1,7 @@
 import { ActionIcon, Tabs } from "@mantine/core";
-import { ReactNode } from "react";
-import { classNames } from "../utils/ui";
-import { IconGitBranch, IconHome, IconPlus, IconX } from "./icons";
-
-type TabType = {
-  id: string;
-  label?: string;
-  icon?: ReactNode;
-};
-
-type RepoTabType = TabType & { repoPath?: string };
+import { classNames } from "../../utils/ui";
+import { IconGitBranch, IconHome, IconPlus, IconX } from "../icons";
+import { TabBarProps } from "./types";
 
 const branchIcon = (
   <IconGitBranch
@@ -17,13 +9,6 @@ const branchIcon = (
     style={{ marginRight: 6, verticalAlign: "middle" }}
   />
 );
-
-interface TabBarProps {
-  tabs: RepoTabType[];
-  activeTab: string;
-  onTabClose: (id: string, e: React.MouseEvent) => void;
-  onAddTab: () => void;
-}
 
 const TabBar: React.FC<TabBarProps> = ({
   tabs,
@@ -33,7 +18,7 @@ const TabBar: React.FC<TabBarProps> = ({
 }) => {
   return (
     <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-14 border-b border-border">
-      {tabs.map((tab, idx) => (
+      {tabs.map((tab) => (
         <Tabs.Tab
           key={tab.id}
           value={tab.id}

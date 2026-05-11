@@ -1,15 +1,15 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
-import { useRepoStore } from "../store/repo";
+import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
-} from "../store/workspaceUi";
-import { CommitDiff, FileChange } from "../types/git";
-import ChangesExplorer from "./ChangesExplorer";
-import DiffModal from "./DiffModal";
-import TextArea from "./form/TextArea";
+} from "../../store/workspaceUi";
+import { CommitDiff, FileChange } from "../../types/git";
+import ChangesExplorer from "../changes-explorer/ChangesExplorer";
+import DiffModal from "../diff-viewer/DiffModal";
+import TextArea from "../form/TextArea";
 
 const ChangesPanel: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);

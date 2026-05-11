@@ -2,9 +2,9 @@ import { ActionIcon, Box, Button, Group, Menu, Text } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import React, { useEffect, useMemo, useState } from "react";
-import { useRepoStore } from "../store/repo";
-import { openLocalRepoDialog } from "../utils/openRepo";
-import InputText from "./form/InputText";
+import { useRepoStore } from "../../store/repo";
+import { openLocalRepoDialog } from "../../utils/openRepo";
+import InputText from "../form/InputText";
 import {
   IconDotsVertical,
   IconFolder,
@@ -12,17 +12,10 @@ import {
   IconPlug,
   IconSearch,
   IconStar,
-} from "./icons";
+} from "../icons";
+import { RepoInfo, SectionProps } from "./types";
 
-const Section = ({
-  title,
-  children,
-  actions,
-}: {
-  title: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-}) => (
+const Section = ({ title, children, actions }: SectionProps) => (
   <Box className="mb-6">
     <Group
       justify="space-between"
@@ -33,14 +26,6 @@ const Section = ({
     <Box>{children}</Box>
   </Box>
 );
-
-interface RepoInfo {
-  path: string;
-  name: string;
-  branch: string | null;
-  loading: boolean;
-  error: string | null;
-}
 
 const RepoRow = ({
   repoInfo,

@@ -2,32 +2,21 @@ import { Split } from "@gfazioli/mantine-split-pane";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useShallow } from "zustand/react/shallow";
-import { useRepoStore } from "../store/repo";
-import { useFileHunksStore } from "../store/hunks";
-import { FileChange, FileChangeWithHunks } from "../types/git";
-import ChangesExplorer, { ChangesExplorerViewMode } from "./ChangesExplorer";
-import DiffViewer, { DiffDisplayMode } from "./DiffViewer";
-import { IconX } from "./icons";
-
-type DiffModalFile = FileChange | FileChangeWithHunks;
-type DiffModalSectionMode = "tracked-untracked" | "single";
+import { useRepoStore } from "../../store/repo";
+import { useFileHunksStore } from "../../store/hunks";
+import { FileChange, FileChangeWithHunks } from "../../types/git";
+import ChangesExplorer from "../changes-explorer/ChangesExplorer";
+import type { ChangesExplorerViewMode } from "../changes-explorer/types";
+import DiffViewer from "./DiffViewer";
+import { IconX } from "../icons";
+import type {
+  DiffDisplayMode,
+  DiffModalFile,
+  DiffModalProps,
+} from "./types";
 
 function isFileChangeWithHunks(file: DiffModalFile): file is FileChangeWithHunks {
   return "hunks" in file;
-}
-
-interface DiffModalProps {
-  open: boolean;
-  files: DiffModalFile[];
-  initialFile: DiffModalFile;
-  onClose: () => void;
-  onFileSelect?: (file: DiffModalFile) => void;
-  repoPath?: string;
-  sha?: string;
-  changesViewMode?: ChangesExplorerViewMode;
-  onChangesViewModeChange?: (mode: ChangesExplorerViewMode) => void;
-  sectionMode?: DiffModalSectionMode;
-  onWorkingTreeStageChange?: () => Promise<void> | void;
 }
 
 const DiffModal = ({

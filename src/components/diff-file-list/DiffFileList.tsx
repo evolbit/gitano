@@ -1,24 +1,9 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { useStagedLinesStore } from "../store/staging";
-import { DiffLine, FileChange } from "../types/git";
-import FileListItem from "./FileListItem";
-import { IconCheck, IconSearch } from "./icons";
-
-interface DiffFileListProps {
-  files: FileChange[];
-  onSelect: (file: FileChange, idx: number) => void;
-  onAction?: (file: FileChange, idx: number) => void;
-  selectedIndex: number;
-  autoFocusSearch?: boolean;
-  showSearch?: boolean;
-  rowBgColor?: string; // Row background color
-  rowHighlightColor?: string; // Highlight color
-  rowTextColor?: string; // Text color
-  highlightSelected?: boolean; // Enable or disable highlighting
-  rowDividerColor?: string; // Divider line color
-  rowPadding?: string; // li padding
-  showFileCheckboxes?: boolean; // NEW: show a checkbox per file
-}
+import { useStagedLinesStore } from "../../store/staging";
+import { DiffLine, FileChange } from "../../types/git";
+import FileListItem from "../file-list-item/FileListItem";
+import { IconCheck, IconSearch } from "../icons";
+import { DiffFileListProps } from "./types";
 
 // Type guard to know whether the ref is an object with .current
 function isRefObject(r: unknown): r is React.RefObject<HTMLUListElement> {

@@ -19,7 +19,7 @@ const FileTree: React.FC = () => {
     <div className="p-4 bg-gray-950 h-full border-r border-gray-800 w-64">
       <div className="font-bold mb-2">{t("fileTree.title")}</div>
       <ul className="text-sm text-gray-400">
-        {files.map((f, i) =>
+        {files.map((f) =>
           f.type === "folder" ? (
             <li
               key={f.name}

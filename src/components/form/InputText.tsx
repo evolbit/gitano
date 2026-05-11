@@ -1,13 +1,13 @@
 import React from "react";
 
-interface InputTextProps extends React.InputHTMLAttributes<HTMLInputElement> {
+type InputTextProps = React.InputHTMLAttributes<HTMLInputElement> & {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   className?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
-}
+};
 
 const InputText: React.FC<InputTextProps> = ({
   value,

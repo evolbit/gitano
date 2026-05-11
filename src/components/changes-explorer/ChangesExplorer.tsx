@@ -1,21 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
-import { useStagedLinesStore } from "../store/staging";
-import { FileChange } from "../types/git";
+import { useStagedLinesStore } from "../../store/staging";
+import { FileChange } from "../../types/git";
 import {
   buildAllStageableLineMap,
   buildCompressedTree,
-  collectFilesFromTree,
-  collectFolderPaths,
   ChangesExplorerFile,
   ChangesExplorerTreeNode,
-} from "./utils/changesExplorerTree";
+  collectFilesFromTree,
+  collectFolderPaths,
+} from "../../utils/changesExplorerTree";
 import {
   getAncestorFolderPaths,
   getFileName,
   getParentPath,
-} from "./utils/path";
+} from "../../utils/path";
 import {
   IconBinaryTree2,
   IconCheck,
@@ -32,40 +32,14 @@ import {
   IconPoint,
   IconQuestionMark,
   IconSearch,
-} from "./icons";
-
-export type ChangesExplorerViewMode = "flat" | "tree";
-
-type ChangesExplorerSurface = "main" | "modal";
-type SectionName = "Tracked" | "Untracked";
-type SectionMode = "tracked-untracked" | "single";
-type ContextMenuScope =
-  | { kind: "pane" }
-  | { kind: "file"; file: ChangesExplorerFile }
-  | {
-      kind: "folder";
-      folderPath: string;
-      files: ChangesExplorerFile[];
-      isUntracked: boolean;
-    };
-
-interface ChangesExplorerProps {
-  files: ChangesExplorerFile[];
-  selectedPath: string | null;
-  onSelectFile: (file: ChangesExplorerFile) => void;
-  viewMode: ChangesExplorerViewMode;
-  onViewModeChange: (mode: ChangesExplorerViewMode) => void;
-  showFileCheckboxes: boolean;
-  surface: ChangesExplorerSurface;
-  showHeader?: boolean;
-  autoFocusSearch?: boolean;
-  className?: string;
-  sectionMode?: SectionMode;
-  expandedState?: Record<string, boolean>;
-  onExpandedStateChange?: (expanded: Record<string, boolean>) => void;
-  repoPath?: string;
-  onImmediateStageChange?: () => Promise<void> | void;
-}
+} from "../icons";
+import {
+  ChangesExplorerProps,
+  ChangesExplorerViewMode,
+  ContextMenuScope,
+  SectionMode,
+  SectionName,
+} from "./types";
 
 const ALLOWED_STATUSES = [
   "added",
@@ -1115,7 +1089,7 @@ function ChangesExplorer({
   return (
     <div
       ref={containerRef}
-      className={`flex h-full min-h-0 flex-1 flex-col border-r border-border bg-background ${className}`}
+      className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden border-r border-border bg-background ${className}`}
       onContextMenu={(e) => {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, { kind: "pane" });
@@ -1212,7 +1186,7 @@ function ChangesExplorer({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {actionError ? (
           <div className="border-b border-rose-900/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
             {actionError}

@@ -1,11 +1,9 @@
 import { core } from "@tauri-apps/api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
-import { useRepoStore } from "../store/repo";
-import { IconFolderPlus } from "./icons";
+import { IconFolderPlus } from "../icons";
 
 export function OpenRepoButton() {
-  const setCurrentRepo = useRepoStore((s) => s.setCurrentRepo);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -19,9 +17,6 @@ export function OpenRepoButton() {
           path: selected,
         });
         setResult(res);
-        if (res.startsWith("Repositorio abierto correctamente")) {
-          setCurrentRepo(selected);
-        }
       } catch (e: any) {
         setResult(e.toString());
       }

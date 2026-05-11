@@ -1,4 +1,4 @@
-import { DiffLine, FileChange, FileChangeWithHunks } from "../../types/git";
+import { DiffLine, FileChange, FileChangeWithHunks } from "../types/git";
 
 export type ChangesExplorerFile = FileChange | FileChangeWithHunks;
 
@@ -16,16 +16,32 @@ export type ChangesExplorerTreeNode =
       name: string;
     };
 
+type TreeFolderNode = {
+  kind: "folder";
+  name: string;
+  path: string;
+  children: Map<string, TreeNodeRecord>;
+};
+
+type TreeFileNode = {
+  kind: "file";
+  file: ChangesExplorerFile;
+  path: string;
+  name: string;
+};
+
+type TreeNodeRecord = TreeFolderNode | TreeFileNode;
+
 export function buildCompressedTree(
   files: ChangesExplorerFile[],
 ): ChangesExplorerTreeNode[] {
-  const root = new Map<string, any>();
+  const root = new Map<string, TreeNodeRecord>();
 
   files.forEach((file) => {
     const parts = file.path.split("/");
     let current = root;
 
-    parts.forEach((part, index) => {
+    parts.forEach((part: string, index: number) => {
       const isLeaf = index === parts.length - 1;
       const existing = current.get(part);
 
@@ -40,11 +56,11 @@ export function buildCompressedTree(
       }
 
       if (!existing || existing.kind !== "folder") {
-        const next = {
+        const next: TreeFolderNode = {
           kind: "folder",
           name: part,
           path: parts.slice(0, index + 1).join("/"),
-          children: new Map<string, any>(),
+          children: new Map<string, TreeNodeRecord>(),
         };
         current.set(part, next);
         current = next.children;
@@ -55,11 +71,11 @@ export function buildCompressedTree(
     });
   });
 
-  const toNodes = (map: Map<string, any>): ChangesExplorerTreeNode[] =>
+  const toNodes = (map: Map<string, TreeNodeRecord>): ChangesExplorerTreeNode[] =>
     Array.from(map.values())
-      .map((entry) => {
+      .map((entry: TreeNodeRecord): ChangesExplorerTreeNode => {
         if (entry.kind === "file") {
-          return entry as ChangesExplorerTreeNode;
+          return entry;
         }
 
         const folderChildren = toNodes(entry.children);
