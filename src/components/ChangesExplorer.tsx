@@ -2,7 +2,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useStagedLinesStore } from "../store/staging";
-import { DiffLine, FileChange, FileChangeWithHunks } from "../types/git";
+import { FileChange } from "../types/git";
+import {
+  buildAllStageableLineMap,
+  buildCompressedTree,
+  collectFilesFromTree,
+  collectFolderPaths,
+  ChangesExplorerFile,
+  ChangesExplorerTreeNode,
+} from "./utils/changesExplorerTree";
+import {
+  getAncestorFolderPaths,
+  getFileName,
+  getParentPath,
+} from "./utils/path";
 import {
   IconBinaryTree2,
   IconCheck,
@@ -23,7 +36,6 @@ import {
 
 export type ChangesExplorerViewMode = "flat" | "tree";
 
-type ChangesExplorerFile = FileChange | FileChangeWithHunks;
 type ChangesExplorerSurface = "main" | "modal";
 type SectionName = "Tracked" | "Untracked";
 type SectionMode = "tracked-untracked" | "single";
@@ -35,20 +47,6 @@ type ContextMenuScope =
       folderPath: string;
       files: ChangesExplorerFile[];
       isUntracked: boolean;
-    };
-
-type TreeNode =
-  | {
-      kind: "folder";
-      name: string;
-      path: string;
-      children: TreeNode[];
-    }
-  | {
-      kind: "file";
-      file: ChangesExplorerFile;
-      path: string;
-      name: string;
     };
 
 interface ChangesExplorerProps {
@@ -89,28 +87,6 @@ function normalizeFiles(files: ChangesExplorerFile[]): ChangesExplorerFile[] {
     ...file,
     status: normalizeStatus(file.status),
   }));
-}
-
-function getFileName(path: string) {
-  const parts = path.split("/");
-  return parts[parts.length - 1] || path;
-}
-
-function getParentPath(path: string) {
-  const parts = path.split("/");
-  parts.pop();
-  return parts.join("/");
-}
-
-function getAncestorFolderPaths(path: string) {
-  const parts = path.split("/");
-  const ancestors: string[] = [];
-
-  for (let index = 1; index < parts.length; index += 1) {
-    ancestors.push(parts.slice(0, index).join("/"));
-  }
-
-  return ancestors;
 }
 
 function isUntrackedFile(file: ChangesExplorerFile) {
@@ -166,92 +142,6 @@ function partitionFiles(
   ].filter((section) => section.files.length > 0);
 }
 
-function buildCompressedTree(files: ChangesExplorerFile[]): TreeNode[] {
-  const root = new Map<string, any>();
-
-  files.forEach((file) => {
-    const parts = file.path.split("/");
-    let current = root;
-
-    parts.forEach((part, index) => {
-      const isLeaf = index === parts.length - 1;
-      const existing = current.get(part);
-
-      if (isLeaf) {
-        current.set(part, {
-          kind: "file",
-          file,
-          path: file.path,
-          name: part,
-        });
-        return;
-      }
-
-      if (!existing || existing.kind !== "folder") {
-        const next = {
-          kind: "folder",
-          name: part,
-          path: parts.slice(0, index + 1).join("/"),
-          children: new Map<string, any>(),
-        };
-        current.set(part, next);
-        current = next.children;
-        return;
-      }
-
-      current = existing.children;
-    });
-  });
-
-  const toNodes = (map: Map<string, any>): TreeNode[] =>
-    Array.from(map.values())
-      .map((entry) => {
-        if (entry.kind === "file") {
-          return entry as TreeNode;
-        }
-
-        const folderChildren = toNodes(entry.children);
-        let name = entry.name;
-        let path = entry.path;
-        let children = folderChildren;
-
-        while (children.length === 1 && children[0].kind === "folder") {
-          const child = children[0];
-          name = `${name}/${child.name}`;
-          path = child.path;
-          children = child.children;
-        }
-
-        return {
-          kind: "folder" as const,
-          name,
-          path,
-          children,
-        };
-      })
-      .sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-
-  return toNodes(root);
-}
-
-function collectFolderPaths(nodes: TreeNode[], acc = new Set<string>()) {
-  nodes.forEach((node) => {
-    if (node.kind !== "folder") return;
-    acc.add(node.path);
-    collectFolderPaths(node.children, acc);
-  });
-  return acc;
-}
-
-function collectFilesFromTree(nodes: TreeNode[]): ChangesExplorerFile[] {
-  return nodes.flatMap((node) =>
-    node.kind === "file" ? [node.file] : collectFilesFromTree(node.children),
-  );
-}
-
 function fileMatchesSearch(file: ChangesExplorerFile, search: string) {
   if (!search) return true;
   return file.path.toLowerCase().includes(search.toLowerCase());
@@ -303,26 +193,6 @@ function getStatusIcon(file: ChangesExplorerFile) {
         />
       );
   }
-}
-
-function buildAllStageableLineMap(file: ChangesExplorerFile) {
-  if (!("hunks" in file)) return {};
-
-  const allHunks: Record<number, number[]> = {};
-
-  file.hunks.forEach((hunk, hunkIdx) => {
-    const lineIdxs = hunk.lines
-      .map((line: DiffLine, idx: number) =>
-        line.kind === "Add" || line.kind === "Del" ? idx : null,
-      )
-      .filter((lineIdx) => lineIdx !== null) as number[];
-
-    if (lineIdxs.length > 0) {
-      allHunks[hunkIdx] = lineIdxs;
-    }
-  });
-
-  return allHunks;
 }
 
 function serializeLineSelection(
@@ -924,7 +794,10 @@ function ChangesExplorer({
     );
   };
 
-  const renderTreeNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
+  const renderTreeNodes = (
+    nodes: ChangesExplorerTreeNode[],
+    depth: number,
+  ): React.ReactNode =>
     nodes.map((node) => {
       if (node.kind === "folder") {
         const isOpen = search ? true : (expanded[node.path] ?? true);

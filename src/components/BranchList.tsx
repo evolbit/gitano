@@ -16,37 +16,7 @@ import {
   IconGitBranch,
   IconGitMerge,
 } from "./icons";
-
-// Helper to group branches by prefix
-function groupBranches(branches: string[]): any[] {
-  const tree: any = {};
-  branches.forEach((branch) => {
-    const parts = branch.split("/");
-    let current = tree;
-    parts.forEach((part, idx) => {
-      if (!current[part]) {
-        current[part] = idx === parts.length - 1 ? null : {};
-      }
-      if (idx < parts.length - 1) current = current[part];
-    });
-  });
-  function toArray(obj: any, prefix = ""): any[] {
-    return Object.entries(obj).map(([key, value]) => {
-      const full = prefix ? `${prefix}/${key}` : key;
-      if (value === null) {
-        return { type: "branch", name: key, full };
-      } else {
-        return {
-          type: "group",
-          name: key,
-          full,
-          children: toArray(value, full),
-        };
-      }
-    });
-  }
-  return toArray(tree);
-}
+import { BranchTreeNode, groupBranches } from "./utils/branchTree";
 
 function BranchIcon({ name, selected }: { name: string; selected: boolean }) {
   const lower = name.toLowerCase();
@@ -188,7 +158,7 @@ export function BranchList() {
     }
   }, [showOther]);
 
-  function renderTree(nodes: any[], level = 0) {
+  function renderTree(nodes: BranchTreeNode[], level = 0) {
     return (
       <ul className={`select-none min-w-0`}>
         {nodes.map((node) => {

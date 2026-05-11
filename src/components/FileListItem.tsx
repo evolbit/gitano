@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FileChange } from "../types/git";
+import { getFileName, getParentPath } from "./utils/path";
 import {
   IconCopy,
   IconExchange,
@@ -93,17 +94,16 @@ const FileListItem = ({ file }: FileListItemProps) => {
       {getStatusIcon()}
       <span className="ml-2 flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
         {(() => {
-          const lastSlash = file.path.lastIndexOf("/");
-          if (lastSlash === -1) return file.path;
-          const dir = file.path.substring(0, lastSlash + 1);
-          const name = file.path.substring(lastSlash + 1);
-          if (lastSlash === -1) {
+          const dir = getParentPath(file.path);
+          const name = getFileName(file.path);
+
+          if (!dir) {
             return <span className="truncate">{file.path}</span>;
           }
 
           return (
             <>
-              <span className="truncate text-zinc-400">{dir}</span>
+              <span className="truncate text-zinc-400">{`${dir}/`}</span>
               <span className="text-zinc-100 flex-shrink-0">{name}</span>
             </>
           );

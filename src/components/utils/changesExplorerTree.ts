@@ -1,0 +1,130 @@
+import { DiffLine, FileChange, FileChangeWithHunks } from "../../types/git";
+
+export type ChangesExplorerFile = FileChange | FileChangeWithHunks;
+
+export type ChangesExplorerTreeNode =
+  | {
+      kind: "folder";
+      name: string;
+      path: string;
+      children: ChangesExplorerTreeNode[];
+    }
+  | {
+      kind: "file";
+      file: ChangesExplorerFile;
+      path: string;
+      name: string;
+    };
+
+export function buildCompressedTree(
+  files: ChangesExplorerFile[],
+): ChangesExplorerTreeNode[] {
+  const root = new Map<string, any>();
+
+  files.forEach((file) => {
+    const parts = file.path.split("/");
+    let current = root;
+
+    parts.forEach((part, index) => {
+      const isLeaf = index === parts.length - 1;
+      const existing = current.get(part);
+
+      if (isLeaf) {
+        current.set(part, {
+          kind: "file",
+          file,
+          path: file.path,
+          name: part,
+        });
+        return;
+      }
+
+      if (!existing || existing.kind !== "folder") {
+        const next = {
+          kind: "folder",
+          name: part,
+          path: parts.slice(0, index + 1).join("/"),
+          children: new Map<string, any>(),
+        };
+        current.set(part, next);
+        current = next.children;
+        return;
+      }
+
+      current = existing.children;
+    });
+  });
+
+  const toNodes = (map: Map<string, any>): ChangesExplorerTreeNode[] =>
+    Array.from(map.values())
+      .map((entry) => {
+        if (entry.kind === "file") {
+          return entry as ChangesExplorerTreeNode;
+        }
+
+        const folderChildren = toNodes(entry.children);
+        let name = entry.name;
+        let path = entry.path;
+        let children = folderChildren;
+
+        while (children.length === 1 && children[0].kind === "folder") {
+          const child = children[0];
+          name = `${name}/${child.name}`;
+          path = child.path;
+          children = child.children;
+        }
+
+        return {
+          kind: "folder" as const,
+          name,
+          path,
+          children,
+        };
+      })
+      .sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+  return toNodes(root);
+}
+
+export function collectFolderPaths(
+  nodes: ChangesExplorerTreeNode[],
+  acc = new Set<string>(),
+) {
+  nodes.forEach((node) => {
+    if (node.kind !== "folder") return;
+    acc.add(node.path);
+    collectFolderPaths(node.children, acc);
+  });
+  return acc;
+}
+
+export function collectFilesFromTree(
+  nodes: ChangesExplorerTreeNode[],
+): ChangesExplorerFile[] {
+  return nodes.flatMap((node) =>
+    node.kind === "file" ? [node.file] : collectFilesFromTree(node.children),
+  );
+}
+
+export function buildAllStageableLineMap(file: ChangesExplorerFile) {
+  if (!("hunks" in file)) return {};
+
+  const allHunks: Record<number, number[]> = {};
+
+  file.hunks.forEach((hunk, hunkIdx) => {
+    const lineIdxs = hunk.lines
+      .map((line: DiffLine, idx: number) =>
+        line.kind === "Add" || line.kind === "Del" ? idx : null,
+      )
+      .filter((lineIdx) => lineIdx !== null) as number[];
+
+    if (lineIdxs.length > 0) {
+      allHunks[hunkIdx] = lineIdxs;
+    }
+  });
+
+  return allHunks;
+}
