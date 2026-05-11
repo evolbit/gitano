@@ -480,14 +480,14 @@ const UnifiedLineRow: React.FC<{
         isIndeterminate={false}
         onMouseDown={onMouseDown}
       />
-      <div className={`flex flex-1 items-center px-4 ${baseColor} ${contentTone}`}>
-        <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
+      <div className={`flex flex-1 items-start px-4 ${baseColor} ${contentTone}`}>
+        <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
           {line.old_lineno ?? ""}
         </span>
-        <span className="w-10 text-right pr-2 text-zinc-200 select-none block">
+        <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
           {line.new_lineno ?? ""}
         </span>
-        <span className="flex-1 min-w-0 whitespace-pre-wrap">{line.content}</span>
+        <span className="min-w-0 flex-1 whitespace-pre-wrap pt-1">{line.content}</span>
       </div>
     </div>
   );

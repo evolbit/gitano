@@ -4,6 +4,7 @@ import ReactDOM from "react-dom";
 import { useStagedLinesStore } from "../store/staging";
 import { DiffLine, FileChange, FileChangeWithHunks } from "../types/git";
 import {
+  IconBinaryTree2,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -11,6 +12,7 @@ import {
   IconDotsVertical,
   IconExchange,
   IconFolder,
+  IconLayoutList,
   IconMinus,
   IconPencil,
   IconPlus,
@@ -622,7 +624,8 @@ function ChangesExplorer({
   };
 
   const toggleAllFilesSelection = async () => {
-    if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0) return;
+    if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0)
+      return;
     setActionError(null);
 
     const previousStagedLines = cloneStagedLinesState(
@@ -882,7 +885,7 @@ function ChangesExplorer({
         key={file.path}
         type="button"
         data-file-path={file.path}
-        className={`flex w-full items-center gap-2 border-b border-transparent px-3 py-2 text-left text-sm transition-colors ${
+        className={`flex w-full items-center gap-2 overflow-hidden border-b border-transparent px-3 py-2 text-left text-sm transition-colors ${
           isSelected
             ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
             : "text-foreground hover:bg-background-emphasis"
@@ -934,7 +937,7 @@ function ChangesExplorer({
           <div key={node.path}>
             <button
               type="button"
-              className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
+              className="flex w-full items-center gap-1 overflow-hidden px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
               style={{ paddingLeft: `${12 + depth * 22}px` }}
               onClick={() => toggleFolder(node.path)}
               onContextMenu={(e) => {
@@ -948,15 +951,20 @@ function ChangesExplorer({
                 });
               }}
             >
-              <span className="inline-flex h-4 w-4 items-center justify-center">
+              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
                 {isOpen ? (
                   <IconChevronDown size={14} />
                 ) : (
                   <IconChevronRight size={14} />
                 )}
               </span>
-              <IconFolder size={16} className="text-slate-300" />
-              <span className="truncate">{node.name}</span>
+              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                <IconFolder
+                  size={16}
+                  className="h-4 w-4 flex-shrink-0 text-slate-300"
+                />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{node.name}</span>
             </button>
             {isOpen ? renderTreeNodes(node.children, depth + 1) : null}
           </div>
@@ -970,7 +978,7 @@ function ChangesExplorer({
           key={node.file.path}
           type="button"
           data-file-path={node.file.path}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors ${
+          className={`flex w-full items-center gap-2 overflow-hidden px-3 py-1.5 text-left text-sm transition-colors ${
             isSelected
               ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
               : "text-foreground hover:bg-background-emphasis"
@@ -1007,7 +1015,7 @@ function ChangesExplorer({
     });
 
   const renderSection = (name: SectionName, content: React.ReactNode) => (
-    <section key={name} className="pb-2">
+    <section key={name} className="pb-0">
       {sectionMode === "tracked-untracked" ? (
         <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-zinc-500/90">
           {name}
@@ -1202,23 +1210,23 @@ function ChangesExplorer({
               : null}
             {activeContextMenu.kind === "pane"
               ? (["flat", "tree"] as ChangesExplorerViewMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors ${
-                  viewMode === mode
-                    ? "bg-zinc-800 text-white"
-                    : "text-zinc-200 hover:bg-zinc-800"
-                }`}
-                onClick={() => {
-                  onViewModeChange(mode);
-                  setActiveContextMenu(null);
-                }}
-              >
-                <span>{mode === "flat" ? "Flat View" : "Tree View"}</span>
-                {viewMode === mode ? <IconCheck size={14} /> : null}
-              </button>
-            ))
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors ${
+                      viewMode === mode
+                        ? "bg-zinc-800 text-white"
+                        : "text-zinc-200 hover:bg-zinc-800"
+                    }`}
+                    onClick={() => {
+                      onViewModeChange(mode);
+                      setActiveContextMenu(null);
+                    }}
+                  >
+                    <span>{mode === "flat" ? "Flat View" : "Tree View"}</span>
+                    {viewMode === mode ? <IconCheck size={14} /> : null}
+                  </button>
+                ))
               : activeContextMenu.kind === "file"
                 ? renderFileContextMenu(activeContextMenu.file)
                 : renderFolderContextMenu(
@@ -1269,7 +1277,9 @@ function ChangesExplorer({
               onClick={() => {
                 void toggleAllFilesSelection();
               }}
-              disabled={!showFileCheckboxes || !repoPath || normalizedFiles.length === 0}
+              disabled={
+                !showFileCheckboxes || !repoPath || normalizedFiles.length === 0
+              }
             >
               {areAllFilesFullySelected ? "Unstage All" : "Stage All"}
             </button>
@@ -1277,17 +1287,55 @@ function ChangesExplorer({
         </div>
       ) : null}
 
-      <div className="border-b border-border bg-background-emphasis p-2">
-        <div className="relative">
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-            placeholder="Search files..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+      <div className={`border-b border-border p-2 bg-background-emphasis`}>
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              placeholder="Search files..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          </div>
+          {surface === "main" ? (
+            <div className="flex items-center overflow-hidden rounded border border-border bg-background">
+              {(
+                [
+                  {
+                    mode: "flat" as const,
+                    label: "Flat View",
+                    icon: <IconLayoutList size={15} />,
+                  },
+                  {
+                    mode: "tree" as const,
+                    label: "Tree View",
+                    icon: <IconBinaryTree2 size={15} />,
+                  },
+                ] as const
+              ).map((option) => {
+                const active = viewMode === option.mode;
+                return (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    className={`flex h-8 w-8 items-center justify-center transition-colors ${
+                      active
+                        ? "bg-zinc-800 text-zinc-100"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    }`}
+                    onClick={() => onViewModeChange(option.mode)}
+                    aria-label={option.label}
+                    title={option.label}
+                  >
+                    {option.icon}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
 

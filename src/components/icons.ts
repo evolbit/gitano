@@ -20,6 +20,7 @@ export {
   IconGitBranch,
   IconGitMerge,
   IconHome,
+  IconLayoutList,
   IconMinus,
   IconPencil,
   IconPlug,
@@ -30,5 +31,6 @@ export {
   IconStack2,
   IconStar,
   IconTerminal2,
+  IconBinaryTree2,
   IconX,
 } from "@tabler/icons-react";

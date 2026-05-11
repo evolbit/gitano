@@ -1,8 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Define how the commit changes pane renders changed files using the shared explorer model, including its persisted view mode and narrow-pane behavior.
-
-## Requirements
 ### Requirement: Commit changes pane uses the shared changes explorer
 The system SHALL render the commit changes file list using the shared changes explorer model rather than a flat-only legacy list.
 

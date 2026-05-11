@@ -35,7 +35,12 @@ The system SHALL use the same changes explorer model in the main workspace chang
 - **THEN** the explorer MUST scroll the left pane so that selected file becomes visible
 
 ### Requirement: View switching is available from a context menu
-The system SHALL expose `Flat View` and `Tree View` switching from a context menu in both changes explorer surfaces.
+The system SHALL expose `Flat View` and `Tree View` switching from visible toggle controls and from a context menu in both changes explorer surfaces.
+
+#### Scenario: User changes view mode from the explorer header
+- **WHEN** the user clicks the visible flat/tree toggle controls in the current changes pane or commit changes pane
+- **THEN** the system MUST switch the active explorer between `Flat View` and `Tree View`
+- **THEN** the selected mode MUST update the existing persisted mode state for that surface
 
 #### Scenario: User reopens a repository after changing explorer modes
 - **WHEN** the user previously changed the working changes or commit changes explorer mode for a repository
@@ -55,4 +60,3 @@ The system SHALL allow the shared explorer to expose different controls dependin
 #### Scenario: Explorer is rendered in the working-tree modal
 - **WHEN** the shared explorer is used in the working-tree diff modal
 - **THEN** file-level staging checkboxes MUST be shown for editable working-tree diffs
-

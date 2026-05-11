@@ -20,10 +20,10 @@ const ChangesPanel: React.FC = () => {
     repoPath
       ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
           .commitChangesViewMode
-      : DEFAULT_REPO_WORKSPACE_STATE.commitChangesViewMode
+      : DEFAULT_REPO_WORKSPACE_STATE.commitChangesViewMode,
   );
   const setCommitChangesViewMode = useWorkspaceUiStore(
-    (s) => s.setCommitChangesViewMode
+    (s) => s.setCommitChangesViewMode,
   );
   const [diff, setDiff] = useState<CommitDiff | null>(null);
   const [loading, setLoading] = useState(false);
@@ -148,11 +148,10 @@ const ChangesPanel: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="bg-background h-full flex flex-col text-sm">
-      <Split
-        orientation="horizontal"
-        className="h-full w-full border-none">
-        <Split.Pane initialWidth="50%">
+      className="bg-background h-full flex flex-col text-sm"
+    >
+      <Split orientation="horizontal" className="h-full w-full border-none">
+        <Split.Pane initialWidth="50%" className="border-b border-border">
           <div className="p-4 h-full w-full flex flex-col">
             <div className="mb-4">
               <p>
@@ -183,12 +182,14 @@ const ChangesPanel: React.FC = () => {
                 <div className="flex justify-start space-x-2">
                   <button
                     onClick={handleUpdateMessage}
-                    className="bg-green-600 hover:bg-green-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm">
+                    className="bg-green-600 hover:bg-green-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm"
+                  >
                     Update Message
                   </button>
                   <button
                     onClick={handleCancelAmend}
-                    className="bg-red-600 hover:bg-red-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm">
+                    className="bg-red-600 hover:bg-red-700 text-primary-foreground font-bold py-1 px-3 rounded text-sm"
+                  >
                     Cancel Amend
                   </button>
                 </div>
@@ -196,9 +197,9 @@ const ChangesPanel: React.FC = () => {
             </div>
           </div>
         </Split.Pane>
-        <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
-        <Split.Pane grow>
-          <div className="p-4 h-full w-full overflow-auto">
+        <Split.Resizer className="!bg-transparent hover:!bg-primary [--split-resizer-size:1px] !-mt-[2px]" />
+        <Split.Pane grow className="-mt-[3px]">
+          <div className="h-full w-full overflow-hidden">
             {loading && <p>Loading changes...</p>}
             {error && <p className="text-red-500">Error: {error}</p>}
 
@@ -206,8 +207,12 @@ const ChangesPanel: React.FC = () => {
               <div className="h-full min-h-0">
                 <ChangesExplorer
                   files={diff.changes}
-                  selectedPath={diffModalFile?.path ?? diff.changes[0]?.path ?? null}
-                  onSelectFile={(file) => handleSelectCommitFile(file as FileChange)}
+                  selectedPath={
+                    diffModalFile?.path ?? diff.changes[0]?.path ?? null
+                  }
+                  onSelectFile={(file) =>
+                    handleSelectCommitFile(file as FileChange)
+                  }
                   viewMode={commitChangesViewMode}
                   onViewModeChange={(mode) => {
                     if (!repoPath) return;

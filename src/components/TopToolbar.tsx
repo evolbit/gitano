@@ -205,7 +205,11 @@ function getPullStrategyLabel(strategy: PullStrategy) {
   );
 }
 
-const TopToolbar: React.FC = () => {
+interface TopToolbarProps {
+  selectorRegionWidth?: number;
+}
+
+const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   const [repoSearch, setRepoSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
   const [repoMenuOpened, setRepoMenuOpened] = useState(false);
@@ -458,7 +462,12 @@ const TopToolbar: React.FC = () => {
         <Group
           px="sm"
           gap={0}
-          className="!w-[620px] h-full">
+          className="h-full flex-none"
+          style={{
+            width: selectorRegionWidth
+              ? `${selectorRegionWidth}px`
+              : undefined,
+          }}>
           <Menu
             shadow="md"
             offset={0}

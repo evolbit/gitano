@@ -25,36 +25,44 @@ const RepoTabLayout: React.FC = () => {
   const selectedCommit = tab?.selectedCommit;
   const workspaceState = useWorkspaceUiStore((s) =>
     repoPath
-      ? s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE
-      : DEFAULT_REPO_WORKSPACE_STATE
+      ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
+      : DEFAULT_REPO_WORKSPACE_STATE,
   );
   const setLeftAccordionOpen = useWorkspaceUiStore(
-    (s) => s.setLeftAccordionOpen
+    (s) => s.setLeftAccordionOpen,
   );
   const setWorkingChangesViewMode = useWorkspaceUiStore(
-    (s) => s.setWorkingChangesViewMode
+    (s) => s.setWorkingChangesViewMode,
   );
   const setMainChangesExpanded = useWorkspaceUiStore(
-    (s) => s.setMainChangesExpanded
+    (s) => s.setMainChangesExpanded,
   );
   const setLeftPaneWidth = useWorkspaceUiStore((s) => s.setLeftPaneWidth);
   const setCommitDetailsWidth = useWorkspaceUiStore(
-    (s) => s.setCommitDetailsWidth
+    (s) => s.setCommitDetailsWidth,
   );
 
   // Constant automatic polling, without controls or notifications
-  const { changes, loading, error, refreshChanges } = useWorkingDirectoryChanges(repoPath, {
-    pollInterval: 2000,
-    enabled: !!repoPath,
-    pauseOnInactive: false,
-    cacheKey: activeTabId ? `changes-${activeTabId}` : undefined,
-    showNotifications: false,
-  });
+  const { changes, loading, error, refreshChanges } =
+    useWorkingDirectoryChanges(repoPath, {
+      pollInterval: 2000,
+      enabled: !!repoPath,
+      pauseOnInactive: false,
+      cacheKey: activeTabId ? `changes-${activeTabId}` : undefined,
+      showNotifications: false,
+    });
 
   // Track working-tree selection by path so modal state can rebind to the
   // refreshed live changes list instead of holding stale file objects.
-  const [selectedWorkingFilePath, setSelectedWorkingFilePath] =
-    useState<string | null>(null);
+  const [selectedWorkingFilePath, setSelectedWorkingFilePath] = useState<
+    string | null
+  >(null);
+  const [liveLeftPaneWidth, setLiveLeftPaneWidth] = useState<number>(
+    workspaceState.leftPaneWidth ??
+      (typeof REPO_LAYOUT.panes.left.initial === "number"
+        ? REPO_LAYOUT.panes.left.initial
+        : REPO_LAYOUT.panes.left.min),
+  );
   const leftSidebarPaneRef = useRef<HTMLDivElement | null>(null);
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
@@ -69,7 +77,7 @@ const RepoTabLayout: React.FC = () => {
   const selectedWorkingFile =
     selectedWorkingFilePath === null
       ? null
-      : changes.find((f) => f.path === selectedWorkingFilePath) ?? null;
+      : (changes.find((f) => f.path === selectedWorkingFilePath) ?? null);
 
   // Close DiffViewer if the selected file no longer exists in changes
   useEffect(() => {
@@ -117,6 +125,24 @@ const RepoTabLayout: React.FC = () => {
   }, [repoPath, workspaceState.leftPaneWidth]);
 
   useEffect(() => {
+    const leftSidebarPane = leftSidebarPaneRef.current;
+    if (!leftSidebarPane) return;
+
+    const updateWidth = () => {
+      const width = leftSidebarPane.getBoundingClientRect().width;
+      if (width > 1) {
+        setLiveLeftPaneWidth(width);
+      }
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(leftSidebarPane);
+
+    return () => observer.disconnect();
+  }, [repoPath]);
+
+  useEffect(() => {
     if (selectedWorkingFile) return;
 
     const commitDetailsPane = commitDetailsPaneRef.current;
@@ -156,7 +182,7 @@ const RepoTabLayout: React.FC = () => {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <TopToolbar />
+      <TopToolbar selectorRegionWidth={liveLeftPaneWidth} />
       <div className="flex-1 min-h-0">
         <Split className="h-full w-full min-h-0 flex-1">
           {/* Left sidebar */}
@@ -171,9 +197,9 @@ const RepoTabLayout: React.FC = () => {
               if (!repoPath || size.width <= 1) return;
               setLeftPaneWidth(repoPath, size.width);
             }}
-            className="!h-full !min-h-0 flex flex-col"
+            className="!h-full !min-h-0 flex flex-col border-r border-border"
           >
-            <Box className="flex-1 text-foreground flex flex-col min-h-0">
+            <Box className="flex-1 text-foreground flex flex-col min-h-0 min-w-0">
               <Accordion
                 multiple
                 value={workspaceState.leftAccordionOpen}
@@ -184,17 +210,17 @@ const RepoTabLayout: React.FC = () => {
                 variant="contained"
                 chevronPosition="left"
                 classNames={{
-                  root: "bg-background-emphasis text-foreground flex-1 flex flex-col min-h-0",
-                  item: "group bg-background text-foreground flex flex-col data-[active]:flex-1 data-[active]:min-h-0",
+                  root: "bg-background-emphasis text-foreground flex-1 flex flex-col min-h-0 min-w-0",
+                  item: "group bg-background text-foreground flex flex-col min-w-0",
                   control:
-                    "bg-background-emphasis text-foreground p-2 transition-colors hover:bg-background-emphasis",
+                    "bg-background-emphasis text-foreground p-2 transition-colors hover:bg-background-emphasis min-w-0",
                   panel:
-                    "text-foreground flex-1 flex flex-col min-h-0 bg-background-emphasis",
-                  content: "flex-1 min-h-0",
+                    "text-foreground flex-1 flex flex-col min-h-0 bg-background-emphasis min-w-0",
+                  content: "flex-1 min-h-0 min-w-0",
                   icon: "mr-2",
                 }}
               >
-                <Accordion.Item value="changes">
+                <Accordion.Item value="changes" className="border-b-0">
                   <Accordion.Control>
                     <div className="flex flex-row items-center w-full justify-between">
                       <span className="flex items-center gap-2">
@@ -223,8 +249,11 @@ const RepoTabLayout: React.FC = () => {
                     )}
                     {changes.length > 0 && (
                       <ChangesExplorer
+                        className="min-w-0 border-r-0"
                         files={changes}
-                        selectedPath={selectedWorkingFile?.path ?? changes[0]?.path ?? null}
+                        selectedPath={
+                          selectedWorkingFile?.path ?? changes[0]?.path ?? null
+                        }
                         onSelectFile={(file) =>
                           handleSelectWorkingFile(file as FileChangeWithHunks)
                         }
@@ -279,7 +308,7 @@ const RepoTabLayout: React.FC = () => {
               </Accordion>
             </Box>
           </Split.Pane>
-          <Split.Resizer className="!bg-background-emphasis hover:!bg-foreground [--split-resizer-size:1px] m-0 border-r border-border rounded-none" />
+          <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
           {/* Right panel: changes based on the selection */}
           <Split.Pane grow className="!h-full !min-h-0">
             <Split orientation="vertical" className="h-full w-full">
@@ -292,9 +321,9 @@ const RepoTabLayout: React.FC = () => {
               </Split.Pane>
               <Split.Resizer
                 className={
-                  selectedCommit
-                    ? "!bg-border hover:!bg-primary [--split-resizer-size:1px]"
-                    : "hidden"
+                  (selectedCommit
+                    ? "!bg-transparent hover:!bg-primary [--split-resizer-size:1px]"
+                    : "hidden") + " "
                 }
               />
               <Split.Pane
@@ -312,7 +341,12 @@ const RepoTabLayout: React.FC = () => {
                     }
                   }
                 }}
-                className={selectedCommit ? "overflow-hidden" : "hidden overflow-hidden"}
+                className={
+                  (selectedCommit
+                    ? "overflow-hidden"
+                    : "hidden overflow-hidden") +
+                  " border-l border-border -ml-[4px]"
+                }
               >
                 {selectedCommit ? <ChangesPanel /> : null}
               </Split.Pane>
