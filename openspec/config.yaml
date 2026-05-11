@@ -6,6 +6,7 @@ context: |
   Product direction: The project prioritizes innovative ideas and should aim beyond what is already implemented. New features should be evaluated carefully to arrive at the best version before implementation.
   Engineering principles: Code should follow best practices and stay as simple as possible so it is easy for everybody to understand and maintain.
   Performance expectations: The tool should feel fast, responsive, and efficient in everyday use.
+  UI: The user interface should be intuitive and easy to use, with clear and consistent design. As dummy as possible and delegate logic to the backend.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

@@ -1,0 +1,14 @@
+export { type ChangesExplorerCheckboxState } from "./types";
+export { type ChangesExplorerStagedLinesState } from "./types";
+export { normalizeStatus } from "./normalizeStatus";
+export { normalizeFiles } from "./normalizeFiles";
+export { isUntrackedFile } from "./isUntrackedFile";
+export { getShowInFileManagerLabel } from "./getShowInFileManagerLabel";
+export { partitionFiles } from "./partitionFiles";
+export { fileMatchesSearch } from "./fileMatchesSearch";
+export { serializeLineSelection } from "./serializeLineSelection";
+export { cloneStagedLinesState } from "./cloneStagedLinesState";
+export { buildAllStageableLineMap } from "./buildAllStageableLineMap";
+export { getCheckboxStateForFile } from "./getCheckboxStateForFile";
+export { getFolderCheckboxState } from "./getFolderCheckboxState";
+export { getTreeDescendants } from "./getTreeDescendants";
