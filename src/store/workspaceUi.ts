@@ -4,6 +4,7 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
+export type LeftPaneSection = "changes" | "branches" | "folders";
 export type PullStrategy =
   | "fetch-all"
   | "pull-ff-if-possible"
@@ -18,7 +19,7 @@ export interface WindowBoundsState {
 }
 
 export interface RepoWorkspaceState {
-  leftAccordionOpen: string[];
+  leftPaneSection: LeftPaneSection;
   branchTreeExpanded: Record<string, boolean>;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
@@ -34,7 +35,7 @@ interface WorkspaceUiStore {
   setWindowBounds: (bounds: Partial<WindowBoundsState>) => void;
   setPullStrategy: (strategy: PullStrategy) => void;
   updateRepoState: (repoPath: string, data: Partial<RepoWorkspaceState>) => void;
-  setLeftAccordionOpen: (repoPath: string, value: string[]) => void;
+  setLeftPaneSection: (repoPath: string, section: LeftPaneSection) => void;
   setBranchTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -63,7 +64,7 @@ export const DEFAULT_WINDOW_BOUNDS: WindowBoundsState = {
 export const DEFAULT_PULL_STRATEGY: PullStrategy = "pull-ff-if-possible";
 
 export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
-  leftAccordionOpen: ["changes"],
+  leftPaneSection: "changes",
   branchTreeExpanded: {},
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
@@ -82,7 +83,17 @@ function getRepoWorkspaceState(
   repoStateByPath: Record<string, RepoWorkspaceState>,
   repoPath: string,
 ) {
-  return repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE;
+  const repoState = repoStateByPath[repoPath];
+
+  if (!repoState) {
+    return DEFAULT_REPO_WORKSPACE_STATE;
+  }
+
+  return {
+    ...DEFAULT_REPO_WORKSPACE_STATE,
+    ...repoState,
+    leftPaneSection: repoState.leftPaneSection ?? "changes",
+  };
 }
 
 export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
@@ -106,8 +117,8 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
             },
           },
         })),
-      setLeftAccordionOpen: (repoPath, value) =>
-        get().updateRepoState(repoPath, { leftAccordionOpen: value }),
+      setLeftPaneSection: (repoPath, section) =>
+        get().updateRepoState(repoPath, { leftPaneSection: section }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
       setMainChangesExpanded: (repoPath, expanded) =>

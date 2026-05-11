@@ -1,5 +1,5 @@
 import { Split } from "@gfazioli/mantine-split-pane";
-import { Accordion, Box } from "@mantine/core";
+import { Tabs, Tooltip } from "@mantine/core";
 import React, { useEffect, useRef, useState } from "react";
 import { REPO_LAYOUT } from "../../constants/layout";
 import { useWorkingDirectoryChanges } from "../../hooks/useWorkingDirectoryChanges";
@@ -7,9 +7,11 @@ import { useFileHunksStore } from "../../store/hunks";
 import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
+  LeftPaneSection,
   useWorkspaceUiStore,
 } from "../../store/workspaceUi";
 import { FileChangeWithHunks } from "../../types/git";
+import { classNames } from "../../utils/ui";
 import { BranchList } from "../branch-list/BranchList";
 import ChangesExplorer from "../changes-explorer/ChangesExplorer";
 import ChangesPanel from "../changes-panel/ChangesPanel";
@@ -17,6 +19,16 @@ import CommitList from "../commit-list/CommitList";
 import DiffModal from "../diff-viewer/DiffModal";
 import { IconFolder, IconGitBranch, IconStack2 } from "../icons";
 import TopToolbar from "../top-toolbar/TopToolbar";
+
+const LEFT_PANE_SECTIONS: ReadonlyArray<{
+  key: LeftPaneSection;
+  label: string;
+  icon: typeof IconStack2;
+}> = [
+  { key: "changes", label: "Changes", icon: IconStack2 },
+  { key: "branches", label: "Branches", icon: IconGitBranch },
+  { key: "folders", label: "Folders", icon: IconFolder },
+];
 
 const RepoTabLayout: React.FC = () => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -28,9 +40,7 @@ const RepoTabLayout: React.FC = () => {
       ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
       : DEFAULT_REPO_WORKSPACE_STATE,
   );
-  const setLeftAccordionOpen = useWorkspaceUiStore(
-    (s) => s.setLeftAccordionOpen,
-  );
+  const setLeftPaneSection = useWorkspaceUiStore((s) => s.setLeftPaneSection);
   const setWorkingChangesViewMode = useWorkspaceUiStore(
     (s) => s.setWorkingChangesViewMode,
   );
@@ -197,123 +207,123 @@ const RepoTabLayout: React.FC = () => {
               if (!repoPath || size.width <= 1) return;
               setLeftPaneWidth(repoPath, size.width);
             }}
-            className="!h-full !min-h-0 flex flex-col border-r border-border"
+            className="!h-full !min-h-0 flex flex-col border-r border-border bg-background"
           >
-            <Box className="flex-1 text-foreground flex flex-col min-h-0 min-w-0">
-              <Accordion
-                multiple
-                value={workspaceState.leftAccordionOpen}
-                onChange={(value) => {
-                  if (!repoPath) return;
-                  setLeftAccordionOpen(repoPath, value);
-                }}
-                variant="contained"
-                chevronPosition="left"
-                classNames={{
-                  root: "bg-background-emphasis text-foreground flex-1 flex flex-col min-h-0 min-w-0",
-                  item: "group bg-background text-foreground flex flex-col min-w-0",
-                  control:
-                    "bg-background-emphasis text-foreground p-2 transition-colors hover:bg-background-emphasis min-w-0",
-                  panel:
-                    "text-foreground flex-1 flex flex-col min-h-0 bg-background-emphasis min-w-0",
-                  content: "flex-1 min-h-0 min-w-0",
-                  icon: "mr-2",
-                }}
+            <Tabs
+              inverted
+              keepMounted={false}
+              value={workspaceState.leftPaneSection}
+              onChange={(value) => {
+                if (!repoPath || !value) return;
+                setLeftPaneSection(repoPath, value as LeftPaneSection);
+              }}
+              variant="none"
+              className="flex min-h-0 w-full flex-1 flex-col"
+            >
+              <Tabs.Panel
+                value="changes"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
               >
-                <Accordion.Item
-                  value="changes"
-                  className="border-b-0 min-h-0 flex flex-1 flex-col"
-                >
-                  <Accordion.Control>
-                    <div className="flex flex-row items-center w-full justify-between">
-                      <span className="flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-5 h-5">
-                          <IconStack2 size={18} />
+                {error && (
+                  <div className="p-4 text-center text-red-500">
+                    Error: {error}
+                  </div>
+                )}
+                {loading && changes.length === 0 && (
+                  <div className="p-4 text-center text-muted-foreground">
+                    Loading changes...
+                  </div>
+                )}
+                {!error && changes.length === 0 && !loading && (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No changes in the working directory
+                  </div>
+                )}
+                {changes.length > 0 && (
+                  <ChangesExplorer
+                    className="min-w-0 border-r-0"
+                    files={changes}
+                    selectedPath={
+                      selectedWorkingFile?.path ?? changes[0]?.path ?? null
+                    }
+                    onSelectFile={(file) =>
+                      handleSelectWorkingFile(file as FileChangeWithHunks)
+                    }
+                    viewMode={workspaceState.workingChangesViewMode}
+                    onViewModeChange={(mode) => {
+                      if (!repoPath) return;
+                      setWorkingChangesViewMode(repoPath, mode);
+                    }}
+                    showFileCheckboxes={false}
+                    surface="main"
+                    repoPath={repoPath}
+                    onImmediateStageChange={refreshChanges}
+                    expandedState={workspaceState.mainChangesExpanded}
+                    onExpandedStateChange={(expanded) => {
+                      if (!repoPath) return;
+                      setMainChangesExpanded(repoPath, expanded);
+                    }}
+                  />
+                )}
+              </Tabs.Panel>
+              <Tabs.Panel
+                value="branches"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              >
+                <BranchList />
+              </Tabs.Panel>
+              <Tabs.Panel
+                value="folders"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              >
+                <div className="p-4 text-xs text-muted-foreground">
+                  Folders coming soon
+                </div>
+              </Tabs.Panel>
+              <Tabs.List className="grid h-10 min-h-10 grid-cols-3 border-t border-border bg-background-emphasis">
+                {LEFT_PANE_SECTIONS.map((section) => {
+                  const Icon = section.icon;
+                  const isActive =
+                    workspaceState.leftPaneSection === section.key;
+                  const label =
+                    section.key === "changes"
+                      ? `Changes (${changes.length})`
+                      : section.label;
+
+                  return (
+                    <Tooltip
+                      key={section.key}
+                      label={label}
+                      withArrow
+                      openDelay={2000}
+                      position="top"
+                    >
+                      <Tabs.Tab
+                        value={section.key}
+                        className={classNames(
+                          "!rounded-none !border-0 border-r border-border/70 last:border-r-0",
+                          "flex h-full items-center justify-center px-0",
+                        )}
+                        classNames={{
+                          tab: classNames(
+                            "transition-colors",
+                            isActive
+                              ? "!bg-background text-foreground"
+                              : "text-zinc-500 hover:!bg-background hover:text-zinc-100",
+                          ),
+                          tabLabel: "inline-flex items-center justify-center",
+                        }}
+                        aria-label={label}
+                      >
+                        <span className="inline-flex items-center justify-center">
+                          <Icon size={16} />
                         </span>
-                        <span>Changes ({changes.length})</span>
-                      </span>
-                    </div>
-                  </Accordion.Control>
-                  <Accordion.Panel className="flex flex-1 flex-col">
-                    <div className="flex h-full w-full flex-col">
-                      {error && (
-                        <div className="p-4 text-center text-red-500">
-                          Error: {error}
-                        </div>
-                      )}
-                      {loading && changes.length === 0 && (
-                        <div className="p-4 text-center text-muted-foreground">
-                          Loading changes...
-                        </div>
-                      )}
-                      {!error && changes.length === 0 && !loading && (
-                        <div className="p-4 text-center text-muted-foreground">
-                          No changes in the working directory
-                        </div>
-                      )}
-                      {changes.length > 0 && (
-                        <ChangesExplorer
-                          className="min-w-0 border-r-0"
-                          files={changes}
-                          selectedPath={
-                            selectedWorkingFile?.path ??
-                            changes[0]?.path ??
-                            null
-                          }
-                          onSelectFile={(file) =>
-                            handleSelectWorkingFile(file as FileChangeWithHunks)
-                          }
-                          viewMode={workspaceState.workingChangesViewMode}
-                          onViewModeChange={(mode) => {
-                            if (!repoPath) return;
-                            setWorkingChangesViewMode(repoPath, mode);
-                          }}
-                          showFileCheckboxes={false}
-                          surface="main"
-                          repoPath={repoPath}
-                          onImmediateStageChange={refreshChanges}
-                          expandedState={workspaceState.mainChangesExpanded}
-                          onExpandedStateChange={(expanded) => {
-                            if (!repoPath) return;
-                            setMainChangesExpanded(repoPath, expanded);
-                          }}
-                        />
-                      )}
-                    </div>
-                  </Accordion.Panel>
-                </Accordion.Item>
-                <Accordion.Item value="branches">
-                  <Accordion.Control>
-                    <div className="flex flex-row items-center w-full justify-between">
-                      <span className="flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-5 h-5">
-                          <IconGitBranch size={18} />
-                        </span>
-                        Branches
-                      </span>
-                    </div>
-                  </Accordion.Control>
-                  <Accordion.Panel className="min-w-0">
-                    <BranchList />
-                  </Accordion.Panel>
-                </Accordion.Item>
-                <Accordion.Item value="folders">
-                  <Accordion.Control>
-                    <div className="flex flex-row items-center w-full justify-between">
-                      <span className="flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-5 h-5">
-                          <IconFolder size={18} />
-                        </span>
-                        Folders
-                      </span>
-                    </div>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    {/* Folder list goes here */}
-                  </Accordion.Panel>
-                </Accordion.Item>
-              </Accordion>
-            </Box>
+                      </Tabs.Tab>
+                    </Tooltip>
+                  );
+                })}
+              </Tabs.List>
+            </Tabs>
           </Split.Pane>
           <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
           {/* Right panel: changes based on the selection */}

@@ -533,7 +533,7 @@ export function BranchList() {
   if (!repoPath) return null;
 
   return (
-    <div className="p-1 my-2 h-full flex flex-col relative min-w-0">
+    <div className="p-1 h-full flex flex-col relative min-w-0">
       <div className="font-bold mb-2 flex items-center gap-2 text-sm">
         <div className="flex gap-1">
           <button
