@@ -258,48 +258,50 @@ const RepoTabLayout: React.FC = () => {
                 value="changes"
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
               >
-                {error && (
-                  <div className="p-4 text-center text-red-500">
-                    Error: {error}
-                  </div>
-                )}
-                {loading && changes.length === 0 && (
-                  <div className="p-4 text-center text-muted-foreground">
-                    Loading changes...
-                  </div>
-                )}
-                {!error && changes.length === 0 && !loading && (
-                  <div className="p-4 text-center text-muted-foreground">
-                    No changes in the working directory
-                  </div>
-                )}
-                {changes.length > 0 && (
-                  <ChangesExplorer
-                    className="min-w-0 border-r-0"
-                    files={changes}
-                    selectedPath={
-                      selectedWorkingFile?.path ?? changes[0]?.path ?? null
-                    }
-                    onSelectFile={(file) =>
-                      handleSelectWorkingFile(file as FileChangeWithHunks)
-                    }
-                    viewMode={workspaceState.workingChangesViewMode}
-                    onViewModeChange={(mode) => {
-                      if (!repoPath) return;
-                      setWorkingChangesViewMode(repoPath, mode);
-                    }}
-                    showFileCheckboxes={true}
-                    surface="main"
-                    showHeader={true}
-                    repoPath={repoPath}
-                    onImmediateStageChange={refreshChanges}
-                    expandedState={workspaceState.mainChangesExpanded}
-                    onExpandedStateChange={(expanded) => {
-                      if (!repoPath) return;
-                      setMainChangesExpanded(repoPath, expanded);
-                    }}
-                  />
-                )}
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {error ? (
+                    <div className="p-4 text-center text-red-500">
+                      Error: {error}
+                    </div>
+                  ) : null}
+                  {loading && changes.length === 0 ? (
+                    <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground">
+                      Loading changes...
+                    </div>
+                  ) : null}
+                  {!error && changes.length === 0 && !loading ? (
+                    <div className="flex min-h-0 flex-1 items-start justify-center p-4 text-center text-muted-foreground">
+                      No changes in the working directory
+                    </div>
+                  ) : null}
+                  {changes.length > 0 ? (
+                    <ChangesExplorer
+                      className="min-w-0 border-r-0"
+                      files={changes}
+                      selectedPath={
+                        selectedWorkingFile?.path ?? changes[0]?.path ?? null
+                      }
+                      onSelectFile={(file) =>
+                        handleSelectWorkingFile(file as FileChangeWithHunks)
+                      }
+                      viewMode={workspaceState.workingChangesViewMode}
+                      onViewModeChange={(mode) => {
+                        if (!repoPath) return;
+                        setWorkingChangesViewMode(repoPath, mode);
+                      }}
+                      showFileCheckboxes={true}
+                      surface="main"
+                      showHeader={true}
+                      repoPath={repoPath}
+                      onImmediateStageChange={refreshChanges}
+                      expandedState={workspaceState.mainChangesExpanded}
+                      onExpandedStateChange={(expanded) => {
+                        if (!repoPath) return;
+                        setMainChangesExpanded(repoPath, expanded);
+                      }}
+                    />
+                  ) : null}
+                </div>
                 {repoPath ? (
                   <CurrentChangesCommitBar
                     repoPath={repoPath}
