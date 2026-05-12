@@ -154,7 +154,7 @@ export const ChangesExplorerMenu = memo(function ChangesExplorerMenu({
       className="fixed z-[100001] min-w-[220px] rounded border border-zinc-700 bg-zinc-900/95 py-1 text-sm text-zinc-200 shadow-lg"
       style={{ left: menuPos.x, top: menuPos.y }}
     >
-      {activeContextMenu.kind === "pane" && surface === "modal" ? (
+      {activeContextMenu.kind === "pane" ? (
         <ChangesExplorerModalMenuItems />
       ) : null}
       {activeContextMenu.kind === "pane" ? (

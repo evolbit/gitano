@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Define how working-tree file diffs open and behave in the modal diff inspector, including navigation, deleted-file handling, and dismissal behavior.
-## Requirements
 ### Requirement: Working-tree file diffs open in a modal
 The system SHALL present working-tree file diffs as an inline right-workspace replacement instead of opening a modal above the repository workspace.
 
@@ -58,4 +56,3 @@ The system SHALL keep the working-tree inline diff synchronized with the same li
 - **WHEN** the currently selected working-tree file still exists after a working-changes refresh
 - **THEN** the inline diff MUST preserve selection by file path
 - **THEN** the diff viewer MUST rebind to the refreshed file entry for that path
-

@@ -5,6 +5,8 @@ import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
 export type LeftPaneSection = "changes" | "branches" | "folders";
+export type RightWorkspaceMode = "history" | "working-diff";
+export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type PullStrategy =
   | "fetch-all"
   | "pull-ff-if-possible"
@@ -20,6 +22,10 @@ export interface WindowBoundsState {
 
 export interface RepoWorkspaceState {
   leftPaneSection: LeftPaneSection;
+  rightWorkspaceMode: RightWorkspaceMode;
+  historyMiddleMode: HistoryMiddleMode;
+  selectedWorkingDiffPath: string | null;
+  selectedCommitDiffPath: string | null;
   branchTreeExpanded: Record<string, boolean>;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
@@ -36,6 +42,10 @@ interface WorkspaceUiStore {
   setPullStrategy: (strategy: PullStrategy) => void;
   updateRepoState: (repoPath: string, data: Partial<RepoWorkspaceState>) => void;
   setLeftPaneSection: (repoPath: string, section: LeftPaneSection) => void;
+  setRightWorkspaceMode: (repoPath: string, mode: RightWorkspaceMode) => void;
+  setHistoryMiddleMode: (repoPath: string, mode: HistoryMiddleMode) => void;
+  setSelectedWorkingDiffPath: (repoPath: string, path: string | null) => void;
+  setSelectedCommitDiffPath: (repoPath: string, path: string | null) => void;
   setBranchTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -65,6 +75,10 @@ export const DEFAULT_PULL_STRATEGY: PullStrategy = "pull-ff-if-possible";
 
 export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   leftPaneSection: "changes",
+  rightWorkspaceMode: "history",
+  historyMiddleMode: "commit-list",
+  selectedWorkingDiffPath: null,
+  selectedCommitDiffPath: null,
   branchTreeExpanded: {},
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
@@ -93,6 +107,10 @@ function getRepoWorkspaceState(
     ...DEFAULT_REPO_WORKSPACE_STATE,
     ...repoState,
     leftPaneSection: repoState.leftPaneSection ?? "changes",
+    rightWorkspaceMode: repoState.rightWorkspaceMode ?? "history",
+    historyMiddleMode: repoState.historyMiddleMode ?? "commit-list",
+    selectedWorkingDiffPath: repoState.selectedWorkingDiffPath ?? null,
+    selectedCommitDiffPath: repoState.selectedCommitDiffPath ?? null,
   };
 }
 
@@ -119,6 +137,14 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         })),
       setLeftPaneSection: (repoPath, section) =>
         get().updateRepoState(repoPath, { leftPaneSection: section }),
+      setRightWorkspaceMode: (repoPath, mode) =>
+        get().updateRepoState(repoPath, { rightWorkspaceMode: mode }),
+      setHistoryMiddleMode: (repoPath, mode) =>
+        get().updateRepoState(repoPath, { historyMiddleMode: mode }),
+      setSelectedWorkingDiffPath: (repoPath, path) =>
+        get().updateRepoState(repoPath, { selectedWorkingDiffPath: path }),
+      setSelectedCommitDiffPath: (repoPath, path) =>
+        get().updateRepoState(repoPath, { selectedCommitDiffPath: path }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
       setMainChangesExpanded: (repoPath, expanded) =>

@@ -4,7 +4,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useFileHunksStore } from "../../store/hunks";
 import { useStagedLinesStore } from "../../store/staging";
 import DiffHunk from "./DiffHunk";
-import FloatingCommitBar from "../floating-commit-bar/FloatingCommitBar";
 import {
   ContextDirection,
   DiffDisplayMode,
@@ -75,7 +74,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
       hunk.lines.every((line) => line.kind === "Del" || line.kind === "Context")
     );
   const canSelectLines = canStage && !isDeletedFile;
-  const [commitBarOpen, setCommitBarOpen] = useState(false);
 
   const buildStageableSelection = useCallback(
     (excludedKeys?: Set<string>) => {
@@ -448,7 +446,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         ))}
       </div>
       {/* Scrollable diff area */}
-      <div className={`flex-1 overflow-auto px-4 pt-4${canStage ? " pb-40" : ""}`}>
+      <div className="flex-1 overflow-auto px-4 pt-4">
         {loading && <div className="text-blue-400">Loading diff...</div>}
         {error && <div className="text-red-400">{error}</div>}
         {hunks.length === 0 && !loading && !error && <div>No changes.</div>}
@@ -470,15 +468,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
           />
         ))}
       </div>
-      {/* Floating commit bar only when canStage is true (working directory) */}
-      {canStage && (
-        <FloatingCommitBar
-          expanded={commitBarOpen}
-          onExpand={() => setCommitBarOpen(true)}
-          onCollapse={() => setCommitBarOpen(false)}
-          repoPath={repoPath}
-        />
-      )}
     </div>
   );
 };

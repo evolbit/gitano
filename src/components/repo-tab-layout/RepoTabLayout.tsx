@@ -16,7 +16,8 @@ import { BranchList } from "../branch-list/BranchList";
 import ChangesExplorer from "../changes-explorer/ChangesExplorer";
 import ChangesPanel from "../changes-panel/ChangesPanel";
 import CommitList from "../commit-list/CommitList";
-import DiffModal from "../diff-viewer/DiffModal";
+import CurrentChangesCommitBar from "../current-changes-commit-bar/CurrentChangesCommitBar";
+import InlineDiffSurface from "../diff-viewer/InlineDiffSurface";
 import { IconFolder, IconGitBranch, IconStack2 } from "../icons";
 import TopToolbar from "../top-toolbar/TopToolbar";
 
@@ -47,6 +48,16 @@ const RepoTabLayout: React.FC = () => {
   const setMainChangesExpanded = useWorkspaceUiStore(
     (s) => s.setMainChangesExpanded,
   );
+  const setRightWorkspaceMode = useWorkspaceUiStore(
+    (s) => s.setRightWorkspaceMode,
+  );
+  const setHistoryMiddleMode = useWorkspaceUiStore((s) => s.setHistoryMiddleMode);
+  const setSelectedWorkingDiffPath = useWorkspaceUiStore(
+    (s) => s.setSelectedWorkingDiffPath,
+  );
+  const setSelectedCommitDiffPath = useWorkspaceUiStore(
+    (s) => s.setSelectedCommitDiffPath,
+  );
   const setLeftPaneWidth = useWorkspaceUiStore((s) => s.setLeftPaneWidth);
   const setCommitDetailsWidth = useWorkspaceUiStore(
     (s) => s.setCommitDetailsWidth,
@@ -62,11 +73,6 @@ const RepoTabLayout: React.FC = () => {
       showNotifications: false,
     });
 
-  // Track working-tree selection by path so modal state can rebind to the
-  // refreshed live changes list instead of holding stale file objects.
-  const [selectedWorkingFilePath, setSelectedWorkingFilePath] = useState<
-    string | null
-  >(null);
   const [liveLeftPaneWidth, setLiveLeftPaneWidth] = useState<number>(
     workspaceState.leftPaneWidth ??
       (typeof REPO_LAYOUT.panes.left.initial === "number"
@@ -79,26 +85,38 @@ const RepoTabLayout: React.FC = () => {
     workspaceState.commitDetailsWidth ?? REPO_LAYOUT.panes.right.initial,
   );
 
-  // Close DiffViewer when the active branch changes
+  // Reset inline diff modes when branch changes.
   useEffect(() => {
-    setSelectedWorkingFilePath(null);
+    if (!repoPath) return;
+    setSelectedWorkingDiffPath(repoPath, null);
+    setSelectedCommitDiffPath(repoPath, null);
+    setRightWorkspaceMode(repoPath, "history");
+    setHistoryMiddleMode(repoPath, "commit-list");
   }, [tab?.selectedBranch]);
 
+  const selectedWorkingFilePath = workspaceState.selectedWorkingDiffPath;
   const selectedWorkingFile =
     selectedWorkingFilePath === null
       ? null
       : (changes.find((f) => f.path === selectedWorkingFilePath) ?? null);
 
-  // Close DiffViewer if the selected file no longer exists in changes
+  // Clear inline working diff when selected file disappears from live changes.
   useEffect(() => {
-    if (!selectedWorkingFilePath) return;
+    if (!repoPath || !selectedWorkingFilePath) return;
 
     const updated = changes.find((f) => f.path === selectedWorkingFilePath);
     if (!updated) {
-      setSelectedWorkingFilePath(null);
+      setSelectedWorkingDiffPath(repoPath, null);
+      setRightWorkspaceMode(repoPath, "history");
       useFileHunksStore.getState().clearFileHunks();
     }
-  }, [changes, selectedWorkingFilePath]);
+  }, [
+    changes,
+    repoPath,
+    selectedWorkingFilePath,
+    setRightWorkspaceMode,
+    setSelectedWorkingDiffPath,
+  ]);
 
   // Rebind hunks to the fresh file entry whenever the selected path still
   // exists in the live working changes list.
@@ -111,13 +129,29 @@ const RepoTabLayout: React.FC = () => {
 
   // Handler to open the diff for a working directory file
   const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
-    setSelectedWorkingFilePath(file.path);
+    if (!repoPath) return;
+    setSelectedWorkingDiffPath(repoPath, file.path);
+    setRightWorkspaceMode(repoPath, "working-diff");
     useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
   };
 
-  const handleCloseDiffModal = () => {
-    setSelectedWorkingFilePath(null);
+  const handleCloseWorkingDiff = () => {
+    if (!repoPath) return;
+    setRightWorkspaceMode(repoPath, "history");
+    setSelectedWorkingDiffPath(repoPath, null);
     useFileHunksStore.getState().clearFileHunks();
+  };
+
+  const handleOpenCommitDiff = (filePath: string) => {
+    if (!repoPath) return;
+    setSelectedCommitDiffPath(repoPath, filePath);
+    setHistoryMiddleMode(repoPath, "commit-diff");
+  };
+
+  const handleCloseCommitDiff = () => {
+    if (!repoPath) return;
+    setHistoryMiddleMode(repoPath, "commit-list");
+    setSelectedCommitDiffPath(repoPath, null);
   };
 
   useEffect(() => {
@@ -153,7 +187,7 @@ const RepoTabLayout: React.FC = () => {
   }, [repoPath]);
 
   useEffect(() => {
-    if (selectedWorkingFile) return;
+    if (workspaceState.rightWorkspaceMode === "working-diff") return;
 
     const commitDetailsPane = commitDetailsPaneRef.current;
 
@@ -184,7 +218,7 @@ const RepoTabLayout: React.FC = () => {
   }, [
     repoPath,
     selectedCommit,
-    selectedWorkingFile,
+    workspaceState.rightWorkspaceMode,
     workspaceState.commitDetailsWidth,
   ]);
 
@@ -254,8 +288,9 @@ const RepoTabLayout: React.FC = () => {
                       if (!repoPath) return;
                       setWorkingChangesViewMode(repoPath, mode);
                     }}
-                    showFileCheckboxes={false}
+                    showFileCheckboxes={true}
                     surface="main"
+                    showHeader={true}
                     repoPath={repoPath}
                     onImmediateStageChange={refreshChanges}
                     expandedState={workspaceState.mainChangesExpanded}
@@ -265,6 +300,14 @@ const RepoTabLayout: React.FC = () => {
                     }}
                   />
                 )}
+                {repoPath ? (
+                  <CurrentChangesCommitBar
+                    repoPath={repoPath}
+                    onCommitted={() => {
+                      void refreshChanges();
+                    }}
+                  />
+                ) : null}
               </Tabs.Panel>
               <Tabs.Panel
                 value="branches"
@@ -328,69 +371,79 @@ const RepoTabLayout: React.FC = () => {
           <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
           {/* Right panel: changes based on the selection */}
           <Split.Pane grow className="!h-full !min-h-0">
-            <Split orientation="vertical" className="h-full w-full">
-              <Split.Pane
-                grow
-                initialWidth={REPO_LAYOUT.panes.middle.initial}
-                minWidth={REPO_LAYOUT.panes.middle.min}
-              >
-                <CommitList />
-              </Split.Pane>
-              <Split.Resizer
-                className={
-                  (selectedCommit
-                    ? "!bg-transparent hover:!bg-primary [--split-resizer-size:1px]"
-                    : "hidden") + " "
-                }
+            {workspaceState.rightWorkspaceMode === "working-diff" &&
+            selectedWorkingFile &&
+            repoPath ? (
+              <InlineDiffSurface
+                repoPath={repoPath}
+                filePath={selectedWorkingFile.path}
+                title={selectedWorkingFile.path}
+                onClose={handleCloseWorkingDiff}
+                onWorkingTreeStageChange={refreshChanges}
               />
-              <Split.Pane
-                ref={commitDetailsPaneRef}
-                initialWidth={
-                  workspaceState.commitDetailsWidth ??
-                  REPO_LAYOUT.panes.right.initial
-                }
-                minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
-                onResizeEnd={(size) => {
-                  if (size.width > 1) {
-                    lastCommitDetailsPaneWidthRef.current = size.width;
-                    if (repoPath) {
-                      setCommitDetailsWidth(repoPath, size.width);
-                    }
+            ) : (
+              <Split orientation="vertical" className="h-full w-full">
+                <Split.Pane
+                  grow
+                  initialWidth={REPO_LAYOUT.panes.middle.initial}
+                  minWidth={REPO_LAYOUT.panes.middle.min}
+                >
+                  {workspaceState.historyMiddleMode === "commit-diff" &&
+                  repoPath &&
+                  selectedCommit &&
+                  workspaceState.selectedCommitDiffPath ? (
+                    <InlineDiffSurface
+                      repoPath={repoPath}
+                      filePath={workspaceState.selectedCommitDiffPath}
+                      sha={selectedCommit.sha}
+                      title={workspaceState.selectedCommitDiffPath}
+                      onClose={handleCloseCommitDiff}
+                    />
+                  ) : (
+                    <CommitList />
+                  )}
+                </Split.Pane>
+                <Split.Resizer
+                  className={
+                    (selectedCommit
+                      ? "!bg-transparent hover:!bg-primary [--split-resizer-size:1px]"
+                      : "hidden") + " "
                   }
-                }}
-                className={
-                  (selectedCommit
-                    ? "overflow-hidden"
-                    : "hidden overflow-hidden") +
-                  " border-l border-border -ml-[4px]"
-                }
-              >
-                {selectedCommit ? <ChangesPanel /> : null}
-              </Split.Pane>
-            </Split>
+                />
+                <Split.Pane
+                  ref={commitDetailsPaneRef}
+                  initialWidth={
+                    workspaceState.commitDetailsWidth ??
+                    REPO_LAYOUT.panes.right.initial
+                  }
+                  minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
+                  onResizeEnd={(size) => {
+                    if (size.width > 1) {
+                      lastCommitDetailsPaneWidthRef.current = size.width;
+                      if (repoPath) {
+                        setCommitDetailsWidth(repoPath, size.width);
+                      }
+                    }
+                  }}
+                  className={
+                    (selectedCommit
+                      ? "overflow-hidden"
+                      : "hidden overflow-hidden") +
+                    " border-l border-border -ml-[4px]"
+                  }
+                >
+                  {selectedCommit ? (
+                    <ChangesPanel
+                      selectedCommitDiffPath={workspaceState.selectedCommitDiffPath}
+                      onSelectCommitFile={(file) => handleOpenCommitDiff(file.path)}
+                    />
+                  ) : null}
+                </Split.Pane>
+              </Split>
+            )}
           </Split.Pane>
         </Split>
       </div>
-      {selectedWorkingFile && repoPath && changes.length > 0 && (
-        <DiffModal
-          open={true}
-          files={changes}
-          initialFile={selectedWorkingFile}
-          onClose={handleCloseDiffModal}
-          onFileSelect={(file) => {
-            if ("hunks" in file) {
-              handleSelectWorkingFile(file);
-            }
-          }}
-          changesViewMode={workspaceState.workingChangesViewMode}
-          onChangesViewModeChange={(mode) => {
-            if (!repoPath) return;
-            setWorkingChangesViewMode(repoPath, mode);
-          }}
-          repoPath={repoPath}
-          onWorkingTreeStageChange={refreshChanges}
-        />
-      )}
     </div>
   );
 };

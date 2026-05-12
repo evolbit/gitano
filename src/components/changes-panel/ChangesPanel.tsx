@@ -8,10 +8,17 @@ import {
 } from "../../store/workspaceUi";
 import { CommitDiff, FileChange } from "../../types/git";
 import ChangesExplorer from "../changes-explorer/ChangesExplorer";
-import DiffModal from "../diff-viewer/DiffModal";
 import TextArea from "../form/TextArea";
 
-const ChangesPanel: React.FC = () => {
+type ChangesPanelProps = {
+  selectedCommitDiffPath?: string | null;
+  onSelectCommitFile?: (file: FileChange) => void;
+};
+
+const ChangesPanel: React.FC<ChangesPanelProps> = ({
+  selectedCommitDiffPath = null,
+  onSelectCommitFile,
+}) => {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const selectedCommit = tab?.selectedCommit;
@@ -33,9 +40,6 @@ const ChangesPanel: React.FC = () => {
   const [message, setMessage] = useState("");
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const [diffModalOpen, setDiffModalOpen] = useState(false);
-  const [diffModalFile, setDiffModalFile] = useState<FileChange | null>(null);
 
   useEffect(() => {
     if (selectedCommit) {
@@ -133,8 +137,7 @@ const ChangesPanel: React.FC = () => {
   };
 
   const handleSelectCommitFile = (file: FileChange) => {
-    setDiffModalFile(file);
-    setDiffModalOpen(true);
+    onSelectCommitFile?.(file);
   };
 
   if (!selectedCommit) {
@@ -208,7 +211,7 @@ const ChangesPanel: React.FC = () => {
                 <ChangesExplorer
                   files={diff.changes}
                   selectedPath={
-                    diffModalFile?.path ?? diff.changes[0]?.path ?? null
+                    selectedCommitDiffPath ?? diff.changes[0]?.path ?? null
                   }
                   onSelectFile={(file) =>
                     handleSelectCommitFile(file as FileChange)
@@ -228,23 +231,6 @@ const ChangesPanel: React.FC = () => {
           </div>
         </Split.Pane>
       </Split>
-
-      {/* File diff modal */}
-      {diffModalOpen && diffModalFile && diff && (
-        <DiffModal
-          open={diffModalOpen}
-          files={diff.changes}
-          initialFile={diffModalFile}
-          onClose={() => setDiffModalOpen(false)}
-          sha={selectedCommit.sha}
-          sectionMode="single"
-          changesViewMode={commitChangesViewMode}
-          onChangesViewModeChange={(mode) => {
-            if (!repoPath) return;
-            setCommitChangesViewMode(repoPath, mode);
-          }}
-        />
-      )}
     </div>
   );
 };
