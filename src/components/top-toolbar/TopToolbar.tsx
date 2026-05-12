@@ -10,7 +10,9 @@ import {
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
+import { APP_EVENTS } from "../../constants/events";
 import { useRepoStore } from "../../store/repo";
+import { useRemoteActionsStore } from "../../store/remoteActions";
 import {
   PullStrategy,
   useWorkspaceUiStore,
@@ -30,7 +32,6 @@ import {
 import {
   PullStrategyOption,
   RemoteActionButtonProps,
-  RemoteNotice,
   TopToolbarProps,
   ToolbarDropdownProps,
 } from "./types";
@@ -193,10 +194,6 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
-  const [remoteActionPending, setRemoteActionPending] = useState<
-    "pull" | "push" | null
-  >(null);
-  const [remoteNotice, setRemoteNotice] = useState<RemoteNotice | null>(null);
   const remoteNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -207,6 +204,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
   const pullStrategy = useWorkspaceUiStore((s) => s.pullStrategy);
   const setPullStrategy = useWorkspaceUiStore((s) => s.setPullStrategy);
+  const remoteActionPending = useRemoteActionsStore((s) => s.pending);
+  const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
+  const remoteNotice = useRemoteActionsStore((s) => s.notice);
+  const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
   const tab = tabs.find((t) => t.id === activeTabId);
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
@@ -360,6 +361,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
           : "Pushed the current branch successfully.",
       );
       refreshToolbarData();
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
     } catch (error) {
       handleRemoteError("git push failed", error);
     } finally {

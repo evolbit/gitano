@@ -26,6 +26,13 @@ type ChangesExplorerTreeNodesProps = {
   ) => void;
   onToggleFolder: (path: string) => void;
   onToggleFileSelection: (file: ChangesExplorerFile) => void;
+  onToggleFolderSelection: (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+  ) => void;
+  getFolderCheckboxState: (
+    filesInFolder: ChangesExplorerFile[],
+  ) => ChangesExplorerCheckboxState;
 };
 
 export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
@@ -41,6 +48,8 @@ export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
   onOpenFolderContextMenu,
   onToggleFolder,
   onToggleFileSelection,
+  onToggleFolderSelection,
+  getFolderCheckboxState,
 }: ChangesExplorerTreeNodesProps) {
   return (
     <>
@@ -59,6 +68,8 @@ export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
           onOpenFolderContextMenu={onOpenFolderContextMenu}
           onToggleFolder={onToggleFolder}
           onToggleFileSelection={onToggleFileSelection}
+          onToggleFolderSelection={onToggleFolderSelection}
+          getFolderCheckboxState={getFolderCheckboxState}
         />
       ))}
     </>

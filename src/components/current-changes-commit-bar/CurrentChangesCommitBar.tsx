@@ -1,6 +1,10 @@
 import { useState } from "react";
+import { core } from "@tauri-apps/api";
 import { useStageAndCommit } from "../../hooks/useStageAndCommit";
 import { IconChevronDown } from "../icons";
+import { useRemoteActionsStore } from "../../store/remoteActions";
+import { useRepoStore } from "../../store/repo";
+import { APP_EVENTS } from "../../constants/events";
 
 type CurrentChangesCommitBarProps = {
   repoPath: string;
@@ -16,15 +20,70 @@ export default function CurrentChangesCommitBar({
   const [amend, setAmend] = useState(false);
   const [showCommitMenu, setShowCommitMenu] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
+  const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
+  const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
+  const activeTabId = useRepoStore((s) => s.activeTabId);
+  const selectedBranch = useRepoStore((s) =>
+    s.tabs.find((t) => t.id === activeTabId)?.selectedBranch ?? null,
+  );
+
+  const notifyCommitRefresh = () => {
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+  };
+
+  const handlePushSuccess = () => {
+    setRemoteNotice({
+      kind: "success",
+      title: "git push succeeded",
+      details: selectedBranch
+        ? `Pushed the current branch to origin/${selectedBranch}.`
+        : "Pushed the current branch successfully.",
+      expanded: false,
+    });
+  };
+
+  const handlePushError = (pushError: unknown) => {
+    const details =
+      pushError instanceof Error
+        ? pushError.message
+        : String(pushError || "Unknown error");
+
+    setRemoteNotice({
+      kind: "error",
+      title: "git push failed",
+      details,
+      expanded: false,
+    });
+  };
 
   const handleCommit = async (pushOverride?: boolean) => {
     if (!message.trim() || loading) return;
 
     try {
       await commitStagedChanges(repoPath, message, {
-        push: pushOverride ?? push,
+        push: false,
         amend,
       });
+      notifyCommitRefresh();
+
+      if (pushOverride ?? push) {
+        setRemoteActionPending("push");
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+        try {
+          await core.invoke("git_push", { path: repoPath });
+          handlePushSuccess();
+          notifyCommitRefresh();
+        } catch (pushError) {
+          handlePushError(pushError);
+        } finally {
+          setRemoteActionPending(null);
+        }
+      }
+
       setMessage("");
       setShowCommitMenu(false);
       onCommitted?.();

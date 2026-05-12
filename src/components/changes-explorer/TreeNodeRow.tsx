@@ -35,6 +35,13 @@ type TreeNodeRowProps = {
   ) => void;
   onToggleFolder: (path: string) => void;
   onToggleFileSelection: (file: ChangesExplorerFile) => void;
+  onToggleFolderSelection: (
+    folderPath: string,
+    filesInFolder: ChangesExplorerFile[],
+  ) => void;
+  getFolderCheckboxState: (
+    filesInFolder: ChangesExplorerFile[],
+  ) => ChangesExplorerCheckboxState;
 };
 
 export const TreeNodeRow = memo(function TreeNodeRow({
@@ -50,10 +57,13 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   onOpenFolderContextMenu,
   onToggleFolder,
   onToggleFileSelection,
+  onToggleFolderSelection,
+  getFolderCheckboxState,
 }: TreeNodeRowProps) {
   if (node.kind === "folder") {
     const isOpen = search ? true : (expanded[node.path] ?? true);
     const folderFiles = collectFilesFromTree(node.children);
+    const folderCheckboxState = getFolderCheckboxState(folderFiles);
     const sectionIsUntracked =
       folderFiles.length > 0 &&
       folderFiles.every((file) => isUntrackedFile(file));
@@ -88,6 +98,14 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             <IconFolder size={16} className="h-4 w-4 flex-shrink-0 text-slate-300" />
           </span>
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
+          {showFileCheckboxes && folderFiles.length > 0 ? (
+            <FileSelectionCheckbox
+              checkboxState={folderCheckboxState}
+              onToggle={() =>
+                onToggleFolderSelection(node.path, folderFiles)
+              }
+            />
+          ) : null}
         </button>
         {isOpen ? (
           <ChangesExplorerTreeNodes
@@ -103,6 +121,8 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             onOpenFolderContextMenu={onOpenFolderContextMenu}
             onToggleFolder={onToggleFolder}
             onToggleFileSelection={onToggleFileSelection}
+            onToggleFolderSelection={onToggleFolderSelection}
+            getFolderCheckboxState={getFolderCheckboxState}
           />
         ) : null}
       </div>

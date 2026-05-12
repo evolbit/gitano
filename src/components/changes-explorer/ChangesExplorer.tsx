@@ -583,6 +583,8 @@ function ChangesExplorer({
                 onOpenFolderContextMenu={openFolderContextMenu}
                 onToggleFolder={toggleFolder}
                 onToggleFileSelection={toggleFileSelection}
+                onToggleFolderSelection={toggleFolderSelection}
+                getFolderCheckboxState={getFolderCheckboxState}
               />
             </ChangesExplorerSection>
           ))

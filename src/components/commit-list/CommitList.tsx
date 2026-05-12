@@ -2,6 +2,7 @@ import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRepoStore } from "../../store/repo";
+import { APP_EVENTS } from "../../constants/events";
 import {
   CommitHistoryMode,
   CommitListItem,
@@ -14,6 +15,7 @@ import TableVirtualResizable, {
 } from "../tables/TableVirtualResizable";
 
 const PAGE_SIZE = 50;
+const COMMIT_LIST_REFRESH_MS = 15000;
 
 export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -189,6 +191,32 @@ export default function CommitList() {
   useEffect(() => {
     loadCommitsRef.current = loadCommits;
   }, [loadCommits]);
+
+  useEffect(() => {
+    const handleCommitRefresh = () => {
+      if (loadCommitsRef.current) {
+        void loadCommitsRef.current(true);
+      }
+    };
+
+    window.addEventListener(APP_EVENTS.commitsRefresh, handleCommitRefresh);
+
+    return () => {
+      window.removeEventListener(APP_EVENTS.commitsRefresh, handleCommitRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!repoPath) return;
+
+    const interval = setInterval(() => {
+      if (loadCommitsRef.current) {
+        void loadCommitsRef.current(true);
+      }
+    }, COMMIT_LIST_REFRESH_MS);
+
+    return () => clearInterval(interval);
+  }, [repoPath, selectedBranch, historyMode]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (
