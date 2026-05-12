@@ -17,11 +17,14 @@ export default function CurrentChangesCommitBar({
   const [showCommitMenu, setShowCommitMenu] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
 
-  const handleCommit = async () => {
+  const handleCommit = async (pushOverride?: boolean) => {
     if (!message.trim() || loading) return;
 
     try {
-      await commitStagedChanges(repoPath, message, { push, amend });
+      await commitStagedChanges(repoPath, message, {
+        push: pushOverride ?? push,
+        amend,
+      });
       setMessage("");
       setShowCommitMenu(false);
       onCommitted?.();
@@ -40,8 +43,12 @@ export default function CurrentChangesCommitBar({
           className="h-20 w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           disabled={loading}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter") {
               event.preventDefault();
+              if (event.shiftKey) {
+                void handleCommit(true);
+                return;
+              }
               void handleCommit();
             }
           }}
