@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import DiffViewer from "./DiffViewer";
-import { DiffDisplayMode } from "./types";
+import { DiffDisplayMode, DiffSource } from "./types";
 import { IconX } from "../icons";
 
 type InlineDiffSurfaceProps = {
   repoPath: string;
   filePath: string;
   sha?: string;
+  diffSource?: DiffSource;
   title: string;
   onClose: () => void;
   onWorkingTreeStageChange?: () => Promise<void> | void;
@@ -16,6 +17,7 @@ export default function InlineDiffSurface({
   repoPath,
   filePath,
   sha,
+  diffSource,
   title,
   onClose,
   onWorkingTreeStageChange,
@@ -53,6 +55,7 @@ export default function InlineDiffSurface({
           repoPath={repoPath}
           filePath={filePath}
           sha={sha}
+          diffSource={diffSource}
           onWorkingTreeStageChange={onWorkingTreeStageChange}
           displayMode={displayMode}
           onDisplayModeChange={setDisplayMode}

@@ -36,6 +36,16 @@ fn main() {
             git::git_fetch,
             git::git_pull,
             git::git_push,
+            git::git_stash_all,
+            git::git_stash_selected,
+            git::git_stash_pop,
+            git::git_stash_apply,
+            git::git_stash_apply_files,
+            git::git_stash_drop,
+            git::git_stash_list,
+            git::git_stash_files,
+            git::git_stash_edit_message,
+            git::get_stash_file_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

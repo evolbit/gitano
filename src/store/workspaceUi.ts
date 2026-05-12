@@ -4,8 +4,8 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
-export type LeftPaneSection = "changes" | "branches" | "folders";
-export type RightWorkspaceMode = "history" | "working-diff";
+export type LeftPaneSection = "changes" | "branches" | "stashes";
+export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type PullStrategy =
   | "fetch-all"
@@ -26,6 +26,8 @@ export interface RepoWorkspaceState {
   historyMiddleMode: HistoryMiddleMode;
   selectedWorkingDiffPath: string | null;
   selectedCommitDiffPath: string | null;
+  selectedStashRef: string | null;
+  selectedStashDiffPath: string | null;
   branchTreeExpanded: Record<string, boolean>;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
@@ -46,6 +48,8 @@ interface WorkspaceUiStore {
   setHistoryMiddleMode: (repoPath: string, mode: HistoryMiddleMode) => void;
   setSelectedWorkingDiffPath: (repoPath: string, path: string | null) => void;
   setSelectedCommitDiffPath: (repoPath: string, path: string | null) => void;
+  setSelectedStashRef: (repoPath: string, stashRef: string | null) => void;
+  setSelectedStashDiffPath: (repoPath: string, path: string | null) => void;
   setBranchTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -79,6 +83,8 @@ export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   historyMiddleMode: "commit-list",
   selectedWorkingDiffPath: null,
   selectedCommitDiffPath: null,
+  selectedStashRef: null,
+  selectedStashDiffPath: null,
   branchTreeExpanded: {},
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
@@ -103,14 +109,22 @@ function getRepoWorkspaceState(
     return DEFAULT_REPO_WORKSPACE_STATE;
   }
 
+  const legacyLeftPaneSection = (repoState as { leftPaneSection?: string })
+    .leftPaneSection;
+
   return {
     ...DEFAULT_REPO_WORKSPACE_STATE,
     ...repoState,
-    leftPaneSection: repoState.leftPaneSection ?? "changes",
+    leftPaneSection:
+      legacyLeftPaneSection === "folders"
+        ? "stashes"
+        : (repoState.leftPaneSection ?? "changes"),
     rightWorkspaceMode: repoState.rightWorkspaceMode ?? "history",
     historyMiddleMode: repoState.historyMiddleMode ?? "commit-list",
     selectedWorkingDiffPath: repoState.selectedWorkingDiffPath ?? null,
     selectedCommitDiffPath: repoState.selectedCommitDiffPath ?? null,
+    selectedStashRef: repoState.selectedStashRef ?? null,
+    selectedStashDiffPath: repoState.selectedStashDiffPath ?? null,
   };
 }
 
@@ -145,6 +159,10 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         get().updateRepoState(repoPath, { selectedWorkingDiffPath: path }),
       setSelectedCommitDiffPath: (repoPath, path) =>
         get().updateRepoState(repoPath, { selectedCommitDiffPath: path }),
+      setSelectedStashRef: (repoPath, stashRef) =>
+        get().updateRepoState(repoPath, { selectedStashRef: stashRef }),
+      setSelectedStashDiffPath: (repoPath, path) =>
+        get().updateRepoState(repoPath, { selectedStashDiffPath: path }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
       setMainChangesExpanded: (repoPath, expanded) =>

@@ -100,6 +100,27 @@ export interface WorkingDirectoryChangesResponse {
   staged_state_by_file: Record<string, StagedFileSelectionState>;
 }
 
+export interface GitStashEntry {
+  selector: string;
+  hash: string;
+  message: string;
+  date: number;
+}
+
+export interface StashFileChange {
+  path: string;
+  status:
+    | "added"
+    | "deleted"
+    | "modified"
+    | "renamed"
+    | "copied"
+    | "typeChanged"
+    | "typechanged";
+  insertions: number;
+  deletions: number;
+}
+
 export interface DiffLine {
   kind: "Add" | "Del" | "Context";
   content: string;

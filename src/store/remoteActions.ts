@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { RemoteNotice } from "../components/top-toolbar/types";
 
-type RemoteActionKind = "pull" | "push";
+type RemoteActionKind = "pull" | "push" | "stash" | "pop";
 
 interface RemoteActionsStore {
   pending: RemoteActionKind | null;

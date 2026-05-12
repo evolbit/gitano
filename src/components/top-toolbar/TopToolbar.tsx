@@ -369,6 +369,54 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
     }
   };
 
+  const executeStash = async () => {
+    if (!repoPath || remoteActionPending) return;
+
+    setRemoteActionPending("stash");
+    await waitForNextFrame();
+
+    try {
+      const stashMessage = `WIP-${resolvedBranch ?? "HEAD"}`;
+      await core.invoke("git_stash_all", {
+        path: repoPath,
+        message: stashMessage,
+      });
+      handleRemoteSuccess(
+        "git stash succeeded",
+        `Created stash with message ${stashMessage}.`,
+      );
+      refreshToolbarData();
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.stashesRefresh));
+    } catch (error) {
+      handleRemoteError("git stash failed", error);
+    } finally {
+      setRemoteActionPending(null);
+    }
+  };
+
+  const executePop = async () => {
+    if (!repoPath || remoteActionPending) return;
+
+    setRemoteActionPending("pop");
+    await waitForNextFrame();
+
+    try {
+      await core.invoke("git_stash_pop", { path: repoPath });
+      handleRemoteSuccess(
+        "git stash pop succeeded",
+        "Popped the most recent stash entry.",
+      );
+      refreshToolbarData();
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.stashesRefresh));
+    } catch (error) {
+      handleRemoteError("git stash pop failed", error);
+    } finally {
+      setRemoteActionPending(null);
+    }
+  };
+
   const isRemoteActionDisabled = !repoPath || remoteActionPending !== null;
 
   const pullRightSlot = (
@@ -597,26 +645,30 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
           <Stack
             gap={0}
             align="center">
-            <div className="flex min-w-[64px] flex-col items-center justify-center gap-1 rounded border border-transparent px-3 py-2 text-zinc-500 transition-colors">
-              <Text
-                size="xs"
-                className="text-xs text-zinc-500">
-                Stash
-              </Text>
-              <IconStack2 size={18} />
-            </div>
+            <RemoteActionButton
+              label="Stash"
+              icon={<IconStack2 size={18} />}
+              onClick={() => {
+                void executeStash();
+              }}
+              disabled={isRemoteActionDisabled}
+              loading={remoteActionPending === "stash"}
+              tooltip="Stash all current working-tree changes"
+            />
           </Stack>
           <Stack
             gap={0}
             align="center">
-            <div className="flex min-w-[64px] flex-col items-center justify-center gap-1 rounded border border-transparent px-3 py-2 text-zinc-500 transition-colors">
-              <Text
-                size="xs"
-                className="text-xs text-zinc-500">
-                Pop
-              </Text>
-              <IconArrowBarToUp size={18} />
-            </div>
+            <RemoteActionButton
+              label="Pop"
+              icon={<IconArrowBarToUp size={18} />}
+              onClick={() => {
+                void executePop();
+              }}
+              disabled={isRemoteActionDisabled}
+              loading={remoteActionPending === "pop"}
+              tooltip="Pop the most recent stash entry"
+            />
           </Stack>
           <Stack
             gap={0}
@@ -653,11 +705,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
               type="button"
               className="text-zinc-400 transition-colors hover:text-zinc-100"
               onClick={() =>
-                setRemoteNotice((current) =>
-                  current
-                    ? { ...current, expanded: !current.expanded }
-                    : current,
-                )
+                setRemoteNotice({
+                  ...remoteNotice,
+                  expanded: !remoteNotice.expanded,
+                })
               }>
               {remoteNotice.expanded ? "Hide Log" : "View Log"}
             </button>

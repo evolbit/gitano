@@ -1,6 +1,7 @@
 import { FileChange, FileChangeWithHunks } from "../../types/git";
 
 export type DiffDisplayMode = "unified" | "split";
+export type DiffSource = "commit" | "stash";
 export type DiffModalFile = FileChange | FileChangeWithHunks;
 export type DiffModalSectionMode = "tracked-untracked" | "single";
 export type ContextDirection = "Above" | "Below";
@@ -42,6 +43,7 @@ export type DiffViewerProps = {
   onWorkingTreeStageChange?: () => Promise<void> | void;
   displayMode?: DiffDisplayMode;
   onDisplayModeChange?: (mode: DiffDisplayMode) => void;
+  diffSource?: DiffSource;
 };
 
 export type DiffHunkProps = {

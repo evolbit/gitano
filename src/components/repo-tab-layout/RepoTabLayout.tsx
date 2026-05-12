@@ -1,6 +1,7 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Tabs, Tooltip } from "@mantine/core";
 import React, { useEffect, useRef, useState } from "react";
+import { APP_EVENTS } from "../../constants/events";
 import { REPO_LAYOUT } from "../../constants/layout";
 import { useWorkingDirectoryChanges } from "../../hooks/useWorkingDirectoryChanges";
 import { useFileHunksStore } from "../../store/hunks";
@@ -18,7 +19,8 @@ import ChangesPanel from "../changes-panel/ChangesPanel";
 import CommitList from "../commit-list/CommitList";
 import CurrentChangesCommitBar from "../current-changes-commit-bar/CurrentChangesCommitBar";
 import InlineDiffSurface from "../diff-viewer/InlineDiffSurface";
-import { IconFolder, IconGitBranch, IconStack2 } from "../icons";
+import { IconGitBranch, IconStack2 } from "../icons";
+import StashesPanel from "../stashes-panel/StashesPanel";
 import TopToolbar from "../top-toolbar/TopToolbar";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
@@ -28,7 +30,7 @@ const LEFT_PANE_SECTIONS: ReadonlyArray<{
 }> = [
   { key: "changes", label: "Changes", icon: IconStack2 },
   { key: "branches", label: "Branches", icon: IconGitBranch },
-  { key: "folders", label: "Folders", icon: IconFolder },
+  { key: "stashes", label: "Stashes", icon: IconStack2 },
 ];
 
 const RepoTabLayout: React.FC = () => {
@@ -57,6 +59,10 @@ const RepoTabLayout: React.FC = () => {
   );
   const setSelectedCommitDiffPath = useWorkspaceUiStore(
     (s) => s.setSelectedCommitDiffPath,
+  );
+  const setSelectedStashRef = useWorkspaceUiStore((s) => s.setSelectedStashRef);
+  const setSelectedStashDiffPath = useWorkspaceUiStore(
+    (s) => s.setSelectedStashDiffPath,
   );
   const setLeftPaneWidth = useWorkspaceUiStore((s) => s.setLeftPaneWidth);
   const setCommitDetailsWidth = useWorkspaceUiStore(
@@ -90,6 +96,7 @@ const RepoTabLayout: React.FC = () => {
     if (!repoPath) return;
     setSelectedWorkingDiffPath(repoPath, null);
     setSelectedCommitDiffPath(repoPath, null);
+    setSelectedStashDiffPath(repoPath, null);
     setRightWorkspaceMode(repoPath, "history");
     setHistoryMiddleMode(repoPath, "commit-list");
   }, [tab?.selectedBranch]);
@@ -142,6 +149,19 @@ const RepoTabLayout: React.FC = () => {
     useFileHunksStore.getState().clearFileHunks();
   };
 
+  const handleOpenStashDiff = (stashRef: string, filePath: string) => {
+    if (!repoPath) return;
+    setSelectedStashRef(repoPath, stashRef);
+    setSelectedStashDiffPath(repoPath, filePath);
+    setRightWorkspaceMode(repoPath, "stash-diff");
+  };
+
+  const handleCloseStashDiff = () => {
+    if (!repoPath) return;
+    setRightWorkspaceMode(repoPath, "history");
+    setSelectedStashDiffPath(repoPath, null);
+  };
+
   const handleOpenCommitDiff = (filePath: string) => {
     if (!repoPath) return;
     setSelectedCommitDiffPath(repoPath, filePath);
@@ -185,6 +205,19 @@ const RepoTabLayout: React.FC = () => {
 
     return () => observer.disconnect();
   }, [repoPath]);
+
+  useEffect(() => {
+    const handleWorkingChangesRefresh = () => {
+      void refreshChanges();
+    };
+
+    window.addEventListener(APP_EVENTS.workingChangesRefresh, handleWorkingChangesRefresh);
+    return () =>
+      window.removeEventListener(
+        APP_EVENTS.workingChangesRefresh,
+        handleWorkingChangesRefresh,
+      );
+  }, [refreshChanges]);
 
   useEffect(() => {
     if (workspaceState.rightWorkspaceMode === "working-diff") return;
@@ -318,12 +351,21 @@ const RepoTabLayout: React.FC = () => {
                 <BranchList />
               </Tabs.Panel>
               <Tabs.Panel
-                value="folders"
+                value="stashes"
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
               >
-                <div className="p-4 text-xs text-muted-foreground">
-                  Folders coming soon
-                </div>
+                {repoPath ? (
+                  <StashesPanel
+                    repoPath={repoPath}
+                    selectedStashRef={workspaceState.selectedStashRef}
+                    selectedStashDiffPath={workspaceState.selectedStashDiffPath}
+                    onSelectStashRef={(stashRef) => setSelectedStashRef(repoPath, stashRef)}
+                    onSelectStashDiffPath={(stashPath) =>
+                      setSelectedStashDiffPath(repoPath, stashPath)
+                    }
+                    onOpenStashDiff={handleOpenStashDiff}
+                  />
+                ) : null}
               </Tabs.Panel>
               <Tabs.List className="grid h-10 min-h-10 grid-cols-3 border-t border-border bg-background-emphasis">
                 {LEFT_PANE_SECTIONS.map((section) => {
@@ -382,6 +424,18 @@ const RepoTabLayout: React.FC = () => {
                 title={selectedWorkingFile.path}
                 onClose={handleCloseWorkingDiff}
                 onWorkingTreeStageChange={refreshChanges}
+              />
+            ) : workspaceState.rightWorkspaceMode === "stash-diff" &&
+              repoPath &&
+              workspaceState.selectedStashRef &&
+              workspaceState.selectedStashDiffPath ? (
+              <InlineDiffSurface
+                repoPath={repoPath}
+                filePath={workspaceState.selectedStashDiffPath}
+                sha={workspaceState.selectedStashRef}
+                diffSource="stash"
+                title={workspaceState.selectedStashDiffPath}
+                onClose={handleCloseStashDiff}
               />
             ) : (
               <Split orientation="vertical" className="h-full w-full">

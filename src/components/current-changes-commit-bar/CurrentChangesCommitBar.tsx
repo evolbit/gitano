@@ -20,7 +20,9 @@ export default function CurrentChangesCommitBar({
   const [push, setPush] = useState(false);
   const [amend, setAmend] = useState(false);
   const [showCommitMenu, setShowCommitMenu] = useState(false);
+  const [stashLoading, setStashLoading] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
+  const clearAllStagedLines = useStagedLinesStore((s) => s.clearAllStagedLines);
   const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
   const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
   const hasStagedChanges = useStagedLinesStore((s) =>
@@ -37,9 +39,18 @@ export default function CurrentChangesCommitBar({
   const selectedBranch = useRepoStore((s) =>
     s.tabs.find((t) => t.id === activeTabId)?.selectedBranch ?? null,
   );
+  const isBusy = loading || stashLoading;
 
   const notifyCommitRefresh = () => {
     window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+  };
+
+  const notifyWorkingChangesRefresh = () => {
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+  };
+
+  const notifyStashesRefresh = () => {
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.stashesRefresh));
   };
 
   const handlePushSuccess = () => {
@@ -68,7 +79,7 @@ export default function CurrentChangesCommitBar({
   };
 
   const handleCommit = async (pushOverride?: boolean) => {
-    if (!message.trim() || loading || !hasStagedChanges) return;
+    if (!message.trim() || isBusy || !hasStagedChanges) return;
 
     try {
       await commitStagedChanges(repoPath, message, {
@@ -103,6 +114,60 @@ export default function CurrentChangesCommitBar({
     }
   };
 
+  const getSelectedFilePathsForStash = () => {
+    const stagedLines = useStagedLinesStore.getState().stagedLines;
+    return Object.entries(stagedLines)
+      .filter(([, fileSelection]) => {
+        if (!fileSelection) return false;
+        if (fileSelection.isNewFile || fileSelection.isWholeFileStaged) return true;
+        return Object.values(fileSelection).some(
+          (value) => value instanceof Set && value.size > 0,
+        );
+      })
+      .map(([filePath]) => filePath);
+  };
+
+  const handleStashSelection = async () => {
+    if (isBusy) return;
+    const selectedFiles = getSelectedFilePathsForStash();
+    if (selectedFiles.length === 0) return;
+
+    setStashLoading(true);
+    try {
+      const stashMessage = `WIP-${selectedBranch ?? "HEAD"}`;
+      await core.invoke("git_stash_selected", {
+        path: repoPath,
+        filePaths: selectedFiles,
+        message: stashMessage,
+      });
+
+      clearAllStagedLines();
+      notifyWorkingChangesRefresh();
+      notifyStashesRefresh();
+      setRemoteNotice({
+        kind: "success",
+        title: "git stash succeeded",
+        details: `Stashed ${selectedFiles.length} selected file(s).`,
+        expanded: false,
+      });
+      setShowCommitMenu(false);
+      onCommitted?.();
+    } catch (stashError) {
+      const details =
+        stashError instanceof Error
+          ? stashError.message
+          : String(stashError || "Unknown error");
+      setRemoteNotice({
+        kind: "error",
+        title: "git stash failed",
+        details,
+        expanded: false,
+      });
+    } finally {
+      setStashLoading(false);
+    }
+  };
+
   return (
     <div className="border-t border-border bg-background-emphasis px-2 pb-2 pt-1.5">
       <div className="flex flex-col gap-1.5">
@@ -111,7 +176,7 @@ export default function CurrentChangesCommitBar({
           onChange={(event) => setMessage(event.target.value)}
           placeholder="Enter commit message"
           className="h-20 w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-          disabled={loading}
+          disabled={isBusy}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -130,7 +195,7 @@ export default function CurrentChangesCommitBar({
                 type="checkbox"
                 checked={push}
                 onChange={(event) => setPush(event.target.checked)}
-                disabled={loading}
+                disabled={isBusy}
               />
               Push
             </label>
@@ -141,7 +206,7 @@ export default function CurrentChangesCommitBar({
               onClick={() => {
                 void handleCommit();
               }}
-              disabled={loading || !message.trim() || !hasStagedChanges}
+              disabled={isBusy || !message.trim() || !hasStagedChanges}
               className="h-8 rounded-l border border-r-0 border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {amend ? "Amend" : "Commit"}
@@ -149,7 +214,7 @@ export default function CurrentChangesCommitBar({
             <button
               type="button"
               onClick={() => setShowCommitMenu((prev) => !prev)}
-              disabled={loading}
+              disabled={isBusy}
               className="h-8 rounded-r border border-border bg-zinc-800 px-2 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Commit options"
             >
@@ -176,6 +241,16 @@ export default function CurrentChangesCommitBar({
                   }}
                 >
                   Amend
+                </button>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
+                  onClick={() => {
+                    void handleStashSelection();
+                  }}
+                  disabled={isBusy || !hasStagedChanges}
+                >
+                  Stash
                 </button>
               </div>
             ) : null}

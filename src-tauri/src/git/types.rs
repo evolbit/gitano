@@ -185,6 +185,22 @@ pub struct WorkingDirectoryChangesResponse {
     pub staged_state_by_file: HashMap<String, StagedFileSelectionState>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitStashEntry {
+    pub selector: String,
+    pub hash: String,
+    pub message: String,
+    pub date: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StashFileChange {
+    pub path: String,
+    pub status: ChangeType,
+    pub insertions: u32,
+    pub deletions: u32,
+}
+
 #[derive(Deserialize)]
 pub enum ContextDirection {
     Above,

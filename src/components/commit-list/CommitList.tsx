@@ -47,7 +47,7 @@ export default function CommitList() {
 
   // Debounce for infinite scroll
   const loadMoreTimeoutRef = useRef<number | null>(null);
-  const loadCommitsRef = useRef<() => Promise<void>>();
+  const loadCommitsRef = useRef<(reset?: boolean) => Promise<void>>();
   const previousViewKeyRef = useRef<string | null>(null);
 
   // Define columns with custom rendering for commit_history

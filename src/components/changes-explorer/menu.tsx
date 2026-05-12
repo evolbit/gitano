@@ -133,7 +133,7 @@ export const ChangesExplorerMenu = memo(function ChangesExplorerMenu({
   activeContextMenu,
   menuPos,
   menuRef,
-  surface,
+  surface: _surface,
   viewMode,
   onViewModeChange,
   onCloseContextMenu,

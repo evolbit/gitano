@@ -23,6 +23,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   onWorkingTreeStageChange,
   displayMode = "unified",
   onDisplayModeChange,
+  diffSource = "commit",
 }) => {
   // Local state for hunks when sha is defined
   const [localHunks, setLocalHunks] = useState<DiffHunkData[]>([]);
@@ -166,12 +167,15 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     if (!sha) return;
     setLoading(true);
     setError(null);
-    invoke<DiffHunkData[]>("get_commit_file_diff", {
+    invoke<DiffHunkData[]>(
+      diffSource === "stash" ? "get_stash_file_diff" : "get_commit_file_diff",
+      {
       path: repoPath,
       sha,
       filePath,
       context,
-    })
+      },
+    )
       .then((res) => {
         setLocalHunks(res);
         setLoading(false);
@@ -181,7 +185,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         setLocalHunks([]);
         setLoading(false);
       });
-  }, [repoPath, filePath, sha, context]);
+  }, [repoPath, filePath, sha, context, diffSource]);
 
   // Logic to expose action data to the parent
   useEffect(() => {
