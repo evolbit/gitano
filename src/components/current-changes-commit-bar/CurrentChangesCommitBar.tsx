@@ -5,6 +5,7 @@ import { IconChevronDown } from "../icons";
 import { useRemoteActionsStore } from "../../store/remoteActions";
 import { useRepoStore } from "../../store/repo";
 import { APP_EVENTS } from "../../constants/events";
+import { useStagedLinesStore } from "../../store/staging";
 
 type CurrentChangesCommitBarProps = {
   repoPath: string;
@@ -22,6 +23,16 @@ export default function CurrentChangesCommitBar({
   const { commitStagedChanges, loading, error } = useStageAndCommit();
   const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
   const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
+  const hasStagedChanges = useStagedLinesStore((s) =>
+    Object.values(s.stagedLines).some((fileSelection) => {
+      if (!fileSelection) return false;
+      if (fileSelection.isNewFile || fileSelection.isWholeFileStaged) return true;
+
+      return Object.values(fileSelection).some(
+        (value) => value instanceof Set && value.size > 0,
+      );
+    }),
+  );
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const selectedBranch = useRepoStore((s) =>
     s.tabs.find((t) => t.id === activeTabId)?.selectedBranch ?? null,
@@ -57,7 +68,7 @@ export default function CurrentChangesCommitBar({
   };
 
   const handleCommit = async (pushOverride?: boolean) => {
-    if (!message.trim() || loading) return;
+    if (!message.trim() || loading || !hasStagedChanges) return;
 
     try {
       await commitStagedChanges(repoPath, message, {
@@ -130,7 +141,7 @@ export default function CurrentChangesCommitBar({
               onClick={() => {
                 void handleCommit();
               }}
-              disabled={loading || !message.trim()}
+              disabled={loading || !message.trim() || !hasStagedChanges}
               className="h-8 rounded-l border border-r-0 border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {amend ? "Amend" : "Commit"}
