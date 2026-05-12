@@ -5,6 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { APP_EVENTS } from "../../constants/events";
 import { GitStashEntry, StashFileChange } from "../../types/git";
 import { IconDotsVertical } from "../icons";
+import { FileSelectionCheckbox } from "../changes-explorer/FileSelectionCheckbox";
+import { ChangesExplorerStatusIcon } from "../changes-explorer/ChangesExplorerStatusIcon";
+import { getFileName, getParentPath } from "../../utils/path";
+import { FileChange } from "../../types/git";
 
 type StashesPanelProps = {
   repoPath: string;
@@ -234,8 +238,9 @@ export default function StashesPanel({
                           <IconDotsVertical size={14} />
                         </button>
                       </Menu.Target>
-                      <Menu.Dropdown>
+                      <Menu.Dropdown className="rounded border border-zinc-700 bg-zinc-900/95 p-1 text-sm text-zinc-200 shadow-lg">
                         <Menu.Item
+                          className="rounded px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
                           onClick={() => {
                             void runRowAction(async () => {
                               await core.invoke("git_stash_apply", {
@@ -248,6 +253,7 @@ export default function StashesPanel({
                           Apply Stash
                         </Menu.Item>
                         <Menu.Item
+                          className="rounded px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
                           onClick={() => {
                             void runRowAction(async () => {
                               await core.invoke("git_stash_pop", {
@@ -260,6 +266,7 @@ export default function StashesPanel({
                           Pop Stash
                         </Menu.Item>
                         <Menu.Item
+                          className="rounded px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
                           onClick={() => {
                             void runRowAction(async () => {
                               await core.invoke("git_stash_drop", {
@@ -272,6 +279,7 @@ export default function StashesPanel({
                           Delete Stash
                         </Menu.Item>
                         <Menu.Item
+                          className="rounded px-3 py-1.5 text-zinc-200 hover:bg-zinc-800"
                           onClick={() => {
                             setEditingSelector(stash.selector);
                             setEditingMessage(stash.message);
@@ -347,12 +355,25 @@ export default function StashesPanel({
               {stashFiles.map((file) => {
                 const checked = selectedFiles.has(file.path);
                 const selectedForDiff = selectedStashDiffPath === file.path;
+                const fileName = getFileName(file.path);
+                const parentPath = getParentPath(file.path);
+                const displayFile: FileChange = {
+                  path: file.path,
+                  status:
+                    file.status === "typechanged"
+                      ? "typeChanged"
+                      : file.status,
+                  insertions: file.insertions,
+                  deletions: file.deletions,
+                };
                 return (
                   <button
                     key={file.path}
                     type="button"
-                    className={`flex w-full items-center gap-2 border-b border-zinc-800/60 px-2 py-1.5 text-left ${
-                      selectedForDiff ? "bg-blue-500/10" : "hover:bg-zinc-800/40"
+                    className={`flex w-full items-center gap-2 border-b border-transparent px-3 py-2 text-left text-sm transition-colors ${
+                      selectedForDiff
+                        ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
+                        : "text-foreground hover:bg-background-emphasis"
                     }`}
                     onClick={() => {
                       if (!selectedStashRef) return;
@@ -360,16 +381,27 @@ export default function StashesPanel({
                       onOpenStashDiff(selectedStashRef, file.path);
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => toggleFileSelection(file.path, event.target.checked)}
-                      onClick={(event) => event.stopPropagation()}
+                    <ChangesExplorerStatusIcon file={displayFile} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate font-medium">{fileName}</span>
+                        {parentPath ? (
+                          <span className="truncate text-muted-foreground">{parentPath}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="ml-3 flex w-16 flex-shrink-0 items-center justify-end gap-2 text-xs">
+                      <span className="min-w-0 text-right text-lime-400">
+                        +{file.insertions}
+                      </span>
+                      <span className="min-w-0 text-right text-rose-400">
+                        -{file.deletions}
+                      </span>
+                    </div>
+                    <FileSelectionCheckbox
+                      checkboxState={checked ? "checked" : "unchecked"}
+                      onToggle={() => toggleFileSelection(file.path, !checked)}
                     />
-                    <span className="truncate text-xs text-zinc-200">{file.path}</span>
-                    <span className="ml-auto text-[11px] text-zinc-400">
-                      +{file.insertions} -{file.deletions}
-                    </span>
                   </button>
                 );
               })}

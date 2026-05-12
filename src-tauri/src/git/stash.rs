@@ -59,7 +59,7 @@ fn resolve_stash_message(path: &str, message: Option<String>) -> Result<String, 
 fn parse_stash_list(path: &str) -> Result<Vec<GitStashEntry>, String> {
     let raw = run_git(
         path,
-        &["stash", "list", "--date=unix", "--format=%gd%x1f%H%x1f%at%x1f%gs"],
+        &["stash", "list", "--format=%gd%x1f%H%x1f%ct%x1f%gs"],
     )?;
 
     let mut stashes = Vec::new();
@@ -293,36 +293,9 @@ pub fn git_stash_edit_message(
         return Err("Stash message cannot be empty.".to_string());
     }
 
-    let old_hash = run_git(&path, &["rev-parse", &stash_ref])?
-        .trim()
-        .to_string();
+    let old_hash = run_git(&path, &["rev-parse", &stash_ref])?.trim().to_string();
+    run_git_status(&path, &["stash", "drop", &stash_ref])?;
     run_git_status(&path, &["stash", "store", "-m", trimmed, &old_hash])?;
-
-    let entries = parse_stash_list(&path)?;
-    let mut duplicate_selector: Option<String> = None;
-    let mut max_index = -1isize;
-
-    for entry in entries {
-        if entry.hash != old_hash {
-            continue;
-        }
-        if let Some(index_str) = entry
-            .selector
-            .strip_prefix("stash@{")
-            .and_then(|value| value.strip_suffix('}'))
-        {
-            if let Ok(index) = index_str.parse::<isize>() {
-                if index > max_index {
-                    max_index = index;
-                    duplicate_selector = Some(entry.selector);
-                }
-            }
-        }
-    }
-
-    if let Some(selector) = duplicate_selector {
-        run_git_status(&path, &["stash", "drop", &selector])?;
-    }
 
     Ok(())
 }
