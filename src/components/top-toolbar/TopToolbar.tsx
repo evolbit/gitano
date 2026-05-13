@@ -12,7 +12,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
 import { APP_EVENTS } from "../../constants/events";
 import { useRepoStore } from "../../store/repo";
-import { useRemoteActionsStore } from "../../store/remoteActions";
+import { useGitActionsStore } from "../../store/gitActions";
 import {
   PullStrategy,
   useWorkspaceUiStore,
@@ -37,8 +37,8 @@ import {
 } from "./types";
 
 const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
-const REMOTE_SUCCESS_SNACKBAR_MS = 3200;
-const REMOTE_ERROR_SNACKBAR_MS = 8000;
+const GIT_ACTION_SUCCESS_SNACKBAR_MS = 3200;
+const GIT_ACTION_ERROR_SNACKBAR_MS = 8000;
 
 function waitForNextFrame() {
   return new Promise<void>((resolve) => {
@@ -194,7 +194,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
-  const remoteNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+  const gitActionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
 
@@ -204,10 +204,10 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
   const pullStrategy = useWorkspaceUiStore((s) => s.pullStrategy);
   const setPullStrategy = useWorkspaceUiStore((s) => s.setPullStrategy);
-  const remoteActionPending = useRemoteActionsStore((s) => s.pending);
-  const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
-  const remoteNotice = useRemoteActionsStore((s) => s.notice);
-  const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
+  const pendingGitAction = useGitActionsStore((s) => s.pendingAction);
+  const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
+  const gitActionNotice = useGitActionsStore((s) => s.notice);
+  const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
   const tab = tabs.find((t) => t.id === activeTabId);
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
@@ -262,35 +262,35 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   };
 
   useEffect(() => {
-    if (remoteNoticeTimeoutRef.current) {
-      clearTimeout(remoteNoticeTimeoutRef.current);
-      remoteNoticeTimeoutRef.current = null;
+    if (gitActionNoticeTimeoutRef.current) {
+      clearTimeout(gitActionNoticeTimeoutRef.current);
+      gitActionNoticeTimeoutRef.current = null;
     }
 
-    if (!remoteNotice || remoteNotice.expanded) {
+    if (!gitActionNotice || gitActionNotice.expanded) {
       return;
     }
 
-    remoteNoticeTimeoutRef.current = setTimeout(
+    gitActionNoticeTimeoutRef.current = setTimeout(
       () => {
-        setRemoteNotice(null);
-        remoteNoticeTimeoutRef.current = null;
+        setGitActionNotice(null);
+        gitActionNoticeTimeoutRef.current = null;
       },
-      remoteNotice.kind === "success"
-        ? REMOTE_SUCCESS_SNACKBAR_MS
-        : REMOTE_ERROR_SNACKBAR_MS,
+      gitActionNotice.kind === "success"
+        ? GIT_ACTION_SUCCESS_SNACKBAR_MS
+        : GIT_ACTION_ERROR_SNACKBAR_MS,
     );
 
     return () => {
-      if (remoteNoticeTimeoutRef.current) {
-        clearTimeout(remoteNoticeTimeoutRef.current);
-        remoteNoticeTimeoutRef.current = null;
+      if (gitActionNoticeTimeoutRef.current) {
+        clearTimeout(gitActionNoticeTimeoutRef.current);
+        gitActionNoticeTimeoutRef.current = null;
       }
     };
-  }, [remoteNotice]);
+  }, [gitActionNotice]);
 
-  const handleRemoteSuccess = (title: string, details: string) => {
-    setRemoteNotice({
+  const handleGitActionSuccess = (title: string, details: string) => {
+    setGitActionNotice({
       kind: "success",
       title,
       details,
@@ -298,11 +298,11 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
     });
   };
 
-  const handleRemoteError = (title: string, error: unknown) => {
+  const handleGitActionError = (title: string, error: unknown) => {
     const details =
       error instanceof Error ? error.message : String(error || "Unknown error");
 
-    setRemoteNotice({
+    setGitActionNotice({
       kind: "error",
       title,
       details,
@@ -329,21 +329,21 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
   }, []);
 
   const executePull = async () => {
-    if (!repoPath || remoteActionPending) return;
+    if (!repoPath || pendingGitAction) return;
 
-    setRemoteActionPending("pull");
+    setPendingGitAction("pull");
     await waitForNextFrame();
 
     try {
       if (pullStrategy === "fetch-all") {
         await core.invoke("git_fetch", { path: repoPath });
-        handleRemoteSuccess(
+        handleGitActionSuccess(
           "git fetch succeeded",
           "Fetched all configured remotes successfully.",
         );
       } else {
         await core.invoke("git_pull", { path: repoPath, strategy: pullStrategy });
-        handleRemoteSuccess(
+        handleGitActionSuccess(
           "git pull succeeded",
           `Completed ${getPullStrategyLabel(pullStrategy)} for the active repository.`,
         );
@@ -351,24 +351,24 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
 
       refreshToolbarData();
     } catch (error) {
-      handleRemoteError(
+      handleGitActionError(
         pullStrategy === "fetch-all" ? "git fetch failed" : "git pull failed",
         error,
       );
     } finally {
-      setRemoteActionPending(null);
+      setPendingGitAction(null);
     }
   };
 
   const executePush = async () => {
-    if (!repoPath || remoteActionPending) return;
+    if (!repoPath || pendingGitAction) return;
 
-    setRemoteActionPending("push");
+    setPendingGitAction("push");
     await waitForNextFrame();
 
     try {
       await core.invoke("git_push", { path: repoPath });
-      handleRemoteSuccess(
+      handleGitActionSuccess(
         "git push succeeded",
         resolvedBranch
           ? `Pushed the current branch to origin/${resolvedBranch}.`
@@ -377,16 +377,16 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
       refreshToolbarData();
       window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
     } catch (error) {
-      handleRemoteError("git push failed", error);
+      handleGitActionError("git push failed", error);
     } finally {
-      setRemoteActionPending(null);
+      setPendingGitAction(null);
     }
   };
 
   const executeStash = async () => {
-    if (!repoPath || remoteActionPending) return;
+    if (!repoPath || pendingGitAction) return;
 
-    setRemoteActionPending("stash");
+    setPendingGitAction("stash");
     await waitForNextFrame();
 
     try {
@@ -395,7 +395,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
         path: repoPath,
         message: stashMessage,
       });
-      handleRemoteSuccess(
+      handleGitActionSuccess(
         "git stash succeeded",
         `Created stash with message ${stashMessage}.`,
       );
@@ -403,21 +403,21 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
       window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
       window.dispatchEvent(new CustomEvent(APP_EVENTS.stashesRefresh));
     } catch (error) {
-      handleRemoteError("git stash failed", error);
+      handleGitActionError("git stash failed", error);
     } finally {
-      setRemoteActionPending(null);
+      setPendingGitAction(null);
     }
   };
 
   const executePop = async () => {
-    if (!repoPath || remoteActionPending) return;
+    if (!repoPath || pendingGitAction) return;
 
-    setRemoteActionPending("pop");
+    setPendingGitAction("pop");
     await waitForNextFrame();
 
     try {
       await core.invoke("git_stash_pop", { path: repoPath });
-      handleRemoteSuccess(
+      handleGitActionSuccess(
         "git stash pop succeeded",
         "Popped the most recent stash entry.",
       );
@@ -425,13 +425,13 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
       window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
       window.dispatchEvent(new CustomEvent(APP_EVENTS.stashesRefresh));
     } catch (error) {
-      handleRemoteError("git stash pop failed", error);
+      handleGitActionError("git stash pop failed", error);
     } finally {
-      setRemoteActionPending(null);
+      setPendingGitAction(null);
     }
   };
 
-  const isRemoteActionDisabled = !repoPath || remoteActionPending !== null;
+  const isGitActionDisabled = !repoPath || pendingGitAction !== null;
 
   const pullRightSlot = (
     <Menu
@@ -447,11 +447,11 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
         <button
           type="button"
           className={`flex w-7 items-center justify-center ${
-            isRemoteActionDisabled
+            isGitActionDisabled
               ? "cursor-not-allowed text-zinc-500"
               : "cursor-pointer text-zinc-300 hover:bg-zinc-800/70"
           }`}
-          disabled={isRemoteActionDisabled}
+          disabled={isGitActionDisabled}
           aria-label="Select pull strategy">
           <HiChevronDown size={16} />
         </button>
@@ -629,8 +629,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
             onClick={() => {
               void executePull();
             }}
-            disabled={isRemoteActionDisabled}
-            loading={remoteActionPending === "pull"}
+            disabled={isGitActionDisabled}
+            loading={pendingGitAction === "pull"}
             tooltip={pullTooltip}
             rightSlot={pullRightSlot}
           />
@@ -640,8 +640,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
             onClick={() => {
               void executePush();
             }}
-            disabled={isRemoteActionDisabled}
-            loading={remoteActionPending === "push"}
+            disabled={isGitActionDisabled}
+            loading={pendingGitAction === "push"}
             tooltip={pushTooltip}
           />
           <Stack
@@ -665,8 +665,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
               onClick={() => {
                 void executeStash();
               }}
-              disabled={isRemoteActionDisabled}
-              loading={remoteActionPending === "stash"}
+              disabled={isGitActionDisabled}
+              loading={pendingGitAction === "stash"}
               tooltip="Stash all current working-tree changes"
             />
           </Stack>
@@ -679,8 +679,8 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
               onClick={() => {
                 void executePop();
               }}
-              disabled={isRemoteActionDisabled}
-              loading={remoteActionPending === "pop"}
+              disabled={isGitActionDisabled}
+              loading={pendingGitAction === "pop"}
               tooltip="Pop the most recent stash entry"
             />
           </Stack>
@@ -699,44 +699,44 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
         </Group>
       </Group>
 
-      {remoteNotice ? (
+      {gitActionNotice ? (
         <div className="fixed bottom-4 left-1/2 z-[100100] w-[min(680px,calc(100vw-32px))] -translate-x-1/2 rounded-lg border border-zinc-700 bg-zinc-900/95 shadow-xl backdrop-blur">
           <div className="flex items-center gap-3 px-4 py-3 text-sm text-zinc-200">
             <span
               className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${
-                remoteNotice.kind === "success"
+                gitActionNotice.kind === "success"
                   ? "bg-lime-500/20 text-lime-300"
                   : "bg-rose-500/20 text-rose-300"
               }`}>
-              {remoteNotice.kind === "success" ? (
+              {gitActionNotice.kind === "success" ? (
                 <IconCheck size={12} />
               ) : (
                 <IconX size={12} />
               )}
             </span>
-            <span className="min-w-0 flex-1 truncate">{remoteNotice.title}</span>
+            <span className="min-w-0 flex-1 truncate">{gitActionNotice.title}</span>
             <button
               type="button"
               className="text-zinc-400 transition-colors hover:text-zinc-100"
               onClick={() =>
-                setRemoteNotice({
-                  ...remoteNotice,
-                  expanded: !remoteNotice.expanded,
+                setGitActionNotice({
+                  ...gitActionNotice,
+                  expanded: !gitActionNotice.expanded,
                 })
               }>
-              {remoteNotice.expanded ? "Hide Log" : "View Log"}
+              {gitActionNotice.expanded ? "Hide Log" : "View Log"}
             </button>
             <button
               type="button"
               className="text-zinc-400 transition-colors hover:text-zinc-100"
-              onClick={() => setRemoteNotice(null)}
-              aria-label="Dismiss remote error">
+              onClick={() => setGitActionNotice(null)}
+              aria-label="Dismiss git action notice">
               <IconX size={16} />
             </button>
           </div>
-          {remoteNotice.expanded ? (
+          {gitActionNotice.expanded ? (
             <pre className="max-h-56 overflow-auto border-t border-zinc-700 px-4 py-3 text-xs text-zinc-300 whitespace-pre-wrap">
-              {remoteNotice.details}
+              {gitActionNotice.details}
             </pre>
           ) : null}
         </div>

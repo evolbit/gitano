@@ -88,10 +88,9 @@ pub fn get_file_diff_hunks(
     let full_path = Path::new(&path).join(file_path_obj);
 
     if !full_path.exists() {
-        if !is_tracked {
-            return Ok(vec![]);
-        }
-
+        // A file may be missing from both working tree and index when its deletion
+        // is already staged. In that case it still exists in HEAD and should be
+        // rendered as a deletion hunk instead of an empty (0/0) change.
         let show_output = Command::new("git")
             .arg("-C")
             .arg(&path)

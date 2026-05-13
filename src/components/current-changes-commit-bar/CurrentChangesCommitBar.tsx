@@ -2,7 +2,7 @@ import { useState } from "react";
 import { core } from "@tauri-apps/api";
 import { useStageAndCommit } from "../../hooks/useStageAndCommit";
 import { IconChevronDown } from "../icons";
-import { useRemoteActionsStore } from "../../store/remoteActions";
+import { useGitActionsStore } from "../../store/gitActions";
 import { useRepoStore } from "../../store/repo";
 import { APP_EVENTS } from "../../constants/events";
 import { useStagedLinesStore } from "../../store/staging";
@@ -23,8 +23,8 @@ export default function CurrentChangesCommitBar({
   const [stashLoading, setStashLoading] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
   const clearAllStagedLines = useStagedLinesStore((s) => s.clearAllStagedLines);
-  const setRemoteActionPending = useRemoteActionsStore((s) => s.setPending);
-  const setRemoteNotice = useRemoteActionsStore((s) => s.setNotice);
+  const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
+  const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
   const hasStagedChanges = useStagedLinesStore((s) =>
     Object.values(s.stagedLines).some((fileSelection) => {
       if (!fileSelection) return false;
@@ -54,7 +54,7 @@ export default function CurrentChangesCommitBar({
   };
 
   const handlePushSuccess = () => {
-    setRemoteNotice({
+    setGitActionNotice({
       kind: "success",
       title: "git push succeeded",
       details: selectedBranch
@@ -70,7 +70,7 @@ export default function CurrentChangesCommitBar({
         ? pushError.message
         : String(pushError || "Unknown error");
 
-    setRemoteNotice({
+    setGitActionNotice({
       kind: "error",
       title: "git push failed",
       details,
@@ -89,7 +89,7 @@ export default function CurrentChangesCommitBar({
       notifyCommitRefresh();
 
       if (pushOverride ?? push) {
-        setRemoteActionPending("push");
+        setPendingGitAction("push");
         await new Promise<void>((resolve) => {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => resolve());
@@ -102,7 +102,7 @@ export default function CurrentChangesCommitBar({
         } catch (pushError) {
           handlePushError(pushError);
         } finally {
-          setRemoteActionPending(null);
+          setPendingGitAction(null);
         }
       }
 
@@ -144,7 +144,7 @@ export default function CurrentChangesCommitBar({
       clearAllStagedLines();
       notifyWorkingChangesRefresh();
       notifyStashesRefresh();
-      setRemoteNotice({
+      setGitActionNotice({
         kind: "success",
         title: "git stash succeeded",
         details: `Stashed ${selectedFiles.length} selected file(s).`,
@@ -157,7 +157,7 @@ export default function CurrentChangesCommitBar({
         stashError instanceof Error
           ? stashError.message
           : String(stashError || "Unknown error");
-      setRemoteNotice({
+      setGitActionNotice({
         kind: "error",
         title: "git stash failed",
         details,
@@ -180,7 +180,7 @@ export default function CurrentChangesCommitBar({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              if (event.shiftKey) {
+              if (event.metaKey || event.ctrlKey) {
                 void handleCommit(true);
                 return;
               }

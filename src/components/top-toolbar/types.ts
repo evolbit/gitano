@@ -6,7 +6,7 @@ export type ToolbarDropdownProps = {
   children: React.ReactNode;
 };
 
-export type RemoteNotice = {
+export type GitActionNotice = {
   kind: "success" | "error";
   title: string;
   details: string;

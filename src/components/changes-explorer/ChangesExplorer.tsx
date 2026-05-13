@@ -312,33 +312,39 @@ function ChangesExplorer({
   );
 
   const toggleFolderSelection = useCallback(
-    async (folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
+    async (_folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
       if (!repoPath || filesInFolder.length === 0) return;
       setActionError(null);
       const previousStagedLines = cloneStagedLinesState(
         useStagedLinesStore.getState().stagedLines,
       );
+      const uniqueFilesInFolder = Array.from(
+        new Map(filesInFolder.map((file) => [file.path, file])).values(),
+      );
 
       try {
-        if (getFolderCheckboxState(filesInFolder) === "checked") {
-          filesInFolder.forEach((file) => clearStagedLinesForFile(file.path));
-          await invoke("git_unstage_file", {
-            path: repoPath,
-            filePath: folderPath,
-          });
+        if (getFolderCheckboxState(uniqueFilesInFolder) === "checked") {
+          for (const file of uniqueFilesInFolder) {
+            clearStagedLinesForFile(file.path);
+            await invoke("git_unstage_file", {
+              path: repoPath,
+              filePath: file.path,
+            });
+          }
         } else {
-          filesInFolder.forEach((file) => {
+          for (const file of uniqueFilesInFolder) {
             if (isUntrackedFile(file)) {
               setStagedNewFile(file.path, true);
             } else {
               setLineSelectionForFile(file.path, {});
               setWholeFileStaged(file.path, true);
             }
-          });
-          await invoke("git_add_file", {
-            path: repoPath,
-            filePath: folderPath,
-          });
+
+            await invoke("git_add_file", {
+              path: repoPath,
+              filePath: file.path,
+            });
+          }
         }
 
         scheduleImmediateStageRefresh(onImmediateStageChange);
