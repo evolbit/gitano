@@ -15,7 +15,6 @@ import TableVirtualResizable, {
 } from "../tables/TableVirtualResizable";
 
 const PAGE_SIZE = 50;
-const COMMIT_LIST_REFRESH_MS = 15000;
 
 export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -206,18 +205,6 @@ export default function CommitList() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!repoPath) return;
-
-    const interval = setInterval(() => {
-      if (loadCommitsRef.current) {
-        void loadCommitsRef.current(true);
-      }
-    }, COMMIT_LIST_REFRESH_MS);
-
-    return () => clearInterval(interval);
-  }, [repoPath, selectedBranch, historyMode]);
-
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (
       e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
@@ -379,9 +366,13 @@ export default function CommitList() {
       selectedRowIndex < commits.length &&
       activeTabId
     ) {
-      setTabCommit(activeTabId, commits[selectedRowIndex]);
+      const nextCommit = commits[selectedRowIndex];
+      if (selectedCommit?.sha === nextCommit.sha) {
+        return;
+      }
+      setTabCommit(activeTabId, nextCommit);
     }
-  }, [selectedRowIndex, commits, activeTabId, setTabCommit]);
+  }, [selectedRowIndex, commits, activeTabId, selectedCommit, setTabCommit]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {

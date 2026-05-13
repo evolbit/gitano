@@ -47,6 +47,8 @@ function ChangesExplorer({
   onExpandedStateChange,
   repoPath,
   onImmediateStageChange,
+  isLoading = false,
+  emptyStateMessage = "No files found",
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
   const deferredFiles = useDeferredValue(files);
@@ -539,8 +541,8 @@ function ChangesExplorer({
           </div>
         ) : null}
         {sections.length === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No files found
+          <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+            {isLoading ? "Loading" : emptyStateMessage}
           </div>
         ) : viewMode === "flat" ? (
           sections.map((section) => (

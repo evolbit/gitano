@@ -17,7 +17,7 @@ The system SHALL support keyboard shortcuts in the current changes commit box fo
 - **THEN** the push behavior MUST execute even if the push checkbox is currently unchecked
 
 ### Requirement: Commit list refreshes after commit box actions
-The system SHALL refresh commit history immediately after successful commit-box commit actions and continue periodic refresh behavior.
+The system SHALL refresh commit history immediately after successful commit-box commit actions and rely on repository-change events for subsequent history updates.
 
 #### Scenario: Commit succeeds from commit box
 - **WHEN** a commit-box action completes successfully
@@ -25,4 +25,5 @@ The system SHALL refresh commit history immediately after successful commit-box 
 
 #### Scenario: New commits appear after commit-box action
 - **WHEN** commit history changes after a commit-box action
-- **THEN** periodic commit-list refresh MUST continue to surface newly added commits without requiring manual reload
+- **THEN** repository-change events MUST trigger commit-list refresh without requiring manual reload
+- **THEN** the commit list MUST NOT depend on frontend periodic polling to surface newly added commits

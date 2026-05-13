@@ -6,9 +6,12 @@ import HomePage from "./components/home-page/HomePage";
 import RepoTabLayout from "./components/repo-tab-layout/RepoTabLayout";
 import TabBar from "./components/tab-bar/TabBar";
 import "./index.css";
+import { useRepoRealtimeEvents } from "./hooks/useRepoRealtimeEvents";
 import { useRepoStore } from "./store/repo";
 
 export default function App() {
+  useRepoRealtimeEvents();
+
   const tabs = useRepoStore((s) => s.tabs);
   const activeTab = useRepoStore((s) => s.activeTabId);
   const addTab = useRepoStore((s) => s.addTab);

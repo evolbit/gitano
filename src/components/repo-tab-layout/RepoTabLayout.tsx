@@ -70,9 +70,9 @@ const RepoTabLayout: React.FC = () => {
   );
 
   // Constant automatic polling, without controls or notifications
-  const { changes, loading, error, refreshChanges } =
+  const { changes, loading, error, hasLoadedOnce, refreshChanges } =
     useWorkingDirectoryChanges(repoPath, {
-      pollInterval: 5000,
+      pollInterval: 0,
       enabled: !!repoPath,
       pauseOnInactive: false,
       cacheKey: activeTabId ? `changes-${activeTabId}` : undefined,
@@ -297,17 +297,7 @@ const RepoTabLayout: React.FC = () => {
                       Error: {error}
                     </div>
                   ) : null}
-                  {loading && changes.length === 0 ? (
-                    <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground">
-                      Loading changes...
-                    </div>
-                  ) : null}
-                  {!error && changes.length === 0 && !loading ? (
-                    <div className="flex min-h-0 flex-1 items-start justify-center p-4 text-center text-muted-foreground">
-                      No changes in the working directory
-                    </div>
-                  ) : null}
-                  {changes.length > 0 ? (
+                  {!error ? (
                     <ChangesExplorer
                       className="min-w-0 border-r-0"
                       files={changes}
@@ -332,6 +322,10 @@ const RepoTabLayout: React.FC = () => {
                         if (!repoPath) return;
                         setMainChangesExpanded(repoPath, expanded);
                       }}
+                      isLoading={loading && changes.length === 0}
+                      emptyStateMessage={
+                        hasLoadedOnce ? "There are no current changes" : ""
+                      }
                     />
                   ) : null}
                 </div>

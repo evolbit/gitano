@@ -22,6 +22,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const selectedCommit = tab?.selectedCommit;
+  const selectedCommitSha = selectedCommit?.sha ?? null;
   const repoPath = tab?.repoPath;
   const commitChangesViewMode = useWorkspaceUiStore((s) =>
     repoPath
@@ -52,14 +53,14 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({
   }, [selectedCommit]);
 
   useEffect(() => {
-    if (selectedCommit && repoPath) {
+    if (selectedCommitSha && repoPath) {
       const fetchDiff = async () => {
         setLoading(true);
         setError(null);
         try {
           const res: CommitDiff = await core.invoke("get_commit_diff", {
             path: repoPath,
-            sha: selectedCommit.sha,
+            sha: selectedCommitSha,
           });
           setDiff(res);
         } catch (err) {
@@ -72,7 +73,7 @@ const ChangesPanel: React.FC<ChangesPanelProps> = ({
     } else {
       setDiff(null);
     }
-  }, [selectedCommit, repoPath]);
+  }, [selectedCommitSha, repoPath]);
 
   const handleCancelAmend = () => {
     setIsAmending(false);

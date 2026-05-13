@@ -35,4 +35,6 @@ export type ChangesExplorerProps = {
   onExpandedStateChange?: (expanded: Record<string, boolean>) => void;
   repoPath?: string;
   onImmediateStageChange?: () => Promise<void> | void;
+  isLoading?: boolean;
+  emptyStateMessage?: string;
 };

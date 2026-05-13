@@ -33,11 +33,12 @@ export const useWorkingDirectoryChanges = (
   repoPath: string | undefined,
   options: UseWorkingDirectoryChangesOptions = {},
 ) => {
-  const { pollInterval = 2000, enabled = true } = options;
+  const { pollInterval = 0, enabled = true } = options;
 
   const [changes, setChanges] = useState<FileChangeWithHunks[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
   const lastFileSnapshotSignatureRef = useRef<string | null>(null);
@@ -133,6 +134,7 @@ export const useWorkingDirectoryChanges = (
 
       if (isMountedRef.current) {
         hasLoadedOnceRef.current = true;
+        setHasLoadedOnce(true);
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -142,6 +144,7 @@ export const useWorkingDirectoryChanges = (
         lastFileSnapshotSignatureRef.current = null;
         lastStagedSnapshotSignatureRef.current = null;
         hasLoadedOnceRef.current = false;
+        setHasLoadedOnce(true);
       }
     } finally {
       if (isMountedRef.current && shouldToggleLoading) {
@@ -160,10 +163,13 @@ export const useWorkingDirectoryChanges = (
       lastFileSnapshotSignatureRef.current = null;
       lastStagedSnapshotSignatureRef.current = null;
       hasLoadedOnceRef.current = false;
+      setHasLoadedOnce(false);
       return;
     }
     fetchChanges(); // Initial load
-    intervalRef.current = setInterval(fetchChanges, pollInterval);
+    if (pollInterval > 0) {
+      intervalRef.current = setInterval(fetchChanges, pollInterval);
+    }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -176,6 +182,7 @@ export const useWorkingDirectoryChanges = (
     changes,
     loading,
     error,
+    hasLoadedOnce,
     refreshChanges: fetchChanges,
   };
 };

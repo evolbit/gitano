@@ -57,10 +57,7 @@ fn resolve_stash_message(path: &str, message: Option<String>) -> Result<String, 
 }
 
 fn parse_stash_list(path: &str) -> Result<Vec<GitStashEntry>, String> {
-    let raw = run_git(
-        path,
-        &["stash", "list", "--format=%gd%x1f%H%x1f%ct%x1f%gs"],
-    )?;
+    let raw = run_git(path, &["stash", "list", "--format=%gd%x1f%H%x1f%ct%x1f%gs"])?;
 
     let mut stashes = Vec::new();
     for line in raw.lines() {
@@ -293,7 +290,9 @@ pub fn git_stash_edit_message(
         return Err("Stash message cannot be empty.".to_string());
     }
 
-    let old_hash = run_git(&path, &["rev-parse", &stash_ref])?.trim().to_string();
+    let old_hash = run_git(&path, &["rev-parse", &stash_ref])?
+        .trim()
+        .to_string();
     run_git_status(&path, &["stash", "drop", &stash_ref])?;
     run_git_status(&path, &["stash", "store", "-m", trimmed, &old_hash])?;
 

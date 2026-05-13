@@ -46,6 +46,7 @@ fn main() {
             git::git_stash_files,
             git::git_stash_edit_message,
             git::get_stash_file_diff,
+            git::sync_repo_watchers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

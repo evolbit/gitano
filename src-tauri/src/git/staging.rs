@@ -17,8 +17,12 @@ fn build_line_signature(line: &DiffLine) -> String {
             DiffLineKind::Del => "Del",
             DiffLineKind::Context => "Context",
         },
-        line.old_lineno.map(|value| value.to_string()).unwrap_or_default(),
-        line.new_lineno.map(|value| value.to_string()).unwrap_or_default(),
+        line.old_lineno
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        line.new_lineno
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
         line.content
     )
 }
@@ -75,11 +79,7 @@ fn build_staged_file_state(
         let is_new_file = matches!(file_status, ChangeType::Added);
         return Some(StagedFileSelectionState {
             is_new_file: if is_new_file { Some(true) } else { None },
-            is_whole_file_staged: if is_new_file {
-                None
-            } else {
-                Some(true)
-            },
+            is_whole_file_staged: if is_new_file { None } else { Some(true) },
             hunks: HashMap::new(),
         });
     }
@@ -146,11 +146,13 @@ pub async fn get_working_directory_changes(
             };
 
             let (insertions, deletions) = hunks.iter().fold((0u32, 0u32), |acc, hunk| {
-                hunk.lines.iter().fold(acc, |(adds, dels), line| match line.kind {
-                    DiffLineKind::Add => (adds + 1, dels),
-                    DiffLineKind::Del => (adds, dels + 1),
-                    DiffLineKind::Context => (adds, dels),
-                })
+                hunk.lines
+                    .iter()
+                    .fold(acc, |(adds, dels), line| match line.kind {
+                        DiffLineKind::Add => (adds + 1, dels),
+                        DiffLineKind::Del => (adds, dels + 1),
+                        DiffLineKind::Context => (adds, dels),
+                    })
             });
 
             changes.push(FileChangeWithHunks {
@@ -518,9 +520,7 @@ pub fn git_stage_lines(
 
     for (hunk_idx, hunk) in diff_hunks.iter().enumerate() {
         // Add context lines before the hunk when present
-        while head_line_idx < hunk.old_start.saturating_sub(1)
-            && head_line_idx < head_lines.len()
-        {
+        while head_line_idx < hunk.old_start.saturating_sub(1) && head_line_idx < head_lines.len() {
             new_staged_lines.push(head_lines[head_line_idx].to_string());
             head_line_idx += 1;
             working_line_idx += 1;

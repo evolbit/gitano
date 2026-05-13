@@ -1,8 +1,4 @@
-## Purpose
-
-Define how the current changes explorer stays responsive while repository-change-triggered refreshes keep staged and working-tree state synchronized.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Working-changes refresh preserves scroll interaction when the snapshot is unchanged
 The system SHALL avoid visibly disrupting the current changes explorer when a repository-change-triggered working-changes refresh produces the same effective file snapshot as the previous snapshot.

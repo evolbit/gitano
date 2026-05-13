@@ -207,6 +207,27 @@ pub enum ContextDirection {
     Below,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum RepoChangeKind {
+    WorkingTree,
+    Index,
+    Head,
+    Branches,
+    Tags,
+    Stashes,
+    RemoteRefs,
+    Config,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoChangedEvent {
+    pub repo_path: String,
+    pub kinds: Vec<RepoChangeKind>,
+    pub timestamp_ms: i64,
+}
+
 impl From<git2::Delta> for ChangeType {
     fn from(delta: git2::Delta) -> Self {
         match delta {

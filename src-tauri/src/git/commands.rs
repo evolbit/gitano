@@ -1,6 +1,5 @@
 use crate::git::diff::{
-    get_commit_file_diff as load_commit_file_diff,
-    get_diff_context as load_diff_context,
+    get_commit_file_diff as load_commit_file_diff, get_diff_context as load_diff_context,
     get_file_diff_hunks as load_file_diff_hunks,
     get_index_diffs_for_files as load_index_diffs_for_files,
 };

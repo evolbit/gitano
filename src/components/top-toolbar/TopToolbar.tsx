@@ -314,6 +314,20 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
     setBranchesRefreshNonce((value) => value + 1);
   };
 
+  useEffect(() => {
+    const handleRepoRefsRefresh = () => {
+      setBranchesRefreshNonce((value) => value + 1);
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      window.removeEventListener(
+        APP_EVENTS.repoRefsRefresh,
+        handleRepoRefsRefresh,
+      );
+    };
+  }, []);
+
   const executePull = async () => {
     if (!repoPath || remoteActionPending) return;
 

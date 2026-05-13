@@ -1,6 +1,7 @@
 import { core } from "@tauri-apps/api";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import { APP_EVENTS } from "../../constants/events";
 import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
@@ -71,6 +72,42 @@ export function BranchList() {
   const otherRef = useRef<HTMLDivElement>(null);
   const submenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const refreshBranches = useCallback(async () => {
+    if (!repoPath) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const command = type === "local" ? "get_branches" : "get_remote_branches";
+      const allBranches = await core.invoke<string[]>(command, { path: repoPath });
+
+      if (type === "local") {
+        // Only hide branches that start with <remote>/ (for example, origin/feature/foo), but NOT local ones with /
+        setBranches(
+          allBranches.filter(
+            (b) =>
+              !/^\w+\//.test(b) ||
+              b.startsWith("feature/") ||
+              b.startsWith("hotfix/") ||
+              b.startsWith("release/") ||
+              b.startsWith("bugfix/") ||
+              b.startsWith("chore/") ||
+              b.startsWith("test/") ||
+              b.startsWith("fix/") ||
+              b.startsWith("refactor/") ||
+              b.startsWith("task/")
+          )
+        );
+      } else {
+        // Only include branches that start with <remote>/
+        setBranches(allBranches.filter((b) => /^\w+\//.test(b)));
+      }
+    } catch (branchError) {
+      setError(String(branchError));
+    } finally {
+      setLoading(false);
+    }
+  }, [repoPath, type]);
+
   // Clear the timeout on unmount (must live in the main body, not in renderContextMenu)
   useEffect(() => {
     return () => {
@@ -91,38 +128,19 @@ export function BranchList() {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!repoPath) return;
-    setLoading(true);
-    setError(null);
-    const command = type === "local" ? "get_branches" : "get_remote_branches";
-    core
-      .invoke<string[]>(command, { path: repoPath })
-      .then((allBranches) => {
-        if (type === "local") {
-          // Only hide branches that start with <remote>/ (for example, origin/feature/foo), but NOT local ones with /
-          setBranches(
-            allBranches.filter(
-              (b) =>
-                !/^\w+\//.test(b) ||
-                b.startsWith("feature/") ||
-                b.startsWith("hotfix/") ||
-                b.startsWith("release/") ||
-                b.startsWith("bugfix/") ||
-                b.startsWith("chore/") ||
-                b.startsWith("test/") ||
-                b.startsWith("fix/") ||
-                b.startsWith("refactor/") ||
-                b.startsWith("task/")
-            )
-          );
-        } else {
-          // Only include branches that start with <remote>/
-          setBranches(allBranches.filter((b) => /^\w+\//.test(b)));
-        }
-      })
-      .catch((e) => setError(e.toString()))
-      .finally(() => setLoading(false));
-  }, [repoPath, type]);
+    void refreshBranches();
+  }, [refreshBranches]);
+
+  useEffect(() => {
+    const handleRepoRefsRefresh = () => {
+      void refreshBranches();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [refreshBranches]);
 
   const grouped = groupBranches(branches);
 
