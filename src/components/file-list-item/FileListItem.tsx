@@ -31,7 +31,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
         return (
           <IconPlus
             size={16}
-            className="text-green-500 w-4 h-4 flex-shrink-0"
+            className="text-lime-400 w-4 h-4 flex-shrink-0"
           />
         );
       case "deleted":
@@ -107,7 +107,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
         file.deletions === 0
       ) && (
         <span className="flex items-end gap-2 justify-between w-14 ml-3 text-xs text-zinc-400">
-          <span className="text-green-500 w-1/2 text-right block">
+          <span className="text-lime-400 w-1/2 text-right block">
             +{file.insertions}
           </span>
           <span className="text-red-500 w-1/2 text-right block">

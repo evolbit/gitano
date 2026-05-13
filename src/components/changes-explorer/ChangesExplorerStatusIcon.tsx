@@ -38,7 +38,7 @@ export function ChangesExplorerStatusIcon({ file }: { file: ChangesExplorerFile 
   switch (file.status) {
     case "added":
       return (
-        <StatusSquare colorClass="border-green-500 text-green-500">
+        <StatusSquare colorClass="border-lime-400 text-lime-400">
           <IconPlus size={11} />
         </StatusSquare>
       );

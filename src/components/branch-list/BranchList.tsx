@@ -16,22 +16,30 @@ import {
   IconFolder,
   IconGitBranch,
   IconGitMerge,
+  IconSearch,
 } from "../icons";
-import { BranchTreeNode, groupBranches } from "../../utils/branchTree";
+import {
+  BranchTreeNode,
+  groupBranches,
+  isPriorityBranchName,
+} from "../../utils/branchTree";
 
-function BranchIcon({ name, selected }: { name: string; selected: boolean }) {
-  const lower = name.toLowerCase();
+const PRIORITY_BRANCH_COLOR = "text-lime-400";
+const DEFAULT_BRANCH_ICON_COLOR = "text-slate-300";
+
+function BranchIcon({ name }: { name: string }) {
+  const priority = isPriorityBranchName(name);
   return (
     <span className="inline-flex items-center justify-center w-5 h-5">
-      {["master", "main", "dev", "develop"].includes(lower) ? (
+      {["master", "main", "dev", "develop"].includes(name.toLowerCase()) ? (
         <IconGitMerge
           size={18}
-          className={selected ? "text-zinc-800" : "text-lime-400"}
+          className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
         />
       ) : (
         <IconGitBranch
           size={18}
-          className={selected ? "text-zinc-800" : "text-blue-400"}
+          className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
         />
       )}
     </span>
@@ -56,12 +64,14 @@ export function BranchList() {
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [type, setType] = useState<"local" | "remote">("local");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     node: any | null;
   } | null>(null);
+  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showOther, setShowOther] = useState(false);
@@ -142,7 +152,13 @@ export function BranchList() {
     };
   }, [refreshBranches]);
 
-  const grouped = groupBranches(branches);
+  const grouped = groupBranches(
+    branches.filter((branch) =>
+      search.trim()
+        ? branch.toLowerCase().includes(search.trim().toLowerCase())
+        : true,
+    ),
+  );
 
   // Adjust the context menu position if it overflows below the viewport
   useLayoutEffect(() => {
@@ -176,22 +192,32 @@ export function BranchList() {
     }
   }, [showOther]);
 
+  const isRowActionsVisible = useCallback(
+    (rowKey: string) =>
+      hoveredRowKey === rowKey || contextMenu?.node?.full === rowKey,
+    [hoveredRowKey, contextMenu],
+  );
+
   function renderTree(nodes: BranchTreeNode[], level = 0) {
     return (
-      <ul className={`select-none min-w-0`}>
+      <ul className="m-0 w-full min-w-0 list-none p-0 select-none">
         {nodes.map((node) => {
           if (node.type === "group") {
             const isOpen = branchTreeExpanded[node.full] ?? true;
+            const isPriorityGroup = isPriorityBranchName(node.name);
             return (
               <li
                 key={node.full}
-                className="mb-0.5 group">
+                className="mb-0.5 w-full">
                 <div
-                  className="flex items-center gap-1 cursor-pointer hover:bg-background-emphasis rounded px-1 py-0.5 text-xs text-zinc-300 min-w-0"
+                  className="flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
                   style={{
                     fontSize: "var(--ui-font-size-sm)",
                     fontWeight: 500,
+                    paddingLeft: `${12 + level * 22}px`,
                   }}
+                  onMouseEnter={() => setHoveredRowKey(node.full)}
+                  onMouseLeave={() => setHoveredRowKey(null)}
                   onClick={() => {
                     if (!repoPath) return;
                     setBranchTreeExpanded(repoPath, {
@@ -220,15 +246,21 @@ export function BranchList() {
                   <span className="inline-flex items-center justify-center w-5 h-5">
                     <IconFolder
                       size={18}
-                      className="text-blue-300"
+                      className={
+                        isPriorityGroup
+                          ? PRIORITY_BRANCH_COLOR
+                          : DEFAULT_BRANCH_ICON_COLOR
+                      }
                     />
                   </span>
                   <span className="truncate min-w-0 flex-1 w-0">
                     {node.name}
                   </span>
                   <button
-                    className="ml-auto p-1 rounded hover:bg-zinc-600 transition-colors invisible group-hover:visible"
-                    title="Más acciones"
+                    className={`ml-auto p-1 rounded hover:bg-zinc-700 transition-colors ${
+                      isRowActionsVisible(node.full) ? "visible" : "invisible"
+                    }`}
+                    title="More actions"
                     type="button"
                     tabIndex={-1}
                     onClick={(e) => {
@@ -242,11 +274,7 @@ export function BranchList() {
                     <IconDotsVertical size={16} />
                   </button>
                 </div>
-                {isOpen && (
-                  <div className="pl-5 border-l border-zinc-700 ml-2">
-                    {renderTree(node.children, level + 1)}
-                  </div>
-                )}
+                {isOpen ? renderTree(node.children, level + 1) : null}
               </li>
             );
           } else {
@@ -254,13 +282,18 @@ export function BranchList() {
             return (
               <li
                 key={node.full}
-                className={`flex items-center gap-1 px-1 py-0.5 rounded cursor-pointer text-xs group min-w-0 ${
+                className={`group flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-1.5 text-sm transition-colors ${
                   selected
-                    ? "bg-blue-400 text-zinc-900 font-bold"
-                    : "hover:bg-zinc-700 text-zinc-200"
+                    ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
+                    : "hover:bg-background-emphasis text-foreground"
                 }`}
-                style={{ fontSize: "var(--ui-font-size-sm)" }}
+                style={{
+                  fontSize: "var(--ui-font-size-sm)",
+                  paddingLeft: `${28 + level * 22}px`,
+                }}
                 tabIndex={0}
+                onMouseEnter={() => setHoveredRowKey(node.full)}
+                onMouseLeave={() => setHoveredRowKey(null)}
                 onClick={() => {
                   if (activeTabId) setTabBranch(activeTabId, node.full);
                 }}
@@ -270,15 +303,14 @@ export function BranchList() {
                   setMenuPos({ x: e.clientX, y: e.clientY });
                 }}>
                 <span className="inline-flex items-center justify-center w-5 h-5">
-                  <BranchIcon
-                    selected={selected}
-                    name={node.name}
-                  />
+                  <BranchIcon name={node.name} />
                 </span>
                 <span className="truncate min-w-0 flex-1 w-0">{node.name}</span>
                 <button
-                  className="ml-auto p-1 rounded hover:bg-zinc-600 transition-colors invisible group-hover:visible"
-                  title="Más acciones"
+                  className={`ml-auto p-1 rounded hover:bg-zinc-700 transition-colors ${
+                    isRowActionsVisible(node.full) ? "visible" : "invisible"
+                  }`}
+                  title="More actions"
                   type="button"
                   tabIndex={-1}
                   onClick={(e) => {
@@ -551,46 +583,55 @@ export function BranchList() {
   if (!repoPath) return null;
 
   return (
-    <div className="p-1 h-full flex flex-col relative min-w-0">
-      <div className="font-bold mb-2 flex items-center gap-2 text-sm">
-        <div className="flex gap-1">
-          <button
-            className={`px-2 py-1 rounded flex items-center gap-1 text-sm text-zinc-400 ${
-              type === "local" ? "bg-blue-600 !text-zinc-100" : "bg-zinc-800"
-            }`}
-            onClick={() => setType("local")}
-            title="Local"
-            type="button">
-            <span className="inline-flex items-center justify-center w-5 h-5">
-              <IconDeviceFloppy
-                size={18}
-                className="align-middle"
-              />
-            </span>
-            Local
-          </button>
-          <button
-            className={`px-2 py-1 rounded flex items-center gap-1 text-sm ${
-              type === "remote"
-                ? "bg-blue-600 text-zinc-400"
-                : "bg-zinc-800 text-zinc-400"
-            }`}
-            onClick={() => setType("remote")}
-            title="Remote"
-            type="button">
-            <span className="inline-flex items-center justify-center w-5 h-5">
-              <IconCloud
-                size={18}
-                className="align-middle"
-              />
-            </span>
-            Remote
-          </button>
+    <div className="h-full flex flex-col relative min-w-0 overflow-hidden bg-background">
+      <div className="border-b border-border bg-background-emphasis p-2">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <input
+              type="text"
+              className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              placeholder="Search branches..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="flex items-center overflow-hidden rounded border border-border bg-background">
+            <button
+              type="button"
+              className={`flex h-8 w-8 items-center justify-center transition-colors ${
+                type === "local"
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              }`}
+              onClick={() => setType("local")}
+              title="Local branches"
+              aria-label="Local branches"
+            >
+              <IconDeviceFloppy size={15} />
+            </button>
+            <button
+              type="button"
+              className={`flex h-8 w-8 items-center justify-center transition-colors ${
+                type === "remote"
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              }`}
+              onClick={() => setType("remote")}
+              title="Remote branches"
+              aria-label="Remote branches"
+            >
+              <IconCloud size={15} />
+            </button>
+          </div>
         </div>
       </div>
       {loading && <div className="text-sm text-zinc-400">Loading...</div>}
       {error && <div className="text-sm text-red-400">{error}</div>}
-      <div className="flex-1 min-h-0 mt-2 overflow-y-auto pr-1">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {!loading && !error && grouped.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">No branches found</div>
+        ) : null}
         {renderTree(grouped)}
         {renderContextMenu()}
       </div>

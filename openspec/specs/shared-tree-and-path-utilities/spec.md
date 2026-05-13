@@ -19,7 +19,9 @@ The system SHALL provide reusable pure helpers for building and traversing slash
 
 #### Scenario: Group branches into a tree
 - **WHEN** the branch list passes slash-delimited branch names to the shared tree helpers
-- **THEN** the helpers MUST produce the same grouped structure and ordering that the current branch tree renderer expects
+- **THEN** the helpers MUST produce the same grouped structure that the branch tree renderer expects
+- **THEN** top-level and nested branch nodes MUST be ordered with explicit priority families first: `develop` aliases, then `main` aliases, then `stage` aliases
+- **THEN** branch nodes outside priority families MUST be ordered alphabetically after the priority families
 
 #### Scenario: Build compressed file trees
 - **WHEN** the changes explorer passes file paths into the shared tree helpers
@@ -35,4 +37,3 @@ The system SHALL preserve the current visible behavior of branch grouping, file 
 #### Scenario: Existing explorers still render the same
 - **WHEN** the branch list and current changes explorer render after the refactor
 - **THEN** their visible hierarchy, sorting, and path display MUST remain unchanged
-
