@@ -1,6 +1,7 @@
 use crate::git::types::*;
 use git2::{BranchType, Oid, Repository};
 use once_cell::sync::Lazy;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::process::Command;
@@ -435,7 +436,7 @@ fn collect_commit_rows_with_graph(
         .arg("--date-order")
         .arg("--color=never")
         .arg("--no-abbrev-commit")
-        .arg("--pretty=format:%H%x1f%P%x1f%at%x1f%an%x1f%D%x1f%s");
+        .arg("--pretty=format:%H%x1f%P%x1f%at%x1f%an%x1f%ae%x1f%D%x1f%s");
 
     if history_mode == CommitHistoryMode::FirstParent {
         cmd.arg("--first-parent");
@@ -461,6 +462,7 @@ struct RawCommitRow {
     parents: Vec<String>,
     date: i64,
     author: String,
+    author_email: String,
     refs: Vec<String>,
     message: String,
 }
@@ -808,7 +810,7 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 return None;
             }
 
-            let mut fields = line.splitn(6, '\u{001f}');
+            let mut fields = line.splitn(7, '\u{001f}');
             let sha = fields.next().unwrap_or("").trim().to_string();
             if sha.is_empty() {
                 return None;
@@ -827,6 +829,7 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 .parse::<i64>()
                 .unwrap_or(0);
             let author = fields.next().unwrap_or("").to_string();
+            let author_email = fields.next().unwrap_or("").to_string();
             let refs = parse_ref_labels(fields.next().unwrap_or(""));
             let message = fields.next().unwrap_or("").to_string();
 
@@ -835,6 +838,7 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 parents,
                 date,
                 author,
+                author_email,
                 refs,
                 message,
             })
@@ -894,6 +898,8 @@ fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec<CommitList
                 graph_segments: row_segments.get(row_idx).cloned().unwrap_or_default(),
                 refs: raw.refs,
                 message: raw.message,
+                author_initial: author_initial(&raw.author),
+                author_avatar_url: gravatar_avatar_url(&raw.author_email),
                 author: raw.author,
                 date: raw.date,
                 current_branch: String::new(),
@@ -903,6 +909,28 @@ fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec<CommitList
             }
         })
         .collect()
+}
+
+fn gravatar_avatar_url(email: &str) -> Option<String> {
+    let normalized_email = email.trim().to_lowercase();
+    if normalized_email.is_empty() {
+        return None;
+    }
+
+    let hash = Sha256::digest(normalized_email.as_bytes());
+    Some(format!(
+        "https://www.gravatar.com/avatar/{:x}?s=40&d=404",
+        hash
+    ))
+}
+
+fn author_initial(author: &str) -> String {
+    author
+        .trim()
+        .chars()
+        .find(|ch| ch.is_alphanumeric())
+        .map(|ch| ch.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string())
 }
 
 fn append_line_segments(line: &ZedCommitLine, row_segments: &mut [Vec<CommitGraphSegment>]) {

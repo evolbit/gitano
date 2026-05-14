@@ -123,6 +123,8 @@ pub struct CommitListItem {
     pub refs: Vec<String>,
     pub message: String,
     pub author: String,
+    pub author_initial: String,
+    pub author_avatar_url: Option<String>,
     pub date: i64,
     pub current_branch: String,
     pub source_branch: String,

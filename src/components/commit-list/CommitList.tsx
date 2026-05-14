@@ -12,6 +12,7 @@ import { IconSearch } from "../icons";
 import TableVirtualResizable, {
   TableColumn,
 } from "../tables/TableVirtualResizable";
+import CommitAuthorCell from "./CommitAuthorCell";
 import CommitGraphCell from "./CommitGraphCell";
 
 const PAGE_SIZE = 50;
@@ -37,6 +38,8 @@ type CommitTableRow = {
   message: string;
   date: number;
   author: string;
+  authorInitial: string;
+  authorAvatarUrl?: string | null;
   sha: string;
   commit: CommitListItem;
 };
@@ -120,6 +123,8 @@ export default function CommitList() {
         message: commit.message,
         date: commit.date,
         author: commit.author,
+        authorInitial: commit.author_initial,
+        authorAvatarUrl: commit.author_avatar_url,
         sha: commit.sha,
         commit,
       })),
@@ -192,8 +197,15 @@ export default function CommitList() {
       {
         key: "author",
         label: "Author",
-        width: 140,
+        width: 170,
         cellClassName: "px-3 text-zinc-400",
+        render: (_: string, row: CommitTableRow) => (
+          <CommitAuthorCell
+            author={row.author}
+            initial={row.authorInitial}
+            avatarUrl={row.authorAvatarUrl}
+          />
+        ),
       },
       {
         key: "sha",

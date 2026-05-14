@@ -76,6 +76,8 @@ export interface CommitListItem {
   refs?: string[];
   message: string;
   author: string;
+  author_initial: string;
+  author_avatar_url?: string | null;
   date: number;
   current_branch: string;
   source_branch: string;
