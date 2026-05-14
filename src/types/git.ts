@@ -73,6 +73,7 @@ export interface CommitListItem {
   graph_lane?: number;
   graph_color?: number;
   graph_segments?: CommitGraphSegment[];
+  refs?: string[];
   message: string;
   author: string;
   date: number;

@@ -295,14 +295,13 @@ export default function TableVirtualResizable<
         ref={parentRef}
         data-virtualizer-scroll
         className="flex-1 w-full overflow-auto relative bg-transparent">
-        {/* Table header: regular, not sticky */}
         <div
-          className="flex items-center bg-transparent font-semibold text-foreground text-sm select-none"
+          className="sticky top-0 z-30 flex h-7 min-h-7 items-center border-b border-border/70 bg-background font-semibold text-muted-foreground text-sm select-none"
           style={{ width: tableWidth, minWidth: "100%" }}>
           {columns.map((col) => (
             <div
               key={col.key}
-              className={`relative flex items-center px-3 truncate group ${col.headerClassName ?? ""}`}
+              className={`relative flex h-full items-center px-3 truncate group ${col.headerClassName ?? ""}`}
               style={{
                 width: resolvedColWidths[col.key],
                 minWidth: col.minWidth ?? 40,

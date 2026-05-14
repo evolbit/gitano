@@ -431,10 +431,11 @@ fn collect_commit_rows_with_graph(
         .arg(path)
         .arg("log")
         .arg("--all")
+        .arg("--decorate=short")
         .arg("--date-order")
         .arg("--color=never")
         .arg("--no-abbrev-commit")
-        .arg("--pretty=format:%H%x1f%P%x1f%at%x1f%an%x1f%s");
+        .arg("--pretty=format:%H%x1f%P%x1f%at%x1f%an%x1f%D%x1f%s");
 
     if history_mode == CommitHistoryMode::FirstParent {
         cmd.arg("--first-parent");
@@ -460,6 +461,7 @@ struct RawCommitRow {
     parents: Vec<String>,
     date: i64,
     author: String,
+    refs: Vec<String>,
     message: String,
 }
 
@@ -806,7 +808,7 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 return None;
             }
 
-            let mut fields = line.splitn(5, '\u{001f}');
+            let mut fields = line.splitn(6, '\u{001f}');
             let sha = fields.next().unwrap_or("").trim().to_string();
             if sha.is_empty() {
                 return None;
@@ -825,6 +827,7 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 .parse::<i64>()
                 .unwrap_or(0);
             let author = fields.next().unwrap_or("").to_string();
+            let refs = parse_ref_labels(fields.next().unwrap_or(""));
             let message = fields.next().unwrap_or("").to_string();
 
             Some(RawCommitRow {
@@ -832,8 +835,24 @@ fn parse_raw_commit_rows(stdout: &str) -> Vec<RawCommitRow> {
                 parents,
                 date,
                 author,
+                refs,
                 message,
             })
+        })
+        .collect()
+}
+
+fn parse_ref_labels(raw_refs: &str) -> Vec<String> {
+    raw_refs
+        .split(',')
+        .map(|label| label.trim())
+        .filter(|label| !label.is_empty())
+        .map(|label| {
+            if let Some(head_target) = label.strip_prefix("HEAD -> ") {
+                head_target.trim().to_string()
+            } else {
+                label.to_string()
+            }
         })
         .collect()
 }
@@ -873,6 +892,7 @@ fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec<CommitList
                 graph_lane: entry.lane,
                 graph_color: entry.color_idx,
                 graph_segments: row_segments.get(row_idx).cloned().unwrap_or_default(),
+                refs: raw.refs,
                 message: raw.message,
                 author: raw.author,
                 date: raw.date,

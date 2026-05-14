@@ -33,6 +33,7 @@ type CommitTableRow = {
   graphLane: number;
   graphColor: number;
   graphSegments: CommitListItem["graph_segments"];
+  refs: string[];
   message: string;
   date: number;
   author: string;
@@ -54,9 +55,19 @@ function formatCommitDate(value: number): string {
 }
 
 function toSearchableText(commit: CommitListItem): string {
-  return [commit.message, commit.author, commit.sha]
+  return [commit.message, commit.author, commit.sha, ...(commit.refs ?? [])]
     .join(" ")
     .toLowerCase();
+}
+
+function getRefBadgeClass(refLabel: string): string {
+  if (refLabel.startsWith("tag:")) {
+    return "border-lime-500/40 bg-lime-500/10 text-lime-200";
+  }
+  if (refLabel.startsWith("origin/")) {
+    return "border-blue-500/40 bg-blue-500/10 text-blue-200";
+  }
+  return "border-violet-500/40 bg-violet-500/10 text-violet-200";
 }
 
 export default function CommitList() {
@@ -105,6 +116,7 @@ export default function CommitList() {
         graphLane: commit.graph_lane ?? 0,
         graphColor: commit.graph_color ?? 0,
         graphSegments: commit.graph_segments ?? [],
+        refs: commit.refs ?? [],
         message: commit.message,
         date: commit.date,
         author: commit.author,
@@ -153,6 +165,22 @@ export default function CommitList() {
         minWidth: 260,
         grow: true,
         cellClassName: "px-3 text-zinc-400",
+        render: (value: string, row: CommitTableRow) => (
+          <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+            {row.refs.map((refLabel) => (
+              <span
+                key={`${row.sha}-${refLabel}`}
+                className={`inline-flex max-w-[280px] flex-shrink-0 items-center rounded border px-1.5 py-0.5 text-xs font-medium leading-none ${getRefBadgeClass(
+                  refLabel
+                )}`}
+                title={refLabel}
+              >
+                <span className="truncate">{refLabel}</span>
+              </span>
+            ))}
+            <span className="min-w-0 truncate">{value}</span>
+          </div>
+        ),
       },
       {
         key: "date",

@@ -120,6 +120,7 @@ pub struct CommitListItem {
     pub graph_lane: usize,
     pub graph_color: usize,
     pub graph_segments: Vec<CommitGraphSegment>,
+    pub refs: Vec<String>,
     pub message: String,
     pub author: String,
     pub date: i64,
