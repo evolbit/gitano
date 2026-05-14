@@ -78,6 +78,29 @@ const theme = createTheme({
   headings: {
     fontFamily: '"IBM Plex Sans", sans-serif',
   },
+  components: {
+    Tooltip: {
+      defaultProps: {
+        withArrow: false,
+        openDelay: 140,
+        offset: 8,
+      },
+      styles: {
+        tooltip: {
+          backgroundColor: "rgba(46, 49, 56, 0.96)",
+          color: "rgb(212, 212, 216)",
+          border: "1px solid rgba(113, 113, 122, 0.45)",
+          borderRadius: "14px",
+          padding: "10px 14px",
+          fontSize: "13px",
+          fontWeight: 500,
+          lineHeight: 1.15,
+          boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)",
+          backdropFilter: "blur(6px)",
+        },
+      },
+    },
+  },
 });
 
 async function applyWindowConstraints() {

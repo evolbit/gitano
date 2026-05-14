@@ -1,14 +1,11 @@
+import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { APP_EVENTS } from "../../constants/events";
 import { useRepoStore } from "../../store/repo";
-import {
-  CommitHistoryMode,
-  CommitListItem,
-  CommitListPage,
-} from "../../types/git";
+import { CommitListItem, CommitListPage } from "../../types/git";
 import InputText from "../form/InputText";
-import { IconSearch } from "../icons";
+import { IconChevronRight, IconSearch } from "../icons";
 import TableVirtualResizable, {
   TableColumn,
 } from "../tables/TableVirtualResizable";
@@ -62,6 +59,35 @@ function toSearchableText(commit: CommitListItem): string {
     .toLowerCase();
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightMatches(text: string, query: string): React.ReactNode {
+  if (!query) {
+    return text;
+  }
+
+  const pattern = new RegExp(`(${escapeRegExp(query)})`, "ig");
+  const parts = text.split(pattern);
+  if (parts.length <= 1) {
+    return text;
+  }
+
+  return parts.map((part, index) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <span
+        key={`${part}-${index}`}
+        className="text-sky-400"
+      >
+        {part}
+      </span>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    )
+  );
+}
+
 function getRefBadgeClass(refLabel: string): string {
   if (refLabel.startsWith("tag:")) {
     return "border-lime-500/40 bg-lime-500/10 text-lime-200";
@@ -86,7 +112,6 @@ export default function CommitList() {
   const [commits, setCommits] = useState<CommitListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [historyMode, setHistoryMode] = useState<CommitHistoryMode>("git_log");
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
     null
   );
@@ -97,6 +122,12 @@ export default function CommitList() {
 
   const loadRequestIdRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const normalizedSearch = search.trim().toLowerCase();
+  const isMacLike =
+    typeof navigator !== "undefined" &&
+    /(Mac|iPod|iPhone|iPad)/i.test(navigator.platform);
+  const nextShortcut = isMacLike ? "⌘ G" : "Ctrl G";
+  const prevShortcut = isMacLike ? "⌘ ⇧ G" : "Ctrl Shift G";
 
   const setContainerRef = useCallback((el: HTMLDivElement | null) => {
     scrollContainerRef.current = el;
@@ -105,15 +136,9 @@ export default function CommitList() {
 
   const previousViewKeyRef = useRef<string | null>(null);
 
-  const filteredCommits = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return commits;
-    return commits.filter((commit) => toSearchableText(commit).includes(term));
-  }, [commits, search]);
-
   const tableRows = useMemo<CommitTableRow[]>(
     () =>
-      filteredCommits.map((commit) => ({
+      commits.map((commit) => ({
         id: commit.sha,
         graphWidth: commit.graph_width ?? 0,
         graphLane: commit.graph_lane ?? 0,
@@ -128,8 +153,28 @@ export default function CommitList() {
         sha: commit.sha,
         commit,
       })),
-    [filteredCommits]
+    [commits]
   );
+
+  const matchedRowIndices = useMemo(() => {
+    if (!normalizedSearch) {
+      return [];
+    }
+
+    return tableRows.reduce<number[]>((matches, row, index) => {
+      if (toSearchableText(row.commit).includes(normalizedSearch)) {
+        matches.push(index);
+      }
+      return matches;
+    }, []);
+  }, [tableRows, normalizedSearch]);
+
+  const currentMatchPosition = useMemo(() => {
+    if (!matchedRowIndices.length) {
+      return -1;
+    }
+    return matchedRowIndices.indexOf(selectedRowIndex);
+  }, [matchedRowIndices, selectedRowIndex]);
 
   const graphColumnWidth = useMemo(() => {
     const maxGraphWidth = tableRows.reduce(
@@ -175,10 +220,14 @@ export default function CommitList() {
                 )}`}
                 title={refLabel}
               >
-                <span className="truncate">{refLabel}</span>
+                <span className="truncate">
+                  {highlightMatches(refLabel, normalizedSearch)}
+                </span>
               </span>
             ))}
-            <span className="min-w-0 truncate">{value}</span>
+            <span className="min-w-0 truncate">
+              {highlightMatches(value, normalizedSearch)}
+            </span>
           </div>
         ),
       },
@@ -212,7 +261,7 @@ export default function CommitList() {
         ),
       },
     ],
-    [graphColumnWidth]
+    [graphColumnWidth, normalizedSearch]
   );
 
   const loadCommits = useCallback(
@@ -236,7 +285,6 @@ export default function CommitList() {
           "get_commits_list_paginated",
           {
             path: repoPath,
-            historyMode,
             offset: 0,
             limit: FULL_LOG_COMMIT_LIMIT,
             forceRefresh,
@@ -268,7 +316,7 @@ export default function CommitList() {
         }
       }
     },
-    [historyMode, repoPath]
+    [repoPath]
   );
 
   useEffect(() => {
@@ -288,7 +336,7 @@ export default function CommitList() {
   }, [loadCommits, repoPath]);
 
   useEffect(() => {
-    const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}|${historyMode}`;
+    const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}`;
     const previousViewKey = previousViewKeyRef.current;
 
     previousViewKeyRef.current = viewKey;
@@ -300,7 +348,7 @@ export default function CommitList() {
     }
 
     void loadCommits({ resetScroll: true });
-  }, [repoPath, historyMode, activeTabId, setTabCommit, loadCommits]);
+  }, [repoPath, activeTabId, setTabCommit, loadCommits]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -379,6 +427,36 @@ export default function CommitList() {
     }
   }, [activeTabId, setTabCommit]);
 
+  const navigateSearchMatch = useCallback(
+    (direction: 1 | -1) => {
+      if (!matchedRowIndices.length) {
+        return;
+      }
+
+      const currentPosition = matchedRowIndices.indexOf(selectedRowIndex);
+      const nextPosition =
+        currentPosition === -1
+          ? direction === 1
+            ? 0
+            : matchedRowIndices.length - 1
+          : (currentPosition + direction + matchedRowIndices.length) %
+            matchedRowIndices.length;
+
+      const nextRowIndex = matchedRowIndices[nextPosition];
+      const nextRow = tableRows[nextRowIndex];
+      if (!nextRow) {
+        return;
+      }
+
+      setKeyboardNavigation(true);
+      setSelectedRowIndex(nextRowIndex);
+      if (activeTabId) {
+        setTabCommit(activeTabId, nextRow.commit);
+      }
+    },
+    [activeTabId, matchedRowIndices, selectedRowIndex, setTabCommit, tableRows]
+  );
+
   const handleRowClick = (row: CommitTableRow, index: number) => {
     if (selectedRowIndex === index) {
       clearSelection();
@@ -389,12 +467,6 @@ export default function CommitList() {
     if (activeTabId) {
       setTabCommit(activeTabId, row.commit);
     }
-  };
-
-  const handleHistoryModeChange = (
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    setHistoryMode(event.target.value as CommitHistoryMode);
   };
 
   useEffect(() => {
@@ -426,6 +498,27 @@ export default function CommitList() {
   }, [selectedRowIndex, clearSelection]);
 
   useEffect(() => {
+    const handleSearchShortcuts = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey;
+      if (!isMod || event.key.toLowerCase() !== "g") {
+        return;
+      }
+
+      if (!normalizedSearch || !matchedRowIndices.length) {
+        return;
+      }
+
+      event.preventDefault();
+      navigateSearchMatch(event.shiftKey ? -1 : 1);
+    };
+
+    document.addEventListener("keydown", handleSearchShortcuts);
+    return () => {
+      document.removeEventListener("keydown", handleSearchShortcuts);
+    };
+  }, [matchedRowIndices.length, navigateSearchMatch, normalizedSearch]);
+
+  useEffect(() => {
     if (!selectedCommit) {
       setSelectedRowIndex(-1);
       return;
@@ -449,6 +542,12 @@ export default function CommitList() {
         <InputText
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              navigateSearchMatch(1);
+            }
+          }}
           placeholder="Search commits..."
           className="flex-1 bg-zinc-800 rounded-lg px-3 h-9 mr-4"
           leftIcon={
@@ -458,17 +557,49 @@ export default function CommitList() {
             />
           }
         />
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 h-9 text-sm text-muted-foreground">
-            <span>View</span>
-            <select
-              value={historyMode}
-              onChange={handleHistoryModeChange}
-              className="bg-transparent border-none outline-none text-foreground text-sm">
-              <option value="git_log">Git log</option>
-              <option value="first_parent">First parent</option>
-            </select>
-          </label>
+        <div className="flex items-center gap-2 text-sm text-zinc-400">
+          <Tooltip
+            label={
+              <div className="flex min-w-[230px] items-center justify-between gap-6">
+                <span>Select Previous Match</span>
+                <span className="font-medium text-zinc-300">{prevShortcut}</span>
+              </div>
+            }
+          >
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-secondary text-zinc-400 transition-colors hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => navigateSearchMatch(-1)}
+              disabled={!matchedRowIndices.length}
+            >
+              <IconChevronRight
+                size={14}
+                className="rotate-180"
+              />
+            </button>
+          </Tooltip>
+          <Tooltip
+            label={
+              <div className="flex min-w-[210px] items-center justify-between gap-6">
+                <span>Select Next Match</span>
+                <span className="font-medium text-zinc-300">{nextShortcut}</span>
+              </div>
+            }
+          >
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-secondary text-zinc-400 transition-colors hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => navigateSearchMatch(1)}
+              disabled={!matchedRowIndices.length}
+            >
+              <IconChevronRight size={14} />
+            </button>
+          </Tooltip>
+          <span className="min-w-[56px] text-center text-zinc-300">
+            {matchedRowIndices.length
+              ? `${currentMatchPosition >= 0 ? currentMatchPosition + 1 : 0}/${matchedRowIndices.length}`
+              : "0/0"}
+          </span>
         </div>
       </div>
       {error && (

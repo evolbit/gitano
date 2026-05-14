@@ -173,10 +173,7 @@ const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
   return (
     <Tooltip
       label={tooltip}
-      withArrow
-      color="dark"
-      openDelay={150}
-      classNames={{ tooltip: "text-sm" }}>
+      openDelay={150}>
       {content}
     </Tooltip>
   );

@@ -351,7 +351,6 @@ const RepoTabLayout: React.FC = () => {
                     <Tooltip
                       key={section.key}
                       label={label}
-                      withArrow
                       openDelay={2000}
                       position="top"
                     >
