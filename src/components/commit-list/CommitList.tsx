@@ -1,192 +1,227 @@
-import { Tooltip } from "@mantine/core";
 import { core } from "@tauri-apps/api";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRepoStore } from "../../store/repo";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { APP_EVENTS } from "../../constants/events";
+import { useRepoStore } from "../../store/repo";
 import {
   CommitHistoryMode,
   CommitListItem,
   CommitListPage,
 } from "../../types/git";
 import InputText from "../form/InputText";
-import { IconGitBranch, IconSearch } from "../icons";
+import { IconSearch } from "../icons";
 import TableVirtualResizable, {
   TableColumn,
 } from "../tables/TableVirtualResizable";
+import CommitGraphCell from "./CommitGraphCell";
 
 const PAGE_SIZE = 50;
+const MAX_FULL_LOG_PAGES = 2000;
+const COMMIT_ROW_HEIGHT = 30;
+const GRAPH_LANE_WIDTH = 16;
+const GRAPH_PADDING_X = 24;
+const GRAPH_MIN_WIDTH = 120;
+const GRAPH_MAX_WIDTH = 560;
+
+type CommitTableRow = {
+  id: string;
+  graph: CommitListItem["graph"];
+  graphJoins: CommitListItem["graph_joins"];
+  graphNodeUp: boolean;
+  graphNodeDown: boolean;
+  graphExtra: CommitListItem["graph_extra"];
+  graphWidth: number;
+  graphLane: number;
+  graphColor: number;
+  graphSegments: CommitListItem["graph_segments"];
+  message: string;
+  date: number;
+  author: string;
+  sha: string;
+  commit: CommitListItem;
+};
+
+function formatCommitDate(value: number): string {
+  if (!value) return "";
+  const date = new Date(value * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function toSearchableText(commit: CommitListItem): string {
+  return [commit.message, commit.author, commit.sha]
+    .join(" ")
+    .toLowerCase();
+}
 
 export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const repoPath = tab?.repoPath;
-  const selectedBranch = tab?.selectedBranch;
   const selectedCommit = tab?.selectedCommit;
   const setTabCommit = useRepoStore((s) => s.setTabCommit);
+
   const [search, setSearch] = useState("");
   const [commits, setCommits] = useState<CommitListItem[]>([]);
-  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
   const [historyMode, setHistoryMode] = useState<CommitHistoryMode>("git_log");
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
     null
   );
 
-  // State for keyboard navigation
   const [selectedRowIndex, setSelectedRowIndex] = useState<number>(-1);
   const [isTableFocused, setIsTableFocused] = useState(false);
   const [keyboardNavigation, setKeyboardNavigation] = useState(false);
 
-  // Callback to handle the container ref
   const setContainerRef = useCallback((el: HTMLDivElement | null) => {
     setScrollContainer(el);
   }, []);
 
-  // Debounce for infinite scroll
-  const loadMoreTimeoutRef = useRef<number | null>(null);
   const loadCommitsRef = useRef<(reset?: boolean) => Promise<void>>();
   const previousViewKeyRef = useRef<string | null>(null);
 
-  // Define columns with custom rendering for commit_history
-  const columns: TableColumn<CommitListItem>[] = [
-    { key: "sha", label: "SHA", width: 120 },
-    {
-      key: "date",
-      label: "Date",
-      width: 150,
-      render: (value) => {
-        if (!value) return "";
-        const date =
-          typeof value === "number" ? new Date(value * 1000) : new Date(value);
-        return date instanceof Date && !isNaN(date.getTime())
-          ? date.toLocaleString("en-GB", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "";
+  const filteredCommits = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return commits;
+    return commits.filter((commit) => toSearchableText(commit).includes(term));
+  }, [commits, search]);
+
+  const tableRows = useMemo<CommitTableRow[]>(
+    () =>
+      filteredCommits.map((commit) => ({
+        id: commit.sha,
+        graph: commit.graph ?? [],
+        graphJoins: commit.graph_joins ?? [],
+        graphNodeUp: Boolean(commit.graph_node_up),
+        graphNodeDown: Boolean(commit.graph_node_down),
+        graphExtra: commit.graph_extra ?? [],
+        graphWidth: commit.graph_width ?? commit.graph?.length ?? 0,
+        graphLane: commit.graph_lane ?? 0,
+        graphColor: commit.graph_color ?? 0,
+        graphSegments: commit.graph_segments ?? [],
+        message: commit.message,
+        date: commit.date,
+        author: commit.author,
+        sha: commit.sha,
+        commit,
+      })),
+    [filteredCommits]
+  );
+
+  const graphColumnWidth = useMemo(() => {
+    const maxGraphWidth = tableRows.reduce(
+      (max, row) => Math.max(max, row.graphWidth),
+      1
+    );
+    const requiredWidth = maxGraphWidth * GRAPH_LANE_WIDTH + GRAPH_PADDING_X;
+    return Math.min(GRAPH_MAX_WIDTH, Math.max(GRAPH_MIN_WIDTH, requiredWidth));
+  }, [tableRows]);
+
+  const columns = useMemo<TableColumn<CommitTableRow>[]>(
+    () => [
+      {
+        key: "graph",
+        label: "Graph",
+        width: graphColumnWidth,
+        minWidth: 72,
+        cellClassName: "px-0",
+        render: (_: CommitListItem["graph"], row: CommitTableRow) => (
+          <CommitGraphCell
+            graph={row.graph ?? []}
+            joins={row.graphJoins ?? []}
+            nodeUp={row.graphNodeUp}
+            nodeDown={row.graphNodeDown}
+            extraLines={row.graphExtra ?? []}
+            rowHeight={COMMIT_ROW_HEIGHT}
+            graphWidth={row.graphWidth}
+            lane={row.graphLane}
+            colorIdx={row.graphColor}
+            segments={row.graphSegments ?? []}
+          />
+        ),
       },
-    },
-    {
-      key: "message",
-      label: "Message",
-      width: 360,
-      minWidth: 280,
-      grow: true,
-    },
-    { key: "author", label: "Author", width: 140 },
-    {
-      key: "commit_history",
-      label: "Branch history",
-      width: 200,
-      render: (history: string[]) => {
-        if (!history || history.length === 0) return null;
-
-        const renderBadges = (isTooltip = false) => (
-          <div
-            className={`flex items-center gap-1.5 ${
-              isTooltip ? "flex-wrap p-2" : "truncate"
-            }`}>
-            {history.map((branch, index) => (
-              <span
-                key={`${branch}-${index}`}
-                className="inline-flex items-center gap-1 bg-blue-600 text-zinc-400 rounded-full px-2 py-0.5 text-xs font-medium">
-                <IconGitBranch
-                  size={12}
-                  className="flex-shrink-0"
-                />
-                <span>{branch}</span>
-              </span>
-            ))}
-          </div>
-        );
-
-        return (
-          <Tooltip
-            label={renderBadges(true)}
-            withArrow
-            w="auto"
-            transitionProps={{ transition: "pop", duration: 200 }}
-            classNames={{
-              tooltip: "bg-zinc-800 text-zinc-200 border border-zinc-700",
-            }}>
-            {renderBadges(false)}
-          </Tooltip>
-        );
+      {
+        key: "message",
+        label: "Description",
+        width: 460,
+        minWidth: 260,
+        grow: true,
+        cellClassName: "px-3 text-zinc-400",
       },
-    },
-    { key: "files", label: "Files", width: 80 },
-  ];
+      {
+        key: "date",
+        label: "Date",
+        width: 170,
+        cellClassName: "px-3 text-zinc-400",
+        render: (value: number) => formatCommitDate(value),
+      },
+      {
+        key: "author",
+        label: "Author",
+        width: 140,
+        cellClassName: "px-3 text-zinc-400",
+      },
+      {
+        key: "sha",
+        label: "Commit",
+        width: 96,
+        cellClassName: "px-3 font-mono",
+        render: (value: string) => (
+          <span className="text-zinc-400">{value.slice(0, 7)}</span>
+        ),
+      },
+    ],
+    [graphColumnWidth]
+  );
 
-  // Load commits (paginated)
   const loadCommits = async (reset = false) => {
-    console.log("loadCommits called", {
-      reset,
-      offset,
-      hasMore,
-      loading,
-      repoPath,
-    });
-
     if (loading || !repoPath) {
-      console.log("loadCommits early return - loading or no repoPath");
       return;
     }
 
-    if (!reset && !hasMore) {
-      console.log("loadCommits early return - no reset and no hasMore");
+    if (!reset) {
       return;
     }
 
     setLoading(true);
     setError(null);
-    console.log("Calling loadCommits", { reset, offset, hasMore });
+
     try {
       const result = await core.invoke<CommitListPage>(
         "get_commits_list_paginated",
         {
           path: repoPath,
-          branch: selectedBranch || "",
+          branch: "",
           historyMode,
-          offset: reset ? 0 : offset,
-          limit: PAGE_SIZE,
+          offset: 0,
+          limit: MAX_FULL_LOG_PAGES * PAGE_SIZE,
         }
       );
-      console.log("Backend result:", result);
-      const newCommits = result.commits || [];
 
-      // Preserve the scroll position before updating the data
-      const currentScrollTop = scrollContainer?.scrollTop || 0;
+      const pageCommits = result.commits || [];
+      setCommits(pageCommits);
 
-      setCommits((prev) => (reset ? newCommits : [...prev, ...newCommits]));
-      setHasMore(result.has_more);
-      setOffset((prev) => (reset ? PAGE_SIZE : prev + PAGE_SIZE));
-
-      // Restore the scroll position after updating the data
-      if (!reset && scrollContainer) {
-        setTimeout(() => {
-          scrollContainer.scrollTop = currentScrollTop;
-        }, 0);
+      if (result.has_more) {
+        setError(
+          `Commit history truncated after ${MAX_FULL_LOG_PAGES * PAGE_SIZE} commits. Increase MAX_FULL_LOG_PAGES if needed.`
+        );
       }
-
-      console.log("Updated state", {
-        newCommitsLength: newCommits.length,
-        hasMore: result.has_more,
-        newOffset: reset ? PAGE_SIZE : offset + PAGE_SIZE,
-      });
+      if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+      }
     } catch (err) {
-      console.error("Error loading commits:", err);
       setError(String(err));
     } finally {
       setLoading(false);
     }
   };
 
-  // Update the loadCommits reference
   useEffect(() => {
     loadCommitsRef.current = loadCommits;
   }, [loadCommits]);
@@ -205,46 +240,12 @@ export default function CommitList() {
     };
   }, []);
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (
-      e.currentTarget.scrollHeight - e.currentTarget.scrollTop <
-      e.currentTarget.clientHeight + 200
-    ) {
-      // Clear the previous timeout if it exists
-      if (loadMoreTimeoutRef.current) {
-        clearTimeout(loadMoreTimeoutRef.current);
-      }
-
-      // Use a debounce to avoid multiple calls
-      loadMoreTimeoutRef.current = setTimeout(() => {
-        if (loadCommitsRef.current) {
-          loadCommitsRef.current();
-        }
-      }, 100);
-    }
-  }, []);
-
-  // Clear the timeout on unmount
   useEffect(() => {
-    return () => {
-      if (loadMoreTimeoutRef.current) {
-        clearTimeout(loadMoreTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Reset when the viewed history changes. Preserve the selected commit when the
-  // component remounts as part of the details pane opening.
-  useEffect(() => {
-    const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}|${
-      selectedBranch ?? ""
-    }|${historyMode}`;
+    const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}|${historyMode}`;
     const previousViewKey = previousViewKeyRef.current;
 
     previousViewKeyRef.current = viewKey;
     setCommits([]);
-    setOffset(0);
-    setHasMore(true);
     setSelectedRowIndex(-1);
 
     if (previousViewKey && previousViewKey !== viewKey && activeTabId) {
@@ -253,30 +254,25 @@ export default function CommitList() {
 
     loadCommits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath, selectedBranch, historyMode, activeTabId, setTabCommit]);
+  }, [repoPath, historyMode, activeTabId, setTabCommit]);
 
-  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!commits.length || !isTableFocused) return;
+      if (!tableRows.length || !isTableFocused) return;
 
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
           setKeyboardNavigation(true);
           setSelectedRowIndex((prev) => {
-            const maxIndex = commits.length - 1;
-            const newIndex = Math.min(prev + 1, maxIndex);
-            return newIndex;
+            const maxIndex = tableRows.length - 1;
+            return Math.min(prev + 1, maxIndex);
           });
           break;
         case "ArrowUp":
           event.preventDefault();
           setKeyboardNavigation(true);
-          setSelectedRowIndex((prev) => {
-            const newIndex = Math.max(prev - 1, 0);
-            return newIndex;
-          });
+          setSelectedRowIndex((prev) => Math.max(prev - 1, 0));
           break;
         case "Home":
           event.preventDefault();
@@ -286,30 +282,27 @@ export default function CommitList() {
         case "End":
           event.preventDefault();
           setKeyboardNavigation(true);
-          const lastIndex = commits.length - 1;
-          setSelectedRowIndex(lastIndex);
+          setSelectedRowIndex(tableRows.length - 1);
           break;
         case "Enter":
           event.preventDefault();
-          if (selectedRowIndex >= 0 && selectedRowIndex < commits.length) {
-            const selectedCommit = commits[selectedRowIndex];
+          if (selectedRowIndex >= 0 && selectedRowIndex < tableRows.length) {
+            const nextCommit = tableRows[selectedRowIndex].commit;
             if (activeTabId) {
-              setTabCommit(activeTabId, selectedCommit);
+              setTabCommit(activeTabId, nextCommit);
             }
           }
           break;
       }
     };
 
-    // Add the event listener directly to the document
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [commits, selectedRowIndex, activeTabId, setTabCommit, isTableFocused]);
+  }, [tableRows, selectedRowIndex, activeTabId, setTabCommit, isTableFocused]);
 
-  // Handle focus on the container
   useEffect(() => {
     const handleFocus = () => {
       setIsTableFocused(true);
@@ -333,7 +326,6 @@ export default function CommitList() {
     };
   }, [scrollContainer]);
 
-  // Function to handle row clicks
   const clearSelection = useCallback(() => {
     setSelectedRowIndex(-1);
     if (activeTabId) {
@@ -341,7 +333,7 @@ export default function CommitList() {
     }
   }, [activeTabId, setTabCommit]);
 
-  const handleRowClick = (row: CommitListItem, index: number) => {
+  const handleRowClick = (row: CommitTableRow, index: number) => {
     if (selectedRowIndex === index) {
       clearSelection();
       return;
@@ -349,7 +341,7 @@ export default function CommitList() {
 
     setSelectedRowIndex(index);
     if (activeTabId) {
-      setTabCommit(activeTabId, row);
+      setTabCommit(activeTabId, row.commit);
     }
   };
 
@@ -359,20 +351,19 @@ export default function CommitList() {
     setHistoryMode(event.target.value as CommitHistoryMode);
   };
 
-  // Update the selected commit in the store whenever the selected row changes
   useEffect(() => {
     if (
       selectedRowIndex >= 0 &&
-      selectedRowIndex < commits.length &&
+      selectedRowIndex < tableRows.length &&
       activeTabId
     ) {
-      const nextCommit = commits[selectedRowIndex];
+      const nextCommit = tableRows[selectedRowIndex].commit;
       if (selectedCommit?.sha === nextCommit.sha) {
         return;
       }
       setTabCommit(activeTabId, nextCommit);
     }
-  }, [selectedRowIndex, commits, activeTabId, selectedCommit, setTabCommit]);
+  }, [selectedRowIndex, tableRows, activeTabId, selectedCommit, setTabCommit]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -394,14 +385,17 @@ export default function CommitList() {
       return;
     }
 
-    const selectedCommitIndex = commits.findIndex(
-      (commit) => commit.sha === selectedCommit.sha
+    const selectedCommitIndex = tableRows.findIndex(
+      (row) => row.commit.sha === selectedCommit.sha
     );
 
     if (selectedCommitIndex >= 0) {
       setSelectedRowIndex(selectedCommitIndex);
+      return;
     }
-  }, [commits, selectedCommit]);
+
+    setSelectedRowIndex(-1);
+  }, [tableRows, selectedCommit]);
 
   return (
     <div className="h-full w-full flex flex-col p-4">
@@ -436,26 +430,19 @@ export default function CommitList() {
           {error}
         </div>
       )}
-      {/* Table with built-in infinite scroll */}
       <div
         ref={setContainerRef}
-        className="flex-1 overflow-y-auto focus:outline-none"
-        onScroll={handleScroll}>
+        className="flex-1 overflow-y-auto focus:outline-none">
         <TableVirtualResizable
           columns={columns}
-          data={commits}
+          data={tableRows}
+          rowHeight={COMMIT_ROW_HEIGHT}
           loading={loading}
           onRowClick={handleRowClick}
           selectedRowIndex={selectedRowIndex}
-          enableInfiniteScroll={true}
-          hasMore={hasMore}
-          onLoadMore={loadCommits}
           keyboardNavigation={keyboardNavigation}
           setKeyboardNavigation={setKeyboardNavigation}
         />
-        {hasMore && !loading && (
-          <div className="text-center p-4">Loading more commits...</div>
-        )}
       </div>
     </div>
   );

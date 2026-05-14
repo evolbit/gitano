@@ -83,9 +83,43 @@ pub enum CommitOrdering {
     AuthorDate,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CommitGraphGlyph {
+    pub ch: String,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CommitGraphJoin {
+    pub from_lane: usize,
+    pub to_lane: usize,
+    pub color: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CommitGraphSegment {
+    pub color_idx: usize,
+    pub from_lane: f32,
+    pub from_y: f32,
+    pub to_lane: f32,
+    pub to_y: f32,
+    pub control_lane: Option<f32>,
+    pub control_y: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitListItem {
     pub sha: String,
+    pub parents: Vec<String>,
+    pub graph: Vec<CommitGraphGlyph>,
+    pub graph_joins: Vec<CommitGraphJoin>,
+    pub graph_node_up: bool,
+    pub graph_node_down: bool,
+    pub graph_extra: Vec<Vec<CommitGraphGlyph>>,
+    pub graph_width: usize,
+    pub graph_lane: usize,
+    pub graph_color: usize,
+    pub graph_segments: Vec<CommitGraphSegment>,
     pub message: String,
     pub author: String,
     pub date: i64,

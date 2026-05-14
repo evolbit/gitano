@@ -17,16 +17,16 @@ const TabBar: React.FC<TabBarProps> = ({
   onAddTab,
 }) => {
   return (
-    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-12 border-b border-border">
+    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-11 border-b border-border">
       {tabs.map((tab) => (
         <Tabs.Tab
           key={tab.id}
           value={tab.id}
-          className={classNames("px-4 py-1.5 font-medium")}
+          className={classNames("px-4 py-1 font-medium")}
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1 text-sm",
-              activeTab === tab.id ? "text-white" : "text-muted-foreground"
+              activeTab === tab.id ? "text-white" : "text-zinc-400"
             ),
             tab: "border-r !border-r-border",
           }}
@@ -54,7 +54,7 @@ const TabBar: React.FC<TabBarProps> = ({
               variant="subtle"
               component="span"
               className={
-                activeTab === tab.id ? "text-white" : "text-background"
+                activeTab === tab.id ? "text-white" : "text-zinc-400"
               }
               onClick={(e) => onTabClose(tab.id, e)}
               style={{ marginLeft: 6 }}>

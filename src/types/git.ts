@@ -40,8 +40,39 @@ export interface GitCommitData {
   error?: string | null;
 }
 
+export interface CommitGraphGlyph {
+  ch: string;
+  color?: string | null;
+}
+
+export interface CommitGraphJoin {
+  from_lane: number;
+  to_lane: number;
+  color: string;
+}
+
+export interface CommitGraphSegment {
+  color_idx: number;
+  from_lane: number;
+  from_y: number;
+  to_lane: number;
+  to_y: number;
+  control_lane?: number | null;
+  control_y?: number | null;
+}
+
 export interface CommitListItem {
   sha: string;
+  parents?: string[];
+  graph?: CommitGraphGlyph[];
+  graph_joins?: CommitGraphJoin[];
+  graph_node_up?: boolean;
+  graph_node_down?: boolean;
+  graph_extra?: CommitGraphGlyph[][];
+  graph_width?: number;
+  graph_lane?: number;
+  graph_color?: number;
+  graph_segments?: CommitGraphSegment[];
   message: string;
   author: string;
   date: number;
