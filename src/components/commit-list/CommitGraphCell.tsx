@@ -1,8 +1,4 @@
-import {
-  CommitGraphGlyph,
-  CommitGraphJoin,
-  CommitGraphSegment,
-} from "../../types/git";
+import { CommitGraphSegment } from "../../types/git";
 
 // Zed uses theme accent colors for graph lanes. These values mirror the
 // default dark theme accents closely enough for direct visual comparison.
@@ -23,11 +19,6 @@ const STROKE_WIDTH = 1.5;
 const NODE_RADIUS = 3.5;
 
 type CommitGraphCellProps = {
-  graph: CommitGraphGlyph[];
-  joins?: CommitGraphJoin[];
-  nodeUp?: boolean;
-  nodeDown?: boolean;
-  extraLines?: CommitGraphGlyph[][];
   rowHeight?: number;
   graphWidth?: number;
   lane?: number;
@@ -48,21 +39,15 @@ function yForRowFraction(y: number, rowHeight: number): number {
 }
 
 export default function CommitGraphCell({
-  graph,
-  joins: _joins = [],
-  nodeUp: _nodeUp = true,
-  nodeDown: _nodeDown = true,
-  extraLines: _extraLines = [],
   rowHeight = 40,
   graphWidth,
   lane,
   colorIdx,
   segments = [],
 }: CommitGraphCellProps) {
-  const legacyWidth = Math.max(1, graph.length);
-  const laneCount = Math.max(graphWidth ?? legacyWidth, 6);
+  const laneCount = Math.max(graphWidth ?? 1, 6);
   const width = LEFT_PADDING * 2 + laneCount * LANE_WIDTH;
-  const nodeLane = lane ?? graph.findIndex((glyph) => glyph.ch === "*");
+  const nodeLane = lane ?? 0;
   const nodeColor = colorForIndex(colorIdx ?? Math.max(nodeLane, 0));
 
   return (

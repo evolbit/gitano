@@ -1,56 +1,3 @@
-export interface GitTag {
-  name: string;
-  annotated: boolean;
-}
-
-export interface GitRemote {
-  name: string;
-  remote: string | null;
-}
-
-export interface GitStash {
-  hash: string;
-  base_hash: string;
-  untracked_files_hash: string;
-  selector: string;
-  author: string;
-  email: string;
-  date: number;
-  message: string;
-}
-
-export interface GitCommit {
-  hash: string;
-  parents: string[];
-  author: string;
-  email: string;
-  date: number;
-  message: string;
-  heads: string[];
-  tags: GitTag[];
-  remotes: GitRemote[];
-  stash?: GitStash | null;
-}
-
-export interface GitCommitData {
-  commits: GitCommit[];
-  head: string | null;
-  tags: string[];
-  more_commits_available: boolean;
-  error?: string | null;
-}
-
-export interface CommitGraphGlyph {
-  ch: string;
-  color?: string | null;
-}
-
-export interface CommitGraphJoin {
-  from_lane: number;
-  to_lane: number;
-  color: string;
-}
-
 export interface CommitGraphSegment {
   color_idx: number;
   from_lane: number;
@@ -64,11 +11,6 @@ export interface CommitGraphSegment {
 export interface CommitListItem {
   sha: string;
   parents?: string[];
-  graph?: CommitGraphGlyph[];
-  graph_joins?: CommitGraphJoin[];
-  graph_node_up?: boolean;
-  graph_node_down?: boolean;
-  graph_extra?: CommitGraphGlyph[][];
   graph_width?: number;
   graph_lane?: number;
   graph_color?: number;

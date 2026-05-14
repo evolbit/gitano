@@ -15,21 +15,20 @@ import TableVirtualResizable, {
 import CommitAuthorCell from "./CommitAuthorCell";
 import CommitGraphCell from "./CommitGraphCell";
 
-const PAGE_SIZE = 50;
-const MAX_FULL_LOG_PAGES = 2000;
+const FULL_LOG_COMMIT_LIMIT = 100_000;
 const COMMIT_ROW_HEIGHT = 30;
 const GRAPH_LANE_WIDTH = 16;
 const GRAPH_PADDING_X = 24;
 const GRAPH_MIN_WIDTH = 120;
 const GRAPH_MAX_WIDTH = 560;
 
+type LoadCommitsOptions = {
+  forceRefresh?: boolean;
+  resetScroll?: boolean;
+};
+
 type CommitTableRow = {
   id: string;
-  graph: CommitListItem["graph"];
-  graphJoins: CommitListItem["graph_joins"];
-  graphNodeUp: boolean;
-  graphNodeDown: boolean;
-  graphExtra: CommitListItem["graph_extra"];
   graphWidth: number;
   graphLane: number;
   graphColor: number;
@@ -75,9 +74,12 @@ function getRefBadgeClass(refLabel: string): string {
 
 export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
-  const tab = useRepoStore((s) => s.tabs.find((t) => t.id === activeTabId));
-  const repoPath = tab?.repoPath;
-  const selectedCommit = tab?.selectedCommit;
+  const repoPath = useRepoStore(
+    (s) => s.tabs.find((t) => t.id === activeTabId)?.repoPath
+  );
+  const selectedCommit = useRepoStore(
+    (s) => s.tabs.find((t) => t.id === activeTabId)?.selectedCommit
+  );
   const setTabCommit = useRepoStore((s) => s.setTabCommit);
 
   const [search, setSearch] = useState("");
@@ -93,11 +95,14 @@ export default function CommitList() {
   const [isTableFocused, setIsTableFocused] = useState(false);
   const [keyboardNavigation, setKeyboardNavigation] = useState(false);
 
+  const loadRequestIdRef = useRef(0);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
   const setContainerRef = useCallback((el: HTMLDivElement | null) => {
+    scrollContainerRef.current = el;
     setScrollContainer(el);
   }, []);
 
-  const loadCommitsRef = useRef<(reset?: boolean) => Promise<void>>();
   const previousViewKeyRef = useRef<string | null>(null);
 
   const filteredCommits = useMemo(() => {
@@ -110,12 +115,7 @@ export default function CommitList() {
     () =>
       filteredCommits.map((commit) => ({
         id: commit.sha,
-        graph: commit.graph ?? [],
-        graphJoins: commit.graph_joins ?? [],
-        graphNodeUp: Boolean(commit.graph_node_up),
-        graphNodeDown: Boolean(commit.graph_node_down),
-        graphExtra: commit.graph_extra ?? [],
-        graphWidth: commit.graph_width ?? commit.graph?.length ?? 0,
+        graphWidth: commit.graph_width ?? 0,
         graphLane: commit.graph_lane ?? 0,
         graphColor: commit.graph_color ?? 0,
         graphSegments: commit.graph_segments ?? [],
@@ -143,18 +143,13 @@ export default function CommitList() {
   const columns = useMemo<TableColumn<CommitTableRow>[]>(
     () => [
       {
-        key: "graph",
+        key: "graphSegments",
         label: "Graph",
         width: graphColumnWidth,
         minWidth: 72,
         cellClassName: "px-0",
-        render: (_: CommitListItem["graph"], row: CommitTableRow) => (
+        render: (_: unknown, row: CommitTableRow) => (
           <CommitGraphCell
-            graph={row.graph ?? []}
-            joins={row.graphJoins ?? []}
-            nodeUp={row.graphNodeUp}
-            nodeDown={row.graphNodeDown}
-            extraLines={row.graphExtra ?? []}
             rowHeight={COMMIT_ROW_HEIGHT}
             graphWidth={row.graphWidth}
             lane={row.graphLane}
@@ -220,57 +215,69 @@ export default function CommitList() {
     [graphColumnWidth]
   );
 
-  const loadCommits = async (reset = false) => {
-    if (loading || !repoPath) {
-      return;
-    }
+  const loadCommits = useCallback(
+    async ({
+      forceRefresh = false,
+      resetScroll = false,
+    }: LoadCommitsOptions = {}) => {
+      if (!repoPath) {
+        loadRequestIdRef.current += 1;
+        setLoading(false);
+        return;
+      }
 
-    if (!reset) {
-      return;
-    }
+      const requestId = loadRequestIdRef.current + 1;
+      loadRequestIdRef.current = requestId;
+      setLoading(true);
+      setError(null);
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await core.invoke<CommitListPage>(
-        "get_commits_list_paginated",
-        {
-          path: repoPath,
-          branch: "",
-          historyMode,
-          offset: 0,
-          limit: MAX_FULL_LOG_PAGES * PAGE_SIZE,
-        }
-      );
-
-      const pageCommits = result.commits || [];
-      setCommits(pageCommits);
-
-      if (result.has_more) {
-        setError(
-          `Commit history truncated after ${MAX_FULL_LOG_PAGES * PAGE_SIZE} commits. Increase MAX_FULL_LOG_PAGES if needed.`
+      try {
+        const result = await core.invoke<CommitListPage>(
+          "get_commits_list_paginated",
+          {
+            path: repoPath,
+            historyMode,
+            offset: 0,
+            limit: FULL_LOG_COMMIT_LIMIT,
+            forceRefresh,
+          }
         );
+
+        if (requestId !== loadRequestIdRef.current) {
+          return;
+        }
+
+        const pageCommits = result.commits || [];
+        setCommits(pageCommits);
+
+        if (result.has_more) {
+          setError(
+            `Commit history truncated after ${FULL_LOG_COMMIT_LIMIT.toLocaleString()} commits. Increase FULL_LOG_COMMIT_LIMIT if needed.`
+          );
+        }
+        if (resetScroll && scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = 0;
+        }
+      } catch (err) {
+        if (requestId === loadRequestIdRef.current) {
+          setError(String(err));
+        }
+      } finally {
+        if (requestId === loadRequestIdRef.current) {
+          setLoading(false);
+        }
       }
-      if (scrollContainer) {
-        scrollContainer.scrollTop = 0;
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
+    },
+    [historyMode, repoPath]
+  );
+
+  useEffect(() => {
+    if (!repoPath) {
+      return;
     }
-  };
 
-  useEffect(() => {
-    loadCommitsRef.current = loadCommits;
-  }, [loadCommits]);
-
-  useEffect(() => {
     const handleCommitRefresh = () => {
-      if (loadCommitsRef.current) {
-        void loadCommitsRef.current(true);
-      }
+      void loadCommits({ forceRefresh: true });
     };
 
     window.addEventListener(APP_EVENTS.commitsRefresh, handleCommitRefresh);
@@ -278,7 +285,7 @@ export default function CommitList() {
     return () => {
       window.removeEventListener(APP_EVENTS.commitsRefresh, handleCommitRefresh);
     };
-  }, []);
+  }, [loadCommits, repoPath]);
 
   useEffect(() => {
     const viewKey = `${activeTabId ?? ""}|${repoPath ?? ""}|${historyMode}`;
@@ -292,9 +299,8 @@ export default function CommitList() {
       setTabCommit(activeTabId, null);
     }
 
-    loadCommits(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath, historyMode, activeTabId, setTabCommit]);
+    void loadCommits({ resetScroll: true });
+  }, [repoPath, historyMode, activeTabId, setTabCommit, loadCommits]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

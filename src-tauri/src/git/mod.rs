@@ -5,7 +5,6 @@ pub mod realtime;
 pub mod staging;
 pub mod stash;
 pub mod types;
-pub mod utils;
 
 // Re-export functions that need to be accessible from outside
 pub use commands::*;

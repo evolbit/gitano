@@ -1,100 +1,5 @@
-use git2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-#[derive(serde::Serialize)]
-pub struct CommitInfo {
-    pub hash: String,
-    pub message: String,
-    pub author: String,
-}
-
-#[derive(serde::Serialize)]
-pub struct CommitNode {
-    pub id: String,
-    pub parents: Vec<String>,
-    pub message: String,
-    pub author: String,
-    pub branches: Vec<String>,
-    pub is_head: bool,
-    pub tags: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitCommit {
-    pub hash: String,
-    pub parents: Vec<String>,
-    pub author: String,
-    pub email: String,
-    pub date: i64,
-    pub message: String,
-    pub heads: Vec<String>,
-    pub tags: Vec<GitTag>,
-    pub remotes: Vec<GitRemote>,
-    pub stash: Option<GitStash>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitTag {
-    pub name: String,
-    pub annotated: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitRemote {
-    pub name: String,
-    pub remote: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitStash {
-    pub hash: String,
-    pub base_hash: String,
-    pub untracked_files_hash: String,
-    pub selector: String,
-    pub author: String,
-    pub email: String,
-    pub date: i64,
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitCommitData {
-    pub commits: Vec<GitCommit>,
-    pub head: Option<String>,
-    pub tags: Vec<String>,
-    pub more_commits_available: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitRefData {
-    pub head: Option<String>,
-    pub heads: Vec<String>,
-    pub tags: Vec<String>,
-    pub remotes: Vec<String>,
-    pub ci: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum CommitOrdering {
-    Date,
-    Topo,
-    AuthorDate,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CommitGraphGlyph {
-    pub ch: String,
-    pub color: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CommitGraphJoin {
-    pub from_lane: usize,
-    pub to_lane: usize,
-    pub color: String,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitGraphSegment {
@@ -111,11 +16,6 @@ pub struct CommitGraphSegment {
 pub struct CommitListItem {
     pub sha: String,
     pub parents: Vec<String>,
-    pub graph: Vec<CommitGraphGlyph>,
-    pub graph_joins: Vec<CommitGraphJoin>,
-    pub graph_node_up: bool,
-    pub graph_node_down: bool,
-    pub graph_extra: Vec<Vec<CommitGraphGlyph>>,
     pub graph_width: usize,
     pub graph_lane: usize,
     pub graph_color: usize,
