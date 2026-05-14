@@ -17,15 +17,15 @@ const TabBar: React.FC<TabBarProps> = ({
   onAddTab,
 }) => {
   return (
-    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-14 border-b border-border">
+    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-12 border-b border-border">
       {tabs.map((tab) => (
         <Tabs.Tab
           key={tab.id}
           value={tab.id}
-          className={classNames("px-5 py-2 font-medium")}
+          className={classNames("px-4 py-1.5 font-medium")}
           classNames={{
             tabLabel: classNames(
-              "flex items-center gap-1",
+              "flex items-center gap-1 text-sm",
               activeTab === tab.id ? "text-white" : "text-muted-foreground"
             ),
             tab: "border-r !border-r-border",
@@ -37,12 +37,10 @@ const TabBar: React.FC<TabBarProps> = ({
           {tab.id === "home" && (
             <IconHome
               size={18}
-              style={{ marginRight: 4 }}
+              style={{ marginRight: 0 }}
             />
           )}
-          {tab.id === "home" ? (
-            <span style={{ marginLeft: 0 }}>Launchpad</span>
-          ) : (
+          {tab.id !== "home" && (
             <span style={{ marginLeft: 0 }}>
               {tab.repoPath
                 ? tab.repoPath.split("/").filter(Boolean).pop()

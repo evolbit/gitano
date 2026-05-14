@@ -72,7 +72,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       <div key={node.path}>
         <button
           type="button"
-          className="flex w-full items-center gap-1 overflow-hidden px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
+          className="flex w-full items-center gap-1 overflow-hidden px-3 py-1.5 text-left text-sm text-zinc-400 transition-colors hover:bg-background-emphasis"
           style={{ paddingLeft: `${12 + depth * 22}px` }}
           onClick={() => onToggleFolder(node.path)}
           onContextMenu={(e) => {
@@ -140,7 +140,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       className={`flex w-full items-center gap-2 overflow-hidden px-3 py-1.5 text-left text-sm transition-colors ${
         isSelected
           ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
-          : "text-foreground hover:bg-background-emphasis"
+          : "text-zinc-400 hover:bg-background-emphasis"
       }`}
       style={{ paddingLeft: `${40 + depth * 22}px` }}
       onClick={() => onSelectFile(node.file)}

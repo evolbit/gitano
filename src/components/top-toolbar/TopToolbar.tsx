@@ -26,7 +26,6 @@ import {
   IconGitBranch,
   IconSearch,
   IconStack2,
-  IconTerminal2,
   IconX,
 } from "../icons";
 import {
@@ -37,6 +36,7 @@ import {
 } from "./types";
 
 const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
+const TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH = 420;
 const GIT_ACTION_SUCCESS_SNACKBAR_MS = 3200;
 const GIT_ACTION_ERROR_SNACKBAR_MS = 8000;
 
@@ -138,23 +138,25 @@ const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
       }`}>
       <button
         type="button"
-        className={`flex min-w-[64px] flex-col items-center justify-center gap-1 px-3 py-2 text-left ${
+        className={`flex min-w-[60px] flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 text-left ${
           loading
-            ? "cursor-progress text-zinc-100"
+            ? "cursor-progress text-zinc-400"
             : disabled
             ? "cursor-not-allowed text-zinc-500"
-            : "cursor-pointer text-zinc-300"
+            : "cursor-pointer text-zinc-400"
         }`}
         onClick={onClick}
         disabled={disabled || loading}>
         <Text
           size="xs"
-          className={`text-xs ${disabled ? "text-zinc-500" : "text-zinc-300"}`}>
+          className={`text-[10px] leading-none ${
+            disabled ? "text-zinc-500" : "text-zinc-400"
+          }`}>
           {label}
         </Text>
         <div className={disabled ? "text-zinc-500" : "text-zinc-100"}>
           {loading ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-500/40 border-t-zinc-100" />
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500/40 border-t-zinc-100" />
           ) : (
             icon
           )}
@@ -187,7 +189,7 @@ function getPullStrategyLabel(strategy: PullStrategy) {
   );
 }
 
-const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
+const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [repoSearch, setRepoSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
   const [repoMenuOpened, setRepoMenuOpened] = useState(false);
@@ -499,50 +501,36 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
       <Group
         px={0}
         py={0}
-        className="bg-background h-[65px] sticky top-0 z-30 w-full m-0 flex items-center justify-between border-b !border-border">
+        className="bg-background h-[52px] sticky top-0 z-30 w-full m-0 flex items-center justify-between border-b !border-border">
         <Group
           px="sm"
-          gap={0}
-          className="h-full flex-none"
-          style={{
-            width: selectorRegionWidth
-              ? `${selectorRegionWidth}px`
-              : undefined,
-          }}>
+          gap="xs"
+          wrap="nowrap"
+          className="h-full flex-none items-center overflow-hidden">
           <Menu
             shadow="md"
             offset={0}
             position="bottom-start"
-            width="target"
+            width={TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH}
             opened={repoMenuOpened}
             onOpen={() => setRepoMenuOpened(true)}
             onClose={() => setRepoMenuOpened(false)}>
-          <Menu.Target>
-              <Stack
-                gap={0}
-                align="stretch"
-                className="flex h-full w-1/2 cursor-pointer justify-center overflow-hidden border-r border-border/80">
+            <Menu.Target>
+              <Box className="inline-flex max-w-[300px] items-center gap-1.5 rounded px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-800/50 cursor-pointer">
+                <IconBrandGit
+                  size={16}
+                  className="text-blue-400"
+                />
                 <Text
-                  size="xs"
-                  className="text-xs text-zinc-400 px-3 pt-1 w-full">
-                  Repository
+                  size="sm"
+                  className="max-w-[240px] truncate text-sm text-zinc-400 font-medium">
+                  {repoPath ? getRepoName(repoPath) : "No repository"}
                 </Text>
-                <Box className="flex items-center gap-1.5 bg-background text-zinc-400 px-3 pb-1.5 cursor-pointer transition-colors w-full">
-                  <IconBrandGit
-                    size={16}
-                    className="text-blue-400"
-                  />
-                  <Text
-                    size="sm"
-                    className="text-sm text-zinc-400 font-medium truncate min-w-0 flex-1">
-                    {repoPath ? getRepoName(repoPath) : "No repository"}
-                  </Text>
-                  <HiChevronDown
-                    className="text-zinc-400 h-6 w-6 flex items-center justify-center"
-                    size={18}
-                  />
-                </Box>
-              </Stack>
+                <HiChevronDown
+                  className="text-zinc-400 h-4 w-4"
+                  size={14}
+                />
+              </Box>
             </Menu.Target>
             <ToolbarDropdownBody
               searchValue={repoSearch}
@@ -559,41 +547,36 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
               ))}
             </ToolbarDropdownBody>
           </Menu>
+          <Text
+            size="sm"
+            className="text-zinc-600 select-none">
+            /
+          </Text>
           <Menu
             shadow="md"
             offset={0}
             position="bottom-start"
-            width="target"
+            width={TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH}
             opened={branchMenuOpened}
             onOpen={() => setBranchMenuOpened(true)}
             onClose={() => setBranchMenuOpened(false)}>
-          <Menu.Target>
-              <Stack
-                gap={0}
-                align="stretch"
-                className="!w-1/2 flex h-full cursor-pointer justify-center overflow-hidden border-r border-border/80">
+            <Menu.Target>
+              <Box className="inline-flex max-w-[300px] items-center gap-1.5 rounded px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-800/50 cursor-pointer">
+                <IconGitBranch
+                  size={16}
+                  className="text-lime-400"
+                />
                 <Text
-                  size="xs"
-                  className="text-xs text-zinc-400 w-full px-3 pt-1">
-                  Branch
+                  size="sm"
+                  className="max-w-[240px] truncate text-sm text-zinc-400 font-medium">
+                  {selectedBranch ||
+                    (branchesLoading ? "Loading..." : branches[0] || "No branch")}
                 </Text>
-                <Box className="flex items-center gap-1.5 bg-background text-zinc-400 px-3 pb-1.5 min-w-[120px] cursor-pointer transition-colors w-full">
-                  <IconGitBranch
-                    size={16}
-                    className="text-lime-400"
-                  />
-                  <Text
-                    size="sm"
-                    className="text-sm text-zinc-400 font-medium truncate min-w-0 flex-1">
-                    {selectedBranch ||
-                      (branchesLoading ? "Loading..." : branches[0] || "No branch")}
-                  </Text>
-                  <HiChevronDown
-                    className="text-zinc-400 h-6 w-6 flex items-center justify-center"
-                    size={18}
-                  />
-                </Box>
-              </Stack>
+                <HiChevronDown
+                  className="text-zinc-400 h-4 w-4"
+                  size={14}
+                />
+              </Box>
             </Menu.Target>
             <ToolbarDropdownBody
               searchValue={branchSearch}
@@ -625,7 +608,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
           className="flex-1 items-center justify-end">
           <RemoteActionButton
             label="Pull"
-            icon={<IconCloudDownload size={18} />}
+            icon={<IconCloudDownload size={16} />}
             onClick={() => {
               void executePull();
             }}
@@ -636,7 +619,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
           />
           <RemoteActionButton
             label="Push"
-            icon={<IconCloudUpload size={18} />}
+            icon={<IconCloudUpload size={16} />}
             onClick={() => {
               void executePush();
             }}
@@ -647,13 +630,13 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
           <Stack
             gap={0}
             align="center">
-            <div className="flex min-w-[64px] flex-col items-center justify-center gap-1 rounded border border-transparent px-3 py-2 text-zinc-300 transition-colors hover:border-zinc-700/80 hover:bg-zinc-800/70">
+            <div className="flex min-w-[60px] flex-col items-center justify-center gap-0.5 rounded border border-transparent px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-zinc-700/80 hover:bg-zinc-800/70">
               <Text
                 size="xs"
-                className="text-xs text-zinc-300">
+                className="text-[10px] leading-none text-zinc-400">
                 Branch
               </Text>
-              <IconGitBranch size={18} />
+              <IconGitBranch size={16} className="text-zinc-100" />
             </div>
           </Stack>
           <Stack
@@ -661,7 +644,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
             align="center">
             <RemoteActionButton
               label="Stash"
-              icon={<IconStack2 size={18} />}
+              icon={<IconStack2 size={16} />}
               onClick={() => {
                 void executeStash();
               }}
@@ -675,7 +658,7 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
             align="center">
             <RemoteActionButton
               label="Pop"
-              icon={<IconArrowBarToUp size={18} />}
+              icon={<IconArrowBarToUp size={16} />}
               onClick={() => {
                 void executePop();
               }}
@@ -683,18 +666,6 @@ const TopToolbar: React.FC<TopToolbarProps> = ({ selectorRegionWidth }) => {
               loading={pendingGitAction === "pop"}
               tooltip="Pop the most recent stash entry"
             />
-          </Stack>
-          <Stack
-            gap={0}
-            align="center">
-            <div className="flex min-w-[64px] flex-col items-center justify-center gap-1 rounded border border-transparent px-3 py-2 text-zinc-300 transition-colors hover:border-zinc-700/80 hover:bg-zinc-800/70">
-              <Text
-                size="xs"
-                className="text-xs text-zinc-300">
-                Terminal
-              </Text>
-              <IconTerminal2 size={18} />
-            </div>
           </Stack>
         </Group>
       </Group>

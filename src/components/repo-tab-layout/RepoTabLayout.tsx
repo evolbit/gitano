@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Tabs, Tooltip } from "@mantine/core";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { APP_EVENTS } from "../../constants/events";
 import { REPO_LAYOUT } from "../../constants/layout";
 import { useWorkingDirectoryChanges } from "../../hooks/useWorkingDirectoryChanges";
@@ -79,12 +79,6 @@ const RepoTabLayout: React.FC = () => {
       showNotifications: false,
     });
 
-  const [liveLeftPaneWidth, setLiveLeftPaneWidth] = useState<number>(
-    workspaceState.leftPaneWidth ??
-      (typeof REPO_LAYOUT.panes.left.initial === "number"
-        ? REPO_LAYOUT.panes.left.initial
-        : REPO_LAYOUT.panes.left.min),
-  );
   const leftSidebarPaneRef = useRef<HTMLDivElement | null>(null);
   const commitDetailsPaneRef = useRef<HTMLDivElement | null>(null);
   const lastCommitDetailsPaneWidthRef = useRef<number | string>(
@@ -189,24 +183,6 @@ const RepoTabLayout: React.FC = () => {
   }, [repoPath, workspaceState.leftPaneWidth]);
 
   useEffect(() => {
-    const leftSidebarPane = leftSidebarPaneRef.current;
-    if (!leftSidebarPane) return;
-
-    const updateWidth = () => {
-      const width = leftSidebarPane.getBoundingClientRect().width;
-      if (width > 1) {
-        setLiveLeftPaneWidth(width);
-      }
-    };
-
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(leftSidebarPane);
-
-    return () => observer.disconnect();
-  }, [repoPath]);
-
-  useEffect(() => {
     const handleWorkingChangesRefresh = () => {
       void refreshChanges();
     };
@@ -259,7 +235,7 @@ const RepoTabLayout: React.FC = () => {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <TopToolbar selectorRegionWidth={liveLeftPaneWidth} />
+      <TopToolbar />
       <div className="flex-1 min-h-0">
         <Split className="h-full w-full min-h-0 flex-1">
           {/* Left sidebar */}

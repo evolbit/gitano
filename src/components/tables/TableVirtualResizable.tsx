@@ -7,6 +7,8 @@ export type TableColumn<T> = {
   width: number;
   minWidth?: number;
   grow?: boolean;
+  headerClassName?: string;
+  cellClassName?: string;
   render?: (value: any, row: T) => React.ReactNode;
 };
 
@@ -173,45 +175,20 @@ export default function TableVirtualResizable<
     if (!enableInfiniteScroll || !onLoadMore) return;
 
     const handleScroll = () => {
-      console.log("Scroll event triggered", {
-        hasMore,
-        loading,
-        lastLoadTriggered: lastLoadTriggered.current,
-        parentRef: !!parentRef.current,
-      });
-
       if (
         !parentRef.current ||
         loading ||
         !hasMore ||
         lastLoadTriggered.current
       ) {
-        console.log("Scroll event blocked", {
-          noParent: !parentRef.current,
-          loading,
-          noHasMore: !hasMore,
-          lastLoadTriggered: lastLoadTriggered.current,
-        });
         return;
       }
 
       const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
       const distanceToBottom = scrollHeight - scrollTop - clientHeight;
 
-      console.log("Table scroll event", {
-        scrollTop,
-        scrollHeight,
-        clientHeight,
-        threshold: loadMoreThreshold,
-        distance: distanceToBottom,
-        hasMore,
-        loading,
-        lastLoadTriggered: lastLoadTriggered.current,
-      });
-
       // Trigger load when user is within threshold of the bottom
       if (distanceToBottom < loadMoreThreshold) {
-        console.log("Triggering onLoadMore from table scroll");
         lastLoadTriggered.current = true;
         onLoadMore();
       }
@@ -221,10 +198,6 @@ export default function TableVirtualResizable<
     const timeoutId = setTimeout(() => {
       const scrollElement = parentRef.current;
       if (scrollElement) {
-        console.log(
-          "Setting up scroll listener for infinite scroll",
-          scrollElement
-        );
         scrollElement.addEventListener("scroll", handleScroll);
       }
     }, 100);
@@ -240,12 +213,7 @@ export default function TableVirtualResizable<
 
   // Reset the flag when loading state changes
   useEffect(() => {
-    console.log("Loading state changed", {
-      loading,
-      lastLoadTriggered: lastLoadTriggered.current,
-    });
     if (!loading) {
-      console.log("Resetting lastLoadTriggered flag");
       lastLoadTriggered.current = false;
     }
   }, [loading]);
@@ -268,17 +236,7 @@ export default function TableVirtualResizable<
     const { scrollHeight, clientHeight } = parentRef.current;
     const needsMoreData = scrollHeight <= clientHeight;
 
-    console.log("Checking if content needs more data", {
-      scrollHeight,
-      clientHeight,
-      needsMoreData,
-      hasMore,
-      loading,
-      dataLength: data.length,
-    });
-
     if (needsMoreData && hasMore && !loading) {
-      console.log("Content is smaller than container, triggering onLoadMore");
       lastLoadTriggered.current = true;
       onLoadMore();
     }
@@ -336,15 +294,15 @@ export default function TableVirtualResizable<
       <div
         ref={parentRef}
         data-virtualizer-scroll
-        className="flex-1 w-full overflow-auto relative bg-background">
+        className="flex-1 w-full overflow-auto relative bg-transparent">
         {/* Table header: regular, not sticky */}
         <div
-          className="flex items-center bg-background-emphasis h-12 font-semibold text-foreground text-sm select-none"
+          className="flex items-center bg-transparent font-semibold text-foreground text-sm select-none"
           style={{ width: tableWidth, minWidth: "100%" }}>
           {columns.map((col) => (
             <div
               key={col.key}
-              className="relative flex items-center px-1 truncate group"
+              className={`relative flex items-center px-3 truncate group ${col.headerClassName ?? ""}`}
               style={{
                 width: resolvedColWidths[col.key],
                 minWidth: col.minWidth ?? 40,
@@ -374,13 +332,14 @@ export default function TableVirtualResizable<
               <div
                 key={row.id || virtualRow.index}
                 data-row-index={virtualRow.index}
-                className={`absolute top-0 left-0 h-12 flex items-center text-foreground text-sm border-b border-border cursor-pointer transition-colors duration-150 ${
+                className={`absolute top-0 left-0 flex items-center text-foreground text-sm cursor-pointer transition-colors duration-150 ${
                   isSelected
-                    ? "bg-blue-600 text-white"
-                    : "bg-background hover:bg-background-emphasis"
+                    ? "bg-background text-zinc-100"
+                    : "bg-transparent hover:bg-background"
                 }`}
                 style={{
                   transform: `translateY(${virtualRow.start}px)`,
+                  height: rowHeight,
                   width: tableWidth,
                   minWidth: "100%",
                 }}
@@ -388,7 +347,7 @@ export default function TableVirtualResizable<
                 {columns.map((col) => (
                   <div
                     key={col.key}
-                    className="px-4 truncate"
+                    className={`truncate ${col.cellClassName ?? "px-3"}`}
                     style={{ width: resolvedColWidths[col.key] }}>
                     {col.render ? col.render(row[col.key], row) : row[col.key]}
                   </div>

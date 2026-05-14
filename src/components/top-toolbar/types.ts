@@ -23,9 +23,7 @@ export type RemoteActionButtonProps = {
   rightSlot?: React.ReactNode;
 };
 
-export type TopToolbarProps = {
-  selectorRegionWidth?: number;
-};
+export type TopToolbarProps = Record<string, never>;
 
 export type PullStrategyOption = {
   value: PullStrategy;

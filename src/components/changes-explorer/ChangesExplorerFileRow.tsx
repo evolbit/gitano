@@ -40,7 +40,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
       className={`flex w-full items-center gap-2 overflow-hidden border-b border-transparent px-3 py-2 text-left text-sm transition-colors ${
         isSelected
           ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
-          : "text-foreground hover:bg-background-emphasis"
+          : "text-zinc-400 hover:bg-background-emphasis"
       }`}
       onClick={() => onSelectFile(file)}
       onContextMenu={(e) => {
@@ -55,7 +55,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="truncate font-medium">{fileName}</span>
           {parentPath ? (
-            <span className="truncate text-muted-foreground">{parentPath}</span>
+            <span className="truncate text-zinc-400">{parentPath}</span>
           ) : null}
         </div>
       </div>
