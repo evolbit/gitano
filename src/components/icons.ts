@@ -30,6 +30,7 @@ export {
   IconSearch,
   IconStack2,
   IconStar,
+  IconTag,
   IconTerminal2,
   IconBinaryTree2,
   IconX,

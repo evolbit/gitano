@@ -19,8 +19,9 @@ import ChangesPanel from "../changes-panel/ChangesPanel";
 import CommitList from "../commit-list/CommitList";
 import CurrentChangesCommitBar from "../current-changes-commit-bar/CurrentChangesCommitBar";
 import InlineDiffSurface from "../diff-viewer/InlineDiffSurface";
-import { IconGitBranch, IconStack2 } from "../icons";
+import { IconGitBranch, IconStack2, IconTag } from "../icons";
 import StashesPanel from "../stashes-panel/StashesPanel";
+import { TagsPanel } from "../tags-panel/TagsPanel";
 import TopToolbar from "../top-toolbar/TopToolbar";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
@@ -30,6 +31,7 @@ const LEFT_PANE_SECTIONS: ReadonlyArray<{
 }> = [
   { key: "changes", label: "Changes", icon: IconStack2 },
   { key: "branches", label: "Branches", icon: IconGitBranch },
+  { key: "tags", label: "Tags", icon: IconTag },
   { key: "stashes", label: "Stashes", icon: IconStack2 },
 ];
 
@@ -337,7 +339,13 @@ const RepoTabLayout: React.FC = () => {
                   />
                 ) : null}
               </Tabs.Panel>
-              <Tabs.List className="grid h-10 min-h-10 grid-cols-3 border-t border-border bg-background-emphasis">
+              <Tabs.Panel
+                value="tags"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              >
+                {repoPath ? <TagsPanel repoPath={repoPath} /> : null}
+              </Tabs.Panel>
+              <Tabs.List className="grid h-10 min-h-10 grid-cols-4 border-t border-border bg-background-emphasis">
                 {LEFT_PANE_SECTIONS.map((section) => {
                   const Icon = section.icon;
                   const isActive =

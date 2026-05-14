@@ -4,7 +4,7 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
-export type LeftPaneSection = "changes" | "branches" | "stashes";
+export type LeftPaneSection = "changes" | "branches" | "tags" | "stashes";
 export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type PullStrategy =
@@ -29,6 +29,7 @@ export interface RepoWorkspaceState {
   selectedStashRef: string | null;
   selectedStashDiffPath: string | null;
   branchTreeExpanded: Record<string, boolean>;
+  tagTreeExpanded: Record<string, boolean>;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
   commitChangesViewMode: WorkspaceViewMode;
@@ -51,6 +52,10 @@ interface WorkspaceUiStore {
   setSelectedStashRef: (repoPath: string, stashRef: string | null) => void;
   setSelectedStashDiffPath: (repoPath: string, path: string | null) => void;
   setBranchTreeExpanded: (
+    repoPath: string,
+    expanded: Record<string, boolean>,
+  ) => void;
+  setTagTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
   ) => void;
@@ -86,6 +91,7 @@ export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   selectedStashRef: null,
   selectedStashDiffPath: null,
   branchTreeExpanded: {},
+  tagTreeExpanded: {},
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
   commitChangesViewMode: "tree",
@@ -125,6 +131,7 @@ function getRepoWorkspaceState(
     selectedCommitDiffPath: repoState.selectedCommitDiffPath ?? null,
     selectedStashRef: repoState.selectedStashRef ?? null,
     selectedStashDiffPath: repoState.selectedStashDiffPath ?? null,
+    tagTreeExpanded: repoState.tagTreeExpanded ?? {},
   };
 }
 
@@ -165,6 +172,8 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         get().updateRepoState(repoPath, { selectedStashDiffPath: path }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
+      setTagTreeExpanded: (repoPath, expanded) =>
+        get().updateRepoState(repoPath, { tagTreeExpanded: expanded }),
       setMainChangesExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { mainChangesExpanded: expanded }),
       setWorkingChangesViewMode: (repoPath, mode) =>

@@ -67,11 +67,18 @@ function sortBranchNodes(nodes: BranchTreeNode[]) {
   });
 }
 
-export function groupBranches(branches: string[]): BranchTreeNode[] {
+function sortNameNodes(nodes: BranchTreeNode[]) {
+  return [...nodes].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function groupSlashDelimitedNames(
+  names: string[],
+  sortNodes: (nodes: BranchTreeNode[]) => BranchTreeNode[],
+): BranchTreeNode[] {
   const tree: Record<string, unknown> = {};
 
-  branches.forEach((branch) => {
-    const parts = branch.split("/");
+  names.forEach((name) => {
+    const parts = name.split("/");
     let current: Record<string, unknown> = tree;
 
     parts.forEach((part, idx) => {
@@ -97,12 +104,18 @@ export function groupBranches(branches: string[]): BranchTreeNode[] {
         type: "group",
         name: key,
         full,
-        children: sortBranchNodes(
-          toArray(value as Record<string, unknown>, full),
-        ),
+        children: sortNodes(toArray(value as Record<string, unknown>, full)),
       };
     });
   }
 
-  return sortBranchNodes(toArray(tree));
+  return sortNodes(toArray(tree));
+}
+
+export function groupBranches(branches: string[]): BranchTreeNode[] {
+  return groupSlashDelimitedNames(branches, sortBranchNodes);
+}
+
+export function groupNames(names: string[]): BranchTreeNode[] {
+  return groupSlashDelimitedNames(names, sortNameNodes);
 }
