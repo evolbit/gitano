@@ -4,7 +4,12 @@ import { REPO_LAYOUT } from "../constants/layout";
 import { tauriStorage } from "./tauriStorage";
 
 export type WorkspaceViewMode = "flat" | "tree";
-export type LeftPaneSection = "changes" | "branches" | "tags" | "stashes";
+export type LeftPaneSection =
+  | "changes"
+  | "branches"
+  | "workspaces"
+  | "tags"
+  | "stashes";
 export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type PullStrategy =
@@ -29,6 +34,8 @@ export interface RepoWorkspaceState {
   selectedStashRef: string | null;
   selectedStashDiffPath: string | null;
   branchTreeExpanded: Record<string, boolean>;
+  worktreeTreeExpanded: Record<string, boolean>;
+  worktreeCreateBaseRef: string | null;
   tagTreeExpanded: Record<string, boolean>;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
@@ -55,6 +62,11 @@ interface WorkspaceUiStore {
     repoPath: string,
     expanded: Record<string, boolean>,
   ) => void;
+  setWorktreeTreeExpanded: (
+    repoPath: string,
+    expanded: Record<string, boolean>,
+  ) => void;
+  setWorktreeCreateBaseRef: (repoPath: string, baseRef: string | null) => void;
   setTagTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -91,6 +103,8 @@ export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   selectedStashRef: null,
   selectedStashDiffPath: null,
   branchTreeExpanded: {},
+  worktreeTreeExpanded: {},
+  worktreeCreateBaseRef: null,
   tagTreeExpanded: {},
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
@@ -131,6 +145,8 @@ function getRepoWorkspaceState(
     selectedCommitDiffPath: repoState.selectedCommitDiffPath ?? null,
     selectedStashRef: repoState.selectedStashRef ?? null,
     selectedStashDiffPath: repoState.selectedStashDiffPath ?? null,
+    worktreeTreeExpanded: repoState.worktreeTreeExpanded ?? {},
+    worktreeCreateBaseRef: repoState.worktreeCreateBaseRef ?? null,
     tagTreeExpanded: repoState.tagTreeExpanded ?? {},
   };
 }
@@ -172,6 +188,10 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         get().updateRepoState(repoPath, { selectedStashDiffPath: path }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
+      setWorktreeTreeExpanded: (repoPath, expanded) =>
+        get().updateRepoState(repoPath, { worktreeTreeExpanded: expanded }),
+      setWorktreeCreateBaseRef: (repoPath, baseRef) =>
+        get().updateRepoState(repoPath, { worktreeCreateBaseRef: baseRef }),
       setTagTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { tagTreeExpanded: expanded }),
       setMainChangesExpanded: (repoPath, expanded) =>

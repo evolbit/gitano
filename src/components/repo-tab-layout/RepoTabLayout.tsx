@@ -19,10 +19,11 @@ import ChangesPanel from "../changes-panel/ChangesPanel";
 import CommitList from "../commit-list/CommitList";
 import CurrentChangesCommitBar from "../current-changes-commit-bar/CurrentChangesCommitBar";
 import InlineDiffSurface from "../diff-viewer/InlineDiffSurface";
-import { IconGitBranch, IconStack2, IconTag } from "../icons";
+import { IconBinaryTree2, IconGitBranch, IconStack2, IconTag } from "../icons";
 import StashesPanel from "../stashes-panel/StashesPanel";
 import { TagsPanel } from "../tags-panel/TagsPanel";
 import TopToolbar from "../top-toolbar/TopToolbar";
+import { WorkspacesPanel } from "../workspaces-panel/WorkspacesPanel";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
   key: LeftPaneSection;
@@ -31,6 +32,7 @@ const LEFT_PANE_SECTIONS: ReadonlyArray<{
 }> = [
   { key: "changes", label: "Changes", icon: IconStack2 },
   { key: "branches", label: "Branches", icon: IconGitBranch },
+  { key: "workspaces", label: "Workspaces", icon: IconBinaryTree2 },
   { key: "tags", label: "Tags", icon: IconTag },
   { key: "stashes", label: "Stashes", icon: IconStack2 },
 ];
@@ -323,6 +325,12 @@ const RepoTabLayout: React.FC = () => {
                 <BranchList />
               </Tabs.Panel>
               <Tabs.Panel
+                value="workspaces"
+                className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              >
+                {repoPath ? <WorkspacesPanel repoPath={repoPath} /> : null}
+              </Tabs.Panel>
+              <Tabs.Panel
                 value="stashes"
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
               >
@@ -345,7 +353,7 @@ const RepoTabLayout: React.FC = () => {
               >
                 {repoPath ? <TagsPanel repoPath={repoPath} /> : null}
               </Tabs.Panel>
-              <Tabs.List className="grid h-10 min-h-10 grid-cols-4 border-t border-border bg-background-emphasis">
+              <Tabs.List className="grid h-10 min-h-10 grid-cols-5 border-t border-border bg-background-emphasis">
                 {LEFT_PANE_SECTIONS.map((section) => {
                   const Icon = section.icon;
                   const isActive =

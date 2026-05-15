@@ -130,6 +130,19 @@ pub struct GitStashEntry {
     pub date: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktree {
+    pub path: String,
+    pub name: String,
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    pub is_current: bool,
+    pub is_main: bool,
+    pub is_bare: bool,
+    pub is_detached: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StashFileChange {
     pub path: String,

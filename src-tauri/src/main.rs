@@ -14,6 +14,8 @@ fn main() {
             git::get_remote_branches,
             git::get_tags,
             git::get_remote_url,
+            git::get_worktrees,
+            git::git_create_worktree,
             git::get_commits_list_paginated,
             git::get_commit_diff,
             git::amend_commit_message,

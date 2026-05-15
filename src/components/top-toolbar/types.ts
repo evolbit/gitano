@@ -3,6 +3,7 @@ import { PullStrategy } from "../../store/workspaceUi";
 export type ToolbarDropdownProps = {
   searchValue: string;
   onSearchChange: (value: string) => void;
+  placeholder?: string;
   children: React.ReactNode;
 };
 

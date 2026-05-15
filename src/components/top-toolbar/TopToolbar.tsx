@@ -17,13 +17,15 @@ import {
   PullStrategy,
   useWorkspaceUiStore,
 } from "../../store/workspaceUi";
+import { GitWorktree } from "../../types/git";
 import {
   IconArrowBarToUp,
-  IconBrandGit,
+  IconBinaryTree2,
   IconCheck,
   IconCloudDownload,
   IconCloudUpload,
   IconGitBranch,
+  IconPlus,
   IconSearch,
   IconStack2,
   IconX,
@@ -39,6 +41,8 @@ const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
 const TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH = 420;
 const GIT_ACTION_SUCCESS_SNACKBAR_MS = 3200;
 const GIT_ACTION_ERROR_SNACKBAR_MS = 8000;
+const TOOLBAR_DROPDOWN_ITEM_CLASS =
+  "px-4 py-2 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
 
 function waitForNextFrame() {
   return new Promise<void>((resolve) => {
@@ -61,6 +65,7 @@ const PULL_STRATEGIES: PullStrategyOption[] = [
 const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
   searchValue,
   onSearchChange,
+  placeholder = "Search",
   children,
 }) => (
   <Menu.Dropdown className="p-0 bg-background border border-zinc-700 rounded-b transition-colors overflow-hidden">
@@ -68,7 +73,7 @@ const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
       <TextInput
         value={searchValue}
         onChange={(e) => onSearchChange(e.currentTarget.value)}
-        placeholder="Search"
+        placeholder={placeholder}
         leftSection={
           <IconSearch
             size={16}
@@ -79,7 +84,8 @@ const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
         leftSectionWidth={28}
         size="xs"
         classNames={{
-          input: "bg-background text-zinc-200 placeholder-zinc-400 pl-8",
+          input:
+            "bg-background pl-8 text-[11px] text-zinc-200 placeholder:text-[11px] placeholder:text-zinc-500",
         }}
         radius="md"
         autoFocus
@@ -98,7 +104,7 @@ const ToolbarDropdownItem: React.FC<{
   onClick: () => void;
 }> = ({ label, onClick }) => (
   <Menu.Item
-    className="px-4 py-2"
+    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
     styles={{
       item: {
         overflow: "hidden",
@@ -115,6 +121,44 @@ const ToolbarDropdownItem: React.FC<{
       className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
       {label}
     </Text>
+  </Menu.Item>
+);
+
+const ToolbarDropdownActionItem: React.FC<{
+  label: string;
+  onClick: () => void;
+}> = ({ label, onClick }) => (
+  <Menu.Item
+    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
+    leftSection={<IconPlus size={16} />}
+    onClick={onClick}>
+    <Text
+      size="sm"
+      className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+      {label}
+    </Text>
+  </Menu.Item>
+);
+
+const WorktreeDropdownItem: React.FC<{
+  worktree: GitWorktree;
+  selected: boolean;
+  onClick: () => void;
+}> = ({ worktree, selected, onClick }) => (
+  <Menu.Item className={TOOLBAR_DROPDOWN_ITEM_CLASS} onClick={onClick}>
+    <div className="flex min-w-0 items-start gap-3">
+      <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-blue-300">
+        {selected ? <IconCheck size={15} /> : <IconBinaryTree2 size={15} />}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="min-w-0 truncate text-sm font-medium text-zinc-100">
+          {getWorktreeDisplayName(worktree)}
+        </span>
+        <span className="min-w-0 truncate text-xs text-zinc-400">
+          {worktree.branch ?? "Detached HEAD"} - {worktree.path}
+        </span>
+      </span>
+    </div>
   </Menu.Item>
 );
 
@@ -186,10 +230,47 @@ function getPullStrategyLabel(strategy: PullStrategy) {
   );
 }
 
+function getPathBasename(path: string) {
+  return path.split("/").filter(Boolean).pop() || path;
+}
+
+function getWorktreeDisplayName(worktree: GitWorktree) {
+  if (worktree.isMain) return "main worktree";
+  return worktree.name || getPathBasename(worktree.path);
+}
+
+function getWorktreeTargetLabel(worktree: GitWorktree | null, repoPath?: string) {
+  if (worktree) {
+    return worktree.isMain ? "main" : getWorktreeDisplayName(worktree);
+  }
+
+  return repoPath ? getPathBasename(repoPath) : "No workspace";
+}
+
+function getCreateBaseOptions(currentBranch: string | null | undefined) {
+  const options: Array<{ refName: string; label: string }> = [];
+
+  if (currentBranch && currentBranch !== "Detached HEAD") {
+    options.push({
+      refName: currentBranch,
+      label: `Create new worktree based on ${currentBranch}`,
+    });
+  }
+
+  if (!options.some((option) => option.refName === "master")) {
+    options.push({
+      refName: "master",
+      label: "Create new worktree based on master",
+    });
+  }
+
+  return options;
+}
+
 const TopToolbar: React.FC<TopToolbarProps> = () => {
-  const [repoSearch, setRepoSearch] = useState("");
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
-  const [repoMenuOpened, setRepoMenuOpened] = useState(false);
+  const [workspaceMenuOpened, setWorkspaceMenuOpened] = useState(false);
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
@@ -199,10 +280,15 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
 
   const tabs = useRepoStore((s) => s.tabs);
   const activeTabId = useRepoStore((s) => s.activeTabId);
-  const setActiveTab = useRepoStore((s) => s.setActiveTab);
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
+  const updateTab = useRepoStore((s) => s.updateTab);
+  const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
   const pullStrategy = useWorkspaceUiStore((s) => s.pullStrategy);
   const setPullStrategy = useWorkspaceUiStore((s) => s.setPullStrategy);
+  const setLeftPaneSection = useWorkspaceUiStore((s) => s.setLeftPaneSection);
+  const setWorktreeCreateBaseRef = useWorkspaceUiStore(
+    (s) => s.setWorktreeCreateBaseRef,
+  );
   const pendingGitAction = useGitActionsStore((s) => s.pendingAction);
   const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
   const gitActionNotice = useGitActionsStore((s) => s.notice);
@@ -211,13 +297,12 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
 
-  const openedRepos = tabs.filter((t) => t.id !== "home" && t.repoPath);
-  const getRepoName = (path: string) =>
-    path.split("/").filter(Boolean).pop() || path;
-
   const [branches, setBranches] = useState<string[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [worktreesLoading, setWorktreesLoading] = useState(false);
+  const [worktreesError, setWorktreesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!repoPath) {
@@ -235,29 +320,94 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
       .finally(() => setBranchesLoading(false));
   }, [repoPath, branchesRefreshNonce]);
 
-  const filteredRepos = openedRepos.filter((t) =>
-    getRepoName(t.repoPath).toLowerCase().includes(repoSearch.toLowerCase()),
-  );
+  useEffect(() => {
+    if (!repoPath) {
+      setWorktrees([]);
+      return;
+    }
+
+    setWorktreesLoading(true);
+    setWorktreesError(null);
+    core
+      .invoke<GitWorktree[]>("get_worktrees", { path: repoPath })
+      .then((nextWorktrees) => {
+        setWorktrees(nextWorktrees);
+      })
+      .catch((e) => setWorktreesError(String(e)))
+      .finally(() => setWorktreesLoading(false));
+  }, [repoPath, branchesRefreshNonce]);
+
+  useEffect(() => {
+    if (!repoPath || !activeTabId) return;
+
+    let cancelled = false;
+
+    core
+      .invoke<string>("get_current_branch", { path: repoPath })
+      .then((branch) => {
+        if (cancelled) return;
+        setTabBranch(activeTabId, branch === "Detached HEAD" ? null : branch);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTabBranch(activeTabId, null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTabId, repoPath, setTabBranch]);
+
   const filteredBranches = branches.filter((b) =>
     b.toLowerCase().includes(branchSearch.toLowerCase()),
+  );
+  const filteredWorktrees = worktrees.filter((worktree) =>
+    [
+      getWorktreeDisplayName(worktree),
+      worktree.name,
+      worktree.branch ?? "",
+      worktree.path,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(workspaceSearch.toLowerCase()),
   );
 
   const resolvedBranch =
     selectedBranch || (branchesLoading ? null : branches[0] || null);
+  const currentWorktree =
+    worktrees.find((worktree) => worktree.isCurrent) ?? null;
+  const createBaseOptions = getCreateBaseOptions(resolvedBranch);
 
   const pushTooltip = resolvedBranch
     ? `Push to origin/${resolvedBranch}`
     : "Push current branch";
   const pullTooltip = getPullStrategyLabel(pullStrategy);
 
-  const handleRepoSelect = (id: string) => {
-    setActiveTab(id);
-    setRepoMenuOpened(false);
+  const handleWorktreeSelect = (worktree: GitWorktree) => {
+    if (!activeTabId) return;
+
+    updateTab(activeTabId, {
+      repoPath: worktree.path,
+      selectedBranch: worktree.branch,
+      selectedCommit: null,
+    });
+    addRecentRepo(worktree.path);
+    setWorkspaceMenuOpened(false);
   };
 
   const handleBranchSelect = (branch: string) => {
     if (activeTabId) setTabBranch(activeTabId, branch);
     setBranchMenuOpened(false);
+  };
+
+  const handleCreateWorktreeIntent = (baseRef: string) => {
+    if (!repoPath) return;
+
+    setLeftPaneSection(repoPath, "workspaces");
+    setWorktreeCreateBaseRef(repoPath, baseRef);
+    setWorkspaceMenuOpened(false);
   };
 
   useEffect(() => {
@@ -509,19 +659,19 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
             offset={0}
             position="bottom-start"
             width={TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH}
-            opened={repoMenuOpened}
-            onOpen={() => setRepoMenuOpened(true)}
-            onClose={() => setRepoMenuOpened(false)}>
+            opened={workspaceMenuOpened}
+            onOpen={() => setWorkspaceMenuOpened(true)}
+            onClose={() => setWorkspaceMenuOpened(false)}>
             <Menu.Target>
               <Box className="inline-flex max-w-[300px] items-center gap-1.5 rounded px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-800/50 cursor-pointer">
-                <IconBrandGit
+                <IconBinaryTree2
                   size={16}
                   className="text-blue-400"
                 />
                 <Text
                   size="sm"
                   className="max-w-[240px] truncate text-sm text-zinc-400 font-medium">
-                  {repoPath ? getRepoName(repoPath) : "No repository"}
+                  {getWorktreeTargetLabel(currentWorktree, repoPath)}
                 </Text>
                 <HiChevronDown
                   className="text-zinc-400 h-4 w-4"
@@ -530,18 +680,62 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
               </Box>
             </Menu.Target>
             <ToolbarDropdownBody
-              searchValue={repoSearch}
-              onSearchChange={setRepoSearch}>
-              {filteredRepos.length === 0 && (
-                <div className="px-4 py-2 text-zinc-400 text-sm">No results</div>
-              )}
-              {filteredRepos.map((t) => (
-                <ToolbarDropdownItem
-                  key={t.id}
-                  label={getRepoName(t.repoPath)}
-                  onClick={() => handleRepoSelect(t.id)}
+              searchValue={workspaceSearch}
+              onSearchChange={setWorkspaceSearch}
+              placeholder="Select a worktree...">
+              {createBaseOptions.map((option) => (
+                <ToolbarDropdownActionItem
+                  key={option.refName}
+                  label={option.label}
+                  onClick={() => handleCreateWorktreeIntent(option.refName)}
                 />
               ))}
+              <div className="my-1 border-t border-zinc-700" />
+              {worktreesLoading && (
+                <div className="px-4 py-2 text-zinc-400 text-sm">Loading...</div>
+              )}
+              {worktreesError && (
+                <div className="px-4 py-2 text-red-400 text-sm">
+                  {worktreesError}
+                </div>
+              )}
+              {!worktreesLoading &&
+                filteredWorktrees.length === 0 &&
+                !worktreesError && (
+                  <div className="px-4 py-2 text-zinc-400 text-sm">
+                    No results
+                  </div>
+                )}
+              {filteredWorktrees.map((worktree) => (
+                <WorktreeDropdownItem
+                  key={worktree.path}
+                  worktree={worktree}
+                  selected={worktree.isCurrent}
+                  onClick={() => handleWorktreeSelect(worktree)}
+                />
+              ))}
+              {!worktreesError && worktrees.length === 0 && !worktreesLoading ? (
+                <div className="px-4 py-2 text-zinc-500 text-xs">
+                  No Git worktrees found for this repository.
+                </div>
+              ) : null}
+              {repoPath && worktrees.length === 0 && worktreesError ? (
+                <ToolbarDropdownItem
+                  label={getPathBasename(repoPath)}
+                  onClick={() =>
+                    handleWorktreeSelect({
+                      path: repoPath,
+                      name: getPathBasename(repoPath),
+                      branch: selectedBranch ?? null,
+                      head: null,
+                      isCurrent: true,
+                      isMain: true,
+                      isBare: false,
+                      isDetached: false,
+                    })
+                  }
+                />
+              ) : null}
             </ToolbarDropdownBody>
           </Menu>
           <Text

@@ -83,6 +83,17 @@ export interface GitStashEntry {
   date: number;
 }
 
+export interface GitWorktree {
+  path: string;
+  name: string;
+  branch: string | null;
+  head: string | null;
+  isCurrent: boolean;
+  isMain: boolean;
+  isBare: boolean;
+  isDetached: boolean;
+}
+
 export interface StashFileChange {
   path: string;
   status:
