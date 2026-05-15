@@ -154,3 +154,46 @@ pub fn git_create_worktree(
         .find(|worktree| same_path(&worktree.path, worktree_path))
         .ok_or_else(|| "Created worktree was not found after creation.".to_string())
 }
+
+#[tauri::command]
+pub fn git_remove_worktree(path: String, worktree_path: String) -> Result<(), String> {
+    let worktree_path = worktree_path.trim();
+
+    if worktree_path.is_empty() {
+        return Err("Worktree path is required.".to_string());
+    }
+
+    let worktrees = get_worktrees(path.clone())?;
+    let Some(target) = worktrees
+        .iter()
+        .find(|worktree| same_path(&worktree.path, worktree_path))
+    else {
+        return Err("Worktree was not found.".to_string());
+    };
+
+    if target.is_main {
+        return Err("The main worktree cannot be removed.".to_string());
+    }
+
+    if target.is_current {
+        return Err("The active worktree cannot be removed.".to_string());
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("worktree")
+        .arg("remove")
+        .arg(worktree_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git worktree remove failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}

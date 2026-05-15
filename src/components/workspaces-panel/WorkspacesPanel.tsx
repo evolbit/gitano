@@ -1,7 +1,8 @@
 import { Menu } from "@mantine/core";
 import { core } from "@tauri-apps/api";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import ReactDOM from "react-dom";
 import { APP_EVENTS } from "../../constants/events";
 import { useRepoStore } from "../../store/repo";
 import {
@@ -15,6 +16,7 @@ import {
   IconArrowFork,
   IconChevronDown,
   IconChevronRight,
+  IconDotsVertical,
   IconFolder,
   IconPlus,
   IconSearch,
@@ -31,6 +33,12 @@ type CreateFormState = {
   folder: string;
   branchTouched: boolean;
   folderTouched: boolean;
+};
+
+type WorktreeContextMenu = {
+  x: number;
+  y: number;
+  worktree: GitWorktree;
 };
 
 const EMPTY_CREATE_FORM: CreateFormState = {
@@ -107,6 +115,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const activeTab = useRepoStore((s) => s.tabs.find((tab) => tab.id === activeTabId));
   const updateTab = useRepoStore((s) => s.updateTab);
   const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
+  const removeRepo = useRepoStore((s) => s.removeRepo);
   const worktreeTreeExpanded = useWorkspaceUiStore(
     (s) =>
       (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
@@ -131,6 +140,10 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [createError, setCreateError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateFormState>(EMPTY_CREATE_FORM);
+  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<WorktreeContextMenu | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const currentBranch =
     activeTab?.selectedBranch ??
@@ -177,6 +190,38 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
       window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
     };
   }, [refreshWorktrees]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    function handleClick(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setContextMenu(null);
+      }
+    }
+
+    window.addEventListener("mousedown", handleClick);
+    return () => window.removeEventListener("mousedown", handleClick);
+  }, [contextMenu]);
+
+  useLayoutEffect(() => {
+    if (!contextMenu || !menuRef.current || !menuPos) return;
+
+    const rect = menuRef.current.getBoundingClientRect();
+    const nextPos = { ...menuPos };
+
+    if (menuPos.y + rect.height > window.innerHeight - 8) {
+      nextPos.y = Math.max(8, menuPos.y - rect.height);
+    }
+
+    if (menuPos.x + rect.width > window.innerWidth - 8) {
+      nextPos.x = Math.max(8, window.innerWidth - rect.width - 8);
+    }
+
+    if (nextPos.x !== menuPos.x || nextPos.y !== menuPos.y) {
+      setMenuPos(nextPos);
+    }
+  }, [contextMenu, menuPos]);
 
   const beginCreateFromBase = useCallback(
     (baseRef: string) => {
@@ -267,6 +312,47 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
       addRecentRepo(worktree.path);
     },
     [activeTabId, addRecentRepo, updateTab],
+  );
+
+  const openContextMenu = useCallback((worktree: GitWorktree, x: number, y: number) => {
+    setContextMenu({ x, y, worktree });
+    setMenuPos({ x, y });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const isRowActionsVisible = useCallback(
+    (rowKey: string) =>
+      hoveredRowKey === rowKey || contextMenu?.worktree.path === rowKey,
+    [hoveredRowKey, contextMenu],
+  );
+
+  const removeWorktree = useCallback(
+    async (worktree: GitWorktree) => {
+      if (worktree.isMain || worktree.isCurrent) return;
+
+      const confirmed = window.confirm(
+        `Delete worktree "${getWorktreeDisplayName(worktree)}"?\n\nThis removes ${worktree.path}. Git will refuse if it has uncommitted changes.`,
+      );
+
+      if (!confirmed) return;
+
+      setError(null);
+      try {
+        await core.invoke("git_remove_worktree", {
+          path: repoPath,
+          worktreePath: worktree.path,
+        });
+        removeRepo(worktree.path);
+        await refreshWorktrees();
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+      } catch (worktreeError) {
+        setError(String(worktreeError));
+      }
+    },
+    [refreshWorktrees, removeRepo, repoPath],
   );
 
   const updateName = (nextName: string) => {
@@ -382,6 +468,8 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                 paddingLeft: `${28 + level * 22}px`,
               }}
               tabIndex={0}
+              onMouseEnter={() => setHoveredRowKey(worktree.path)}
+              onMouseLeave={() => setHoveredRowKey(null)}
               onClick={() => selectWorktree(worktree)}>
               <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center">
                 <IconArrowFork
@@ -397,10 +485,70 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                   {worktree.branch ?? "Detached HEAD"} - {worktree.path}
                 </span>
               </span>
+              <button
+                className={`ml-auto rounded p-1 transition-colors hover:bg-zinc-700 ${
+                  isRowActionsVisible(worktree.path) ? "visible" : "invisible"
+                }`}
+                title="More actions"
+                type="button"
+                tabIndex={-1}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  openContextMenu(worktree, rect.right, rect.bottom);
+                }}>
+                <IconDotsVertical size={16} />
+              </button>
             </li>
           );
         })}
       </ul>
+    );
+  }
+
+  function renderContextMenu() {
+    if (!contextMenu || !menuPos) return null;
+
+    const { worktree } = contextMenu;
+    const canDelete = !worktree.isMain && !worktree.isCurrent;
+    const actionClass = "px-4 py-2 hover:bg-zinc-700 cursor-pointer whitespace-nowrap";
+    const disabledActionClass =
+      "px-4 py-2 text-zinc-500 cursor-not-allowed whitespace-nowrap";
+
+    return ReactDOM.createPortal(
+      <div
+        ref={menuRef}
+        style={{
+          position: "fixed",
+          top: menuPos.y,
+          left: menuPos.x,
+          zIndex: 99999,
+        }}
+        className="bg-background-emphasis border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none z-[99999] min-w-[260px]">
+        <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
+          Worktree actions
+        </div>
+        <div
+          className={canDelete ? `${actionClass} text-red-400` : disabledActionClass}
+          title={
+            canDelete
+              ? undefined
+              : worktree.isMain
+                ? "The main worktree cannot be deleted"
+                : "Switch to another worktree before deleting this one"
+          }
+          onClick={
+            canDelete
+              ? () => {
+                  closeContextMenu();
+                  void removeWorktree(worktree);
+                }
+              : undefined
+          }>
+          Delete {getWorktreeDisplayName(worktree)}
+        </div>
+      </div>,
+      document.body,
     );
   }
 
@@ -458,6 +606,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
           </div>
         ) : null}
         {!error ? renderTree(groupedWorktrees) : null}
+        {renderContextMenu()}
       </div>
 
       {form.baseRef ? (
