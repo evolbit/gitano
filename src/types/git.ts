@@ -34,6 +34,14 @@ export interface CommitListPage {
   has_more: boolean;
 }
 
+export interface TagCommitOption {
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: string;
+  date: number;
+}
+
 export enum ChangeType {
   Added = "added",
   Deleted = "deleted",

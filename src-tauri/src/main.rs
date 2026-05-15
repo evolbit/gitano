@@ -13,6 +13,8 @@ fn main() {
             git::get_branches,
             git::get_remote_branches,
             git::get_tags,
+            git::search_tag_commits,
+            git::create_tag,
             git::get_remote_url,
             git::get_worktrees,
             git::git_create_worktree,
