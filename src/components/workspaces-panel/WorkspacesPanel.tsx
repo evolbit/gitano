@@ -78,6 +78,19 @@ function getWorktreeTreeKey(worktree: GitWorktree) {
   return getWorktreeDisplayName(worktree);
 }
 
+function pinMainWorktreeFirst(
+  nodes: BranchTreeNode[],
+  mainWorktreeKey: string | null,
+) {
+  if (!mainWorktreeKey) return nodes;
+
+  return [...nodes].sort((left, right) => {
+    if (left.full === mainWorktreeKey) return -1;
+    if (right.full === mainWorktreeKey) return 1;
+    return 0;
+  });
+}
+
 function getCreateBaseOptions(currentBranch: string | null | undefined) {
   const options: Array<{ refName: string; label: string }> = [];
 
@@ -287,10 +300,16 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     return new Map(entries);
   }, [filteredWorktrees]);
 
-  const groupedWorktrees = useMemo(
-    () => groupNames(filteredWorktrees.map(getWorktreeTreeKey)),
-    [filteredWorktrees],
-  );
+  const groupedWorktrees = useMemo(() => {
+    const mainWorktreeKey =
+      filteredWorktrees.find((worktree) => worktree.isMain) ?? null;
+    const grouped = groupNames(filteredWorktrees.map(getWorktreeTreeKey));
+
+    return pinMainWorktreeFirst(
+      grouped,
+      mainWorktreeKey ? getWorktreeTreeKey(mainWorktreeKey) : null,
+    );
+  }, [filteredWorktrees]);
 
   const selectWorktree = useCallback(
     (worktree: GitWorktree) => {

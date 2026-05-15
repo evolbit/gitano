@@ -20,6 +20,24 @@ fn path_basename(path: &str) -> String {
         .to_string()
 }
 
+fn parent_basename(path: &str) -> Option<String> {
+    Path::new(path)
+        .parent()
+        .and_then(|value| value.file_name())
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn worktree_display_name(path: &str, main_checkout_name: Option<&str>) -> String {
+    let basename = path_basename(path);
+
+    match main_checkout_name {
+        Some(main_name) if basename == main_name => parent_basename(path).unwrap_or(basename),
+        _ => basename,
+    }
+}
+
 fn canonical_path(path: &str) -> String {
     fs::canonicalize(path)
         .ok()
@@ -52,6 +70,7 @@ pub fn get_worktrees(path: String) -> Result<Vec<GitWorktree>, String> {
     let current_path = canonical_path(&path);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut worktrees = Vec::new();
+    let mut main_checkout_name: Option<String> = None;
 
     for block in stdout
         .split("\n\n")
@@ -82,10 +101,14 @@ pub fn get_worktrees(path: String) -> Result<Vec<GitWorktree>, String> {
         };
 
         let is_main = worktrees.is_empty();
+        if is_main {
+            main_checkout_name = Some(path_basename(&worktree_path));
+        }
+
         let name = if is_main {
             "main".to_string()
         } else {
-            path_basename(&worktree_path)
+            worktree_display_name(&worktree_path, main_checkout_name.as_deref())
         };
 
         worktrees.push(GitWorktree {

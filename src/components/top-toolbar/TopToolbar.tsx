@@ -246,7 +246,7 @@ function getPathBasename(path: string) {
 
 function getWorktreeDisplayName(worktree: GitWorktree) {
   if (worktree.isMain) return "main worktree";
-  return getPathBasename(worktree.path) || worktree.name || "worktree";
+  return worktree.name || getPathBasename(worktree.path) || "worktree";
 }
 
 function getWorktreeTargetLabel(worktree: GitWorktree | null, repoPath?: string) {
