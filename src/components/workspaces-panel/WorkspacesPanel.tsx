@@ -10,9 +10,14 @@ import {
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
 } from "../../store/workspaceUi";
-import { GitWorktree } from "../../types/git";
+import type { GitWorktree } from "../../types/git";
 import { BranchTreeNode, groupNames } from "../../utils/branchTree";
 import { getFileName, getParentPath } from "../../utils/path";
+import {
+  buildDefaultWorktreeFolder,
+  getDefaultBranchFromName,
+  getDefaultNameFromRef,
+} from "../../utils/worktreeDefaults";
 import { ConfirmModal } from "../confirm-modal/ConfirmModal";
 import {
   IconArrowFork,
@@ -60,10 +65,6 @@ const EMPTY_CREATE_FORM: CreateFormState = {
 const WORKTREE_CREATE_MENU_ITEM_CLASS =
   "px-4 py-3 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
 
-function stripTrailingSlash(path: string) {
-  return path.replace(/\/+$/, "");
-}
-
 function normalizeSearch(value: string) {
   return value.trim().toLowerCase();
 }
@@ -75,26 +76,6 @@ function getWorktreeDisplayName(worktree: GitWorktree) {
 
 function getWorktreeTreeKey(worktree: GitWorktree) {
   return getWorktreeDisplayName(worktree);
-}
-
-function getDefaultNameFromRef(refName: string) {
-  const normalized = refName.replace(/^refs\/heads\//, "").replace(/^origin\//, "");
-  const parts = normalized.split("/").filter(Boolean);
-  const name = parts[parts.length - 1] || normalized || "worktree";
-  return name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "worktree";
-}
-
-function getDefaultBranchFromName(name: string) {
-  return name.replace(/\s+/g, "-").replace(/^\/+|\/+$/g, "") || "worktree";
-}
-
-function buildDefaultWorktreeFolder(mainWorktreePath: string, name: string) {
-  const cleanMainPath = stripTrailingSlash(mainWorktreePath);
-  const repoName = getFileName(cleanMainPath);
-  const parentPath = getParentPath(cleanMainPath);
-  const folderName = name.replace(/[^A-Za-z0-9._-]+/g, "-") || "worktree";
-
-  return `${parentPath}/${repoName}.worktrees/${folderName}`;
 }
 
 function getCreateBaseOptions(currentBranch: string | null | undefined) {

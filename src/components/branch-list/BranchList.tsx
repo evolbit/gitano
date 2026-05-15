@@ -23,6 +23,11 @@ import {
   groupBranches,
   isPriorityBranchName,
 } from "../../utils/branchTree";
+import type { GitWorktree } from "../../types/git";
+import {
+  buildDefaultWorktreeFolder,
+  generateRandomWorkbranchName,
+} from "../../utils/worktreeDefaults";
 
 const PRIORITY_BRANCH_COLOR = "text-lime-400";
 const DEFAULT_BRANCH_ICON_COLOR = "text-slate-300";
@@ -49,6 +54,8 @@ export function BranchList() {
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
+  const updateTab = useRepoStore((s) => s.updateTab);
+  const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
   const pendingGitAction = useGitActionsStore((s) => s.pendingAction);
   const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
   const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
@@ -78,6 +85,7 @@ export function BranchList() {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [showOther, setShowOther] = useState(false);
+  const [creatingWorktree, setCreatingWorktree] = useState(false);
   const [submenuLeft, setSubmenuLeft] = useState(true);
   const [submenuDirection, setSubmenuDirection] = useState<"down" | "up">(
     "down"
@@ -292,6 +300,75 @@ export function BranchList() {
     [pendingGitAction, repoPath, setGitActionNotice, setPendingGitAction],
   );
 
+  const createRandomWorktreeFromBranch = useCallback(
+    async (baseRef: string) => {
+      if (!repoPath || !activeTabId || creatingWorktree) return;
+
+      setCreatingWorktree(true);
+      try {
+        const [allBranches, worktrees] = await Promise.all([
+          core.invoke<string[]>("get_branches", { path: repoPath }),
+          core.invoke<GitWorktree[]>("get_worktrees", { path: repoPath }),
+        ]);
+        const mainWorktreePath =
+          worktrees.find((worktree) => worktree.isMain)?.path ??
+          worktrees[0]?.path ??
+          repoPath;
+        const existingNames = [
+          ...allBranches,
+          ...worktrees.map((worktree) => worktree.branch ?? ""),
+          ...worktrees.map((worktree) => worktree.name),
+        ];
+        const branch = generateRandomWorkbranchName(existingNames);
+        const worktreePath = buildDefaultWorktreeFolder(mainWorktreePath, branch);
+        const created = await core.invoke<GitWorktree>("git_create_worktree", {
+          path: repoPath,
+          worktreePath,
+          branch,
+          baseRef,
+        });
+
+        updateTab(activeTabId, {
+          repoPath: created.path,
+          selectedBranch: created.branch ?? branch,
+          selectedCommit: null,
+        });
+        addRecentRepo(created.path);
+        setSelectedRowBranch(created.branch ?? branch);
+        setGitActionNotice({
+          kind: "success",
+          title: "Created worktree",
+          details: `Created ${created.branch ?? branch} from ${baseRef} at ${created.path}.`,
+          expanded: false,
+        });
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+      } catch (worktreeError) {
+        const details =
+          worktreeError instanceof Error
+            ? worktreeError.message
+            : String(worktreeError || "Unknown error");
+        setGitActionNotice({
+          kind: "error",
+          title: "Create worktree failed",
+          details,
+          expanded: false,
+        });
+      } finally {
+        setCreatingWorktree(false);
+      }
+    },
+    [
+      activeTabId,
+      addRecentRepo,
+      creatingWorktree,
+      repoPath,
+      setGitActionNotice,
+      updateTab,
+    ],
+  );
+
   function renderTree(nodes: BranchTreeNode[], level = 0) {
     return (
       <ul className="m-0 w-full min-w-0 list-none p-0 select-none">
@@ -453,6 +530,14 @@ export function BranchList() {
     const localBranchActionClass = localBranchActionDisabledReason
       ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
       : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
+    const createWorktreeDisabledReason = !isBranchNode
+      ? "This action is only available for branches"
+      : creatingWorktree
+        ? "A worktree is already being created"
+        : null;
+    const createWorktreeActionClass = createWorktreeDisabledReason
+      ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+      : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
 
     // Helper to close both menus
     function closeMenus() {
@@ -605,11 +690,15 @@ export function BranchList() {
             Checkout <BranchName>{branchName}</BranchName>
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={createWorktreeActionClass}
+            title={createWorktreeDisabledReason ?? undefined}
             onClick={() => {
+              if (createWorktreeDisabledReason) return;
               closeMenus();
+              void createRandomWorktreeFromBranch(branchName);
             }}>
-            Create worktree from <BranchName>{branchName}</BranchName>
+            {creatingWorktree ? "Creating worktree..." : "Create worktree from"}{" "}
+            <BranchName>{branchName}</BranchName>
           </div>
           <div className="my-1 border-t border-zinc-700" />
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
