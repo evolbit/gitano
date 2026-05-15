@@ -144,16 +144,27 @@ const WorktreeDropdownItem: React.FC<{
   worktree: GitWorktree;
   onClick: () => void;
 }> = ({ worktree, onClick }) => (
-  <Menu.Item className={TOOLBAR_DROPDOWN_ITEM_CLASS} onClick={onClick}>
-    <div className="flex min-w-0 items-start gap-3">
+  <Menu.Item
+    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
+    styles={{
+      item: {
+        overflow: "hidden",
+      },
+      itemLabel: {
+        minWidth: 0,
+        overflow: "hidden",
+      },
+    }}
+    onClick={onClick}>
+    <div className="flex w-full min-w-0 items-start gap-3 overflow-hidden">
       <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-blue-300">
         <IconArrowFork size={15} />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="min-w-0 truncate text-sm font-medium text-zinc-100">
+      <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-zinc-100">
           {getWorktreeDisplayName(worktree)}
         </span>
-        <span className="min-w-0 truncate text-xs text-zinc-400">
+        <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-400">
           {worktree.branch ?? "Detached HEAD"} - {worktree.path}
         </span>
       </span>
@@ -230,12 +241,12 @@ function getPullStrategyLabel(strategy: PullStrategy) {
 }
 
 function getPathBasename(path: string) {
-  return path.split("/").filter(Boolean).pop() || path;
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
 function getWorktreeDisplayName(worktree: GitWorktree) {
   if (worktree.isMain) return "main worktree";
-  return worktree.name || getPathBasename(worktree.path);
+  return getPathBasename(worktree.path) || worktree.name || "worktree";
 }
 
 function getWorktreeTargetLabel(worktree: GitWorktree | null, repoPath?: string) {

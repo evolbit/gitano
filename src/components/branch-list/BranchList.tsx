@@ -29,6 +29,7 @@ import {
   buildDefaultWorktreeFolder,
   generateRandomWorkbranchName,
 } from "../../utils/worktreeDefaults";
+import { ConfirmModal } from "../confirm-modal/ConfirmModal";
 
 const PRIORITY_BRANCH_COLOR = "text-lime-400";
 const DEFAULT_BRANCH_ICON_COLOR = "text-slate-300";
@@ -76,7 +77,7 @@ function getBranchCreatePrefix(
 }
 
 function BranchName({ children }: { children: string }) {
-  return <span className="font-semibold text-zinc-100">{children}</span>;
+  return <span className="font-semibold">{children}</span>;
 }
 
 function BranchIcon({ name }: { name: string }) {
@@ -90,6 +91,15 @@ function BranchIcon({ name }: { name: string }) {
     </span>
   );
 }
+
+type BranchContextRequest = {
+  branchName: string;
+};
+
+type BranchOperationCommand =
+  | "git_branch_fast_forward_to_branch"
+  | "git_branch_merge_into"
+  | "git_branch_rebase_onto";
 
 export function BranchList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -118,6 +128,12 @@ export function BranchList() {
   const [selectedRowBranch, setSelectedRowBranch] = useState<string | null>(
     null,
   );
+  const [branchActionLoading, setBranchActionLoading] = useState(false);
+  const [renameRequest, setRenameRequest] =
+    useState<BranchContextRequest | null>(null);
+  const [renameBranchName, setRenameBranchName] = useState("");
+  const [deleteRequest, setDeleteRequest] =
+    useState<BranchContextRequest | null>(null);
   const [type, setType] = useState<"local" | "remote">("local");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -329,10 +345,58 @@ export function BranchList() {
     setGitActionNotice,
   ]);
 
+  const notifyError = useCallback(
+    (title: string, error: unknown) => {
+      const details =
+        error instanceof Error ? error.message : String(error || "Unknown error");
+      setGitActionNotice({
+        kind: "error",
+        title,
+        details,
+        expanded: false,
+      });
+    },
+    [setGitActionNotice],
+  );
+
+  const refreshBranchState = useCallback(
+    async (selectedRowAfter?: string | null) => {
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+
+      if (!repoPath || !activeTabId) {
+        return;
+      }
+
+      try {
+        const currentBranch = await core.invoke<string>("get_current_branch", {
+          path: repoPath,
+        });
+        const nextBranch =
+          currentBranch === "Detached HEAD" ? null : currentBranch;
+        setTabBranch(activeTabId, nextBranch);
+
+        if (selectedRowAfter !== undefined) {
+          setSelectedRowBranch(selectedRowAfter);
+        } else {
+          setSelectedRowBranch(nextBranch);
+        }
+      } catch {
+        if (selectedRowAfter !== undefined) {
+          setSelectedRowBranch(selectedRowAfter);
+        }
+      }
+    },
+    [activeTabId, repoPath, setTabBranch],
+  );
+
   const checkoutBranch = useCallback(
     async (branchName: string) => {
-      if (!repoPath || !activeTabId || pendingGitAction) return;
+      if (!repoPath || !activeTabId || pendingGitAction || branchActionLoading)
+        return;
 
+      setBranchActionLoading(true);
       try {
         await core.invoke("git_checkout_branch", {
           path: repoPath,
@@ -347,30 +411,176 @@ export function BranchList() {
           details: `Checked out ${branchName}.`,
           expanded: false,
         });
-        window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
-        window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
-        window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+        await refreshBranchState(branchName);
       } catch (checkoutError) {
-        const details =
-          checkoutError instanceof Error
-            ? checkoutError.message
-            : String(checkoutError || "Unknown error");
-        setGitActionNotice({
-          kind: "error",
-          title: "Checkout failed",
-          details,
-          expanded: false,
-        });
+        notifyError("Checkout failed", checkoutError);
+        await refreshBranchState();
+      } finally {
+        setBranchActionLoading(false);
       }
     },
     [
       activeTabId,
+      branchActionLoading,
+      notifyError,
       pendingGitAction,
+      refreshBranchState,
       repoPath,
       setGitActionNotice,
       setTabBranch,
     ],
   );
+
+  const runBranchOperation = useCallback(
+    async (
+      command: BranchOperationCommand,
+      targetBranch: string,
+      successTitle: string,
+      successDetails: string,
+      failureTitle: string,
+      selectedRowAfter: string | null,
+    ) => {
+      if (!repoPath || !selectedBranch || pendingGitAction || branchActionLoading)
+        return;
+
+      setBranchActionLoading(true);
+      try {
+        await core.invoke(command, {
+          path: repoPath,
+          targetBranch,
+          sourceBranch: selectedBranch,
+        });
+        setGitActionNotice({
+          kind: "success",
+          title: successTitle,
+          details: successDetails,
+          expanded: false,
+        });
+        await refreshBranchState(selectedRowAfter);
+      } catch (operationError) {
+        notifyError(failureTitle, operationError);
+        await refreshBranchState();
+      } finally {
+        setBranchActionLoading(false);
+      }
+    },
+    [
+      branchActionLoading,
+      notifyError,
+      pendingGitAction,
+      refreshBranchState,
+      repoPath,
+      selectedBranch,
+      setGitActionNotice,
+    ],
+  );
+
+  const copyText = useCallback(
+    async (text: string, successTitle: string, successDetails: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setGitActionNotice({
+          kind: "success",
+          title: successTitle,
+          details: successDetails,
+          expanded: false,
+        });
+      } catch (copyError) {
+        notifyError("Copy failed", copyError);
+      }
+    },
+    [notifyError, setGitActionNotice],
+  );
+
+  const copyBranchTipSha = useCallback(
+    async (branchName: string) => {
+      if (!repoPath) return;
+
+      try {
+        const sha = await core.invoke<string>("git_branch_tip_sha", {
+          path: repoPath,
+          branchName,
+        });
+        await copyText(
+          sha,
+          "Copied commit SHA",
+          `Copied ${branchName} tip ${sha.slice(0, 12)}.`,
+        );
+      } catch (copyError) {
+        notifyError("Copy commit SHA failed", copyError);
+      }
+    },
+    [copyText, notifyError, repoPath],
+  );
+
+  const renameBranch = useCallback(async () => {
+    if (!repoPath || !renameRequest || branchActionLoading) return;
+
+    const nextName = renameBranchName.trim();
+    if (!nextName || nextName === renameRequest.branchName) return;
+
+    setBranchActionLoading(true);
+    try {
+      await core.invoke("git_rename_branch", {
+        path: repoPath,
+        oldBranchName: renameRequest.branchName,
+        newBranchName: nextName,
+      });
+      setGitActionNotice({
+        kind: "success",
+        title: "Renamed branch",
+        details: `Renamed ${renameRequest.branchName} to ${nextName}.`,
+        expanded: false,
+      });
+      setRenameRequest(null);
+      await refreshBranchState(nextName);
+    } catch (renameError) {
+      notifyError("Rename branch failed", renameError);
+      await refreshBranchState();
+    } finally {
+      setBranchActionLoading(false);
+    }
+  }, [
+    branchActionLoading,
+    notifyError,
+    refreshBranchState,
+    renameBranchName,
+    renameRequest,
+    repoPath,
+    setGitActionNotice,
+  ]);
+
+  const deleteBranch = useCallback(async () => {
+    if (!repoPath || !deleteRequest || branchActionLoading) return;
+
+    setBranchActionLoading(true);
+    try {
+      await core.invoke("git_delete_branch", {
+        path: repoPath,
+        branchName: deleteRequest.branchName,
+      });
+      setGitActionNotice({
+        kind: "success",
+        title: "Deleted branch",
+        details: `Deleted ${deleteRequest.branchName}.`,
+        expanded: false,
+      });
+      setDeleteRequest(null);
+      await refreshBranchState(undefined);
+    } catch (deleteError) {
+      notifyError("Delete branch failed", deleteError);
+      await refreshBranchState();
+    } finally {
+      setBranchActionLoading(false);
+    }
+  }, [
+    branchActionLoading,
+    deleteRequest,
+    notifyError,
+    refreshBranchState,
+    repoPath,
+    setGitActionNotice,
+  ]);
 
   const runRemoteBranchAction = useCallback(
     async (
@@ -638,6 +848,18 @@ export function BranchList() {
     const remoteActionClass = remoteActionDisabledReason
       ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
       : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
+    const branchOperationDisabledReason = !isBranchNode
+      ? "Branch operations are only available for branches"
+      : type === "remote"
+        ? "Branch operations are only available for local branches"
+        : !selectedBranch
+          ? "Branch operations require a current local branch"
+          : selectedBranch === branchName
+            ? "Source and target branch are the same"
+          : null;
+    const branchOperationClass = branchOperationDisabledReason
+      ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+      : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
     const localBranchActionDisabledReason = !isBranchNode
       ? "This action is only available for branches"
       : type === "remote"
@@ -768,25 +990,55 @@ export function BranchList() {
             Branch operations
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={branchOperationClass}
+            title={branchOperationDisabledReason ?? undefined}
             onClick={() => {
+              if (branchOperationDisabledReason || !selectedBranch) return;
               closeMenus();
+              void runBranchOperation(
+                "git_branch_fast_forward_to_branch",
+                branchName,
+                "Fast-forward succeeded",
+                `Fast-forwarded ${branchName} to ${selectedBranch}.`,
+                "Fast-forward failed",
+                branchName,
+              );
             }}>
             Fast-forward <BranchName>{branchName}</BranchName> to{" "}
             <BranchName>{currentBranchLabel}</BranchName>
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={branchOperationClass}
+            title={branchOperationDisabledReason ?? undefined}
             onClick={() => {
+              if (branchOperationDisabledReason || !selectedBranch) return;
               closeMenus();
+              void runBranchOperation(
+                "git_branch_merge_into",
+                branchName,
+                "Merge succeeded",
+                `Merged ${selectedBranch} into ${branchName}.`,
+                "Merge failed",
+                branchName,
+              );
             }}>
             Merge <BranchName>{currentBranchLabel}</BranchName> into{" "}
             <BranchName>{branchName}</BranchName>
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={branchOperationClass}
+            title={branchOperationDisabledReason ?? undefined}
             onClick={() => {
+              if (branchOperationDisabledReason || !selectedBranch) return;
               closeMenus();
+              void runBranchOperation(
+                "git_branch_rebase_onto",
+                branchName,
+                "Rebase succeeded",
+                `Rebased ${branchName} onto ${selectedBranch}.`,
+                "Rebase failed",
+                branchName,
+              );
             }}>
             Rebase <BranchName>{branchName}</BranchName> onto{" "}
             <BranchName>{currentBranchLabel}</BranchName>
@@ -889,6 +1141,11 @@ export function BranchList() {
                   className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
                   onClick={() => {
                     closeMenus();
+                    void copyText(
+                      branchName,
+                      "Copied branch name",
+                      `Copied ${branchName}.`,
+                    );
                   }}>
                   Copy branch name
                 </div>
@@ -896,36 +1153,9 @@ export function BranchList() {
                   className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
                   onClick={() => {
                     closeMenus();
+                    void copyBranchTipSha(branchName);
                   }}>
                   Copy commit sha
-                </div>
-                <div
-                  className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
-                  onClick={() => {
-                    closeMenus();
-                  }}>
-                  Hide
-                </div>
-                <div
-                  className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
-                  onClick={() => {
-                    closeMenus();
-                  }}>
-                  Solo
-                </div>
-                <div
-                  className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
-                  onClick={() => {
-                    closeMenus();
-                  }}>
-                  Create tag here
-                </div>
-                <div
-                  className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
-                  onClick={() => {
-                    closeMenus();
-                  }}>
-                  Create annotated tag here
                 </div>
               </div>
             )}
@@ -935,16 +1165,27 @@ export function BranchList() {
             Danger zone
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={localBranchActionClass}
+            title={localBranchActionDisabledReason ?? undefined}
             onClick={() => {
+              if (localBranchActionDisabledReason) return;
               closeMenus();
+              setRenameBranchName(branchName);
+              setRenameRequest({ branchName });
             }}>
             Rename <BranchName>{branchName}</BranchName>
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
+            className={
+              localBranchActionDisabledReason
+                ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+                : "px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
+            }
+            title={localBranchActionDisabledReason ?? undefined}
             onClick={() => {
+              if (localBranchActionDisabledReason) return;
               closeMenus();
+              setDeleteRequest({ branchName });
             }}>
             Delete <BranchName>{branchName}</BranchName>
           </div>
@@ -957,153 +1198,229 @@ export function BranchList() {
   if (!repoPath) return null;
 
   return (
-    <div className="h-full flex flex-col relative min-w-0 overflow-hidden bg-background">
-      <div className="border-b border-border bg-background-emphasis p-2">
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <input
-              type="text"
-              className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-              placeholder="Search branches..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="flex items-center overflow-hidden rounded border border-border bg-background">
+    <>
+      <div className="h-full flex flex-col relative min-w-0 overflow-hidden bg-background">
+        <div className="border-b border-border bg-background-emphasis p-2">
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <input
+                type="text"
+                className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                placeholder="Search branches..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="flex items-center overflow-hidden rounded border border-border bg-background">
+              <button
+                type="button"
+                className={`flex h-8 w-8 items-center justify-center transition-colors ${
+                  type === "local"
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                }`}
+                onClick={() => setType("local")}
+                title="Local branches"
+                aria-label="Local branches">
+                <IconDeviceFloppy size={15} />
+              </button>
+              <button
+                type="button"
+                className={`flex h-8 w-8 items-center justify-center transition-colors ${
+                  type === "remote"
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                }`}
+                onClick={() => setType("remote")}
+                title="Remote branches"
+                aria-label="Remote branches">
+                <IconCloud size={15} />
+              </button>
+            </div>
             <button
               type="button"
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${
-                type === "local"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-              }`}
-              onClick={() => setType("local")}
-              title="Local branches"
-              aria-label="Local branches"
-            >
-              <IconDeviceFloppy size={15} />
-            </button>
-            <button
-              type="button"
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${
-                type === "remote"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-              }`}
-              onClick={() => setType("remote")}
-              title="Remote branches"
-              aria-label="Remote branches"
-            >
-              <IconCloud size={15} />
+              className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() => beginCreateBranch(selectedBranch || "HEAD")}
+              title="Add branch"
+              aria-label="Add branch">
+              <IconPlus size={16} />
             </button>
           </div>
-          <button
-            type="button"
-            className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-            onClick={() => beginCreateBranch(selectedBranch || "HEAD")}
-            title="Add branch"
-            aria-label="Add branch"
-          >
-            <IconPlus size={16} />
-          </button>
         </div>
-      </div>
-      {loading && <div className="text-sm text-zinc-400">Loading...</div>}
-      {error && <div className="text-sm text-red-400">{error}</div>}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {!loading && !error && grouped.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-muted-foreground">No branches found</div>
-        ) : null}
-        {renderTree(grouped)}
-        {renderContextMenu()}
-      </div>
-      {createForm
-        ? (() => {
-            const branchName = buildBranchName(createForm.prefix, createForm.name);
+        {loading && <div className="text-sm text-zinc-400">Loading...</div>}
+        {error && <div className="text-sm text-red-400">{error}</div>}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {!loading && !error && grouped.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground">No branches found</div>
+          ) : null}
+          {renderTree(grouped)}
+          {renderContextMenu()}
+        </div>
+        {createForm
+          ? (() => {
+              const branchName = buildBranchName(
+                createForm.prefix,
+                createForm.name,
+              );
 
-            return (
-              <div className="border-t border-border bg-background-emphasis p-3">
-                <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
-                  <IconGitBranch size={15} className="text-blue-300" />
-                  <span className="min-w-0 truncate">
-                    New branch based on{" "}
-                    <span className="font-mono text-blue-200">
-                      {createForm.baseRef}
-                    </span>
-                  </span>
-                </div>
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Branch name
-                  <div className="flex min-w-0">
-                    {createForm.prefix ? (
-                      <span className="flex h-8 max-w-[45%] items-center rounded-l border border-r-0 border-border bg-background px-2 font-mono text-sm text-zinc-400">
-                        <span className="truncate">{createForm.prefix}</span>
+              return (
+                <div className="border-t border-border bg-background-emphasis p-3">
+                  <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
+                    <IconGitBranch size={15} className="text-blue-300" />
+                    <span className="min-w-0 truncate">
+                      New branch based on{" "}
+                      <span className="font-mono text-blue-200">
+                        {createForm.baseRef}
                       </span>
-                    ) : null}
-                    <input
-                      type="text"
-                      autoFocus
-                      className={`h-8 min-w-0 flex-1 border border-border bg-background px-2 text-sm text-foreground focus:outline-none ${
-                        createForm.prefix ? "rounded-r" : "rounded"
-                      }`}
-                      value={createForm.name}
-                      onChange={(event) =>
-                        setCreateForm((current) =>
-                          current
-                            ? { ...current, name: event.target.value }
-                            : current,
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void createBranch();
+                    </span>
+                  </div>
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    Branch name
+                    <div className="flex min-w-0">
+                      {createForm.prefix ? (
+                        <span className="flex h-8 max-w-[45%] items-center rounded-l border border-r-0 border-border bg-background px-2 font-mono text-sm text-zinc-400">
+                          <span className="truncate">{createForm.prefix}</span>
+                        </span>
+                      ) : null}
+                      <input
+                        type="text"
+                        autoFocus
+                        className={`h-8 min-w-0 flex-1 border border-border bg-background px-2 text-sm text-foreground focus:outline-none ${
+                          createForm.prefix ? "rounded-r" : "rounded"
+                        }`}
+                        value={createForm.name}
+                        onChange={(event) =>
+                          setCreateForm((current) =>
+                            current
+                              ? { ...current, name: event.target.value }
+                              : current,
+                          )
                         }
-                        if (event.key === "Escape") {
-                          setCreateForm(null);
-                          setCreateBranchError(null);
-                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void createBranch();
+                          }
+                          if (event.key === "Escape") {
+                            setCreateForm(null);
+                            setCreateBranchError(null);
+                          }
+                        }}
+                      />
+                    </div>
+                  </label>
+                  {branchName ? (
+                    <div className="mt-2 truncate text-xs text-muted-foreground">
+                      Full branch:{" "}
+                      <span className="font-mono text-zinc-200">{branchName}</span>
+                    </div>
+                  ) : null}
+                  {createBranchError ? (
+                    <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
+                      {createBranchError}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="h-8 rounded border border-border bg-background px-3 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+                      onClick={() => {
+                        setCreateForm(null);
+                        setCreateBranchError(null);
                       }}
-                    />
+                      disabled={creatingBranch}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="h-8 rounded border border-blue-500/50 bg-blue-500/20 px-3 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => {
+                        void createBranch();
+                      }}
+                      disabled={creatingBranch || !branchName}>
+                      {creatingBranch ? "Creating..." : "Create Branch"}
+                    </button>
                   </div>
-                </label>
-                {branchName ? (
-                  <div className="mt-2 truncate text-xs text-muted-foreground">
-                    Full branch:{" "}
-                    <span className="font-mono text-zinc-200">{branchName}</span>
-                  </div>
-                ) : null}
-                {createBranchError ? (
-                  <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
-                    {createBranchError}
-                  </div>
-                ) : null}
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="h-8 rounded border border-border bg-background px-3 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
-                    onClick={() => {
-                      setCreateForm(null);
-                      setCreateBranchError(null);
-                    }}
-                    disabled={creatingBranch}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="h-8 rounded border border-blue-500/50 bg-blue-500/20 px-3 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => {
-                      void createBranch();
-                    }}
-                    disabled={creatingBranch || !branchName}>
-                    {creatingBranch ? "Creating..." : "Create Branch"}
-                  </button>
                 </div>
-              </div>
-            );
-          })()
-        : null}
-    </div>
+              );
+            })()
+          : null}
+      </div>
+
+      <ConfirmModal
+        open={renameRequest !== null}
+        title="Rename Branch"
+        description={
+          renameRequest ? (
+            <span>
+              Rename <BranchName>{renameRequest.branchName}</BranchName>
+            </span>
+          ) : null
+        }
+        details={
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-zinc-400">
+              New branch name
+            </span>
+            <input
+              value={renameBranchName}
+              onChange={(event) => setRenameBranchName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void renameBranch();
+                }
+              }}
+              className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
+              autoFocus
+            />
+          </label>
+        }
+        confirmLabel="Rename Branch"
+        loading={branchActionLoading}
+        confirmDisabled={
+          !renameBranchName.trim() ||
+          renameBranchName.trim() === renameRequest?.branchName
+        }
+        onCancel={() => {
+          if (branchActionLoading) return;
+          setRenameRequest(null);
+        }}
+        onConfirm={() => {
+          void renameBranch();
+        }}
+      />
+
+      <ConfirmModal
+        open={deleteRequest !== null}
+        title="Delete Branch"
+        description={
+          deleteRequest ? (
+            <span>
+              Delete <BranchName>{deleteRequest.branchName}</BranchName>?
+            </span>
+          ) : null
+        }
+        details={
+          deleteRequest ? (
+            <span>
+              This runs <span className="font-mono">git branch -d</span>. Git
+              will refuse if the branch is checked out or not fully merged.
+            </span>
+          ) : null
+        }
+        confirmLabel="Delete Branch"
+        variant="danger"
+        loading={branchActionLoading}
+        onCancel={() => {
+          if (branchActionLoading) return;
+          setDeleteRequest(null);
+        }}
+        onConfirm={() => {
+          void deleteBranch();
+        }}
+      />
+    </>
   );
 }
