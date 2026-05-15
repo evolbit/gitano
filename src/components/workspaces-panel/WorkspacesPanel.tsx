@@ -304,6 +304,9 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     (worktree: GitWorktree) => {
       if (!activeTabId) return;
 
+      setCreateError(null);
+      setForm(EMPTY_CREATE_FORM);
+      setWorktreeCreateBaseRef(repoPath, null);
       updateTab(activeTabId, {
         repoPath: worktree.path,
         selectedBranch: worktree.branch,
@@ -311,7 +314,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
       });
       addRecentRepo(worktree.path);
     },
-    [activeTabId, addRecentRepo, updateTab],
+    [activeTabId, addRecentRepo, repoPath, setWorktreeCreateBaseRef, updateTab],
   );
 
   const openContextMenu = useCallback((worktree: GitWorktree, x: number, y: number) => {
@@ -458,7 +461,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
           return (
             <li
               key={worktree.path}
-              className={`group flex w-full min-w-0 cursor-pointer items-start gap-1 px-3 py-2 text-sm transition-colors ${
+              className={`group flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-2 text-sm transition-colors ${
                 worktree.isCurrent
                   ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
                   : "text-foreground hover:bg-background-emphasis"
@@ -471,11 +474,13 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
               onMouseEnter={() => setHoveredRowKey(worktree.path)}
               onMouseLeave={() => setHoveredRowKey(null)}
               onClick={() => selectWorktree(worktree)}>
-              <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center">
-                <IconArrowFork
-                  size={17}
-                  className={worktree.isCurrent ? "text-blue-300" : "text-slate-300"}
-                />
+              <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center">
+                {worktree.isMain ? null : (
+                  <IconArrowFork
+                    size={17}
+                    className={worktree.isCurrent ? "text-blue-300" : "text-slate-300"}
+                  />
+                )}
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="min-w-0 truncate font-medium">
@@ -486,7 +491,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                 </span>
               </span>
               <button
-                className={`ml-auto rounded p-1 transition-colors hover:bg-zinc-700 ${
+                className={`ml-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
                   isRowActionsVisible(worktree.path) ? "visible" : "invisible"
                 }`}
                 title="More actions"
