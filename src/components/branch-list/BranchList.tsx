@@ -27,6 +27,10 @@ import {
 const PRIORITY_BRANCH_COLOR = "text-lime-400";
 const DEFAULT_BRANCH_ICON_COLOR = "text-slate-300";
 
+function BranchName({ children }: { children: string }) {
+  return <span className="font-semibold text-zinc-100">{children}</span>;
+}
+
 function BranchIcon({ name }: { name: string }) {
   const priority = isPriorityBranchName(name);
   return (
@@ -61,6 +65,9 @@ export function BranchList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedRowBranch, setSelectedRowBranch] = useState<string | null>(
+    null,
+  );
   const [type, setType] = useState<"local" | "remote">("local");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -138,6 +145,10 @@ export function BranchList() {
   }, [refreshBranches]);
 
   useEffect(() => {
+    setSelectedRowBranch(selectedBranch ?? null);
+  }, [repoPath, selectedBranch]);
+
+  useEffect(() => {
     const handleRepoRefsRefresh = () => {
       void refreshBranches();
     };
@@ -192,6 +203,49 @@ export function BranchList() {
     (rowKey: string) =>
       hoveredRowKey === rowKey || contextMenu?.node?.full === rowKey,
     [hoveredRowKey, contextMenu],
+  );
+
+  const checkoutBranch = useCallback(
+    async (branchName: string) => {
+      if (!repoPath || !activeTabId || pendingGitAction) return;
+
+      try {
+        await core.invoke("git_checkout_branch", {
+          path: repoPath,
+          branchName,
+        });
+
+        setTabBranch(activeTabId, branchName);
+        setSelectedRowBranch(branchName);
+        setGitActionNotice({
+          kind: "success",
+          title: "Checked out branch",
+          details: `Checked out ${branchName}.`,
+          expanded: false,
+        });
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+      } catch (checkoutError) {
+        const details =
+          checkoutError instanceof Error
+            ? checkoutError.message
+            : String(checkoutError || "Unknown error");
+        setGitActionNotice({
+          kind: "error",
+          title: "Checkout failed",
+          details,
+          expanded: false,
+        });
+      }
+    },
+    [
+      activeTabId,
+      pendingGitAction,
+      repoPath,
+      setGitActionNotice,
+      setTabBranch,
+    ],
   );
 
   const runRemoteBranchAction = useCallback(
@@ -318,7 +372,8 @@ export function BranchList() {
               </li>
             );
           } else {
-            const selected = selectedBranch === node.full;
+            const selected =
+              (selectedRowBranch ?? selectedBranch) === node.full;
             return (
               <li
                 key={node.full}
@@ -335,7 +390,11 @@ export function BranchList() {
                 onMouseEnter={() => setHoveredRowKey(node.full)}
                 onMouseLeave={() => setHoveredRowKey(null)}
                 onClick={() => {
-                  if (activeTabId) setTabBranch(activeTabId, node.full);
+                  setSelectedRowBranch(node.full);
+                }}
+                onDoubleClick={() => {
+                  if (type !== "local") return;
+                  void checkoutBranch(node.full);
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -376,6 +435,7 @@ export function BranchList() {
     if (!contextMenu || !menuPos) return null;
     const { node } = contextMenu;
     const branchName = node.full || node.name;
+    const currentBranchLabel = selectedBranch || "current branch";
     const isBranchNode = node.type !== "group";
     const remoteActionDisabledReason = !isBranchNode
       ? "Remote actions are only available for branches"
@@ -383,6 +443,14 @@ export function BranchList() {
         ? "Remote actions are only available for local branches"
         : null;
     const remoteActionClass = remoteActionDisabledReason
+      ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+      : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
+    const localBranchActionDisabledReason = !isBranchNode
+      ? "This action is only available for branches"
+      : type === "remote"
+        ? "Checkout is only available for local branches"
+        : null;
+    const localBranchActionClass = localBranchActionDisabledReason
       ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
       : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
 
@@ -503,39 +571,45 @@ export function BranchList() {
             onClick={() => {
               closeMenus();
             }}>
-            Fast-forward {branchName} to ...
+            Fast-forward <BranchName>{branchName}</BranchName> to{" "}
+            <BranchName>{currentBranchLabel}</BranchName>
           </div>
           <div
             className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
             onClick={() => {
               closeMenus();
             }}>
-            Merge ... into {branchName}
+            Merge <BranchName>{currentBranchLabel}</BranchName> into{" "}
+            <BranchName>{branchName}</BranchName>
           </div>
           <div
             className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
             onClick={() => {
               closeMenus();
             }}>
-            Rebase ... onto {branchName}
+            Rebase <BranchName>{branchName}</BranchName> onto{" "}
+            <BranchName>{currentBranchLabel}</BranchName>
           </div>
           <div className="my-1 border-t border-zinc-700" />
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
             Worktree
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={localBranchActionClass}
+            title={localBranchActionDisabledReason ?? undefined}
             onClick={() => {
+              if (localBranchActionDisabledReason) return;
               closeMenus();
+              void checkoutBranch(branchName);
             }}>
-            Checkout {branchName}
+            Checkout <BranchName>{branchName}</BranchName>
           </div>
           <div
             className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
             onClick={() => {
               closeMenus();
             }}>
-            Create worktree from {branchName}
+            Create worktree from <BranchName>{branchName}</BranchName>
           </div>
           <div className="my-1 border-t border-zinc-700" />
           <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
@@ -657,14 +731,14 @@ export function BranchList() {
             onClick={() => {
               closeMenus();
             }}>
-            Rename {branchName}
+            Rename <BranchName>{branchName}</BranchName>
           </div>
           <div
             className="px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
             onClick={() => {
               closeMenus();
             }}>
-            Delete {branchName}
+            Delete <BranchName>{branchName}</BranchName>
           </div>
         </div>
       </div>,

@@ -809,6 +809,18 @@ pub async fn git_branch_set_upstream(path: String, branch_name: String) -> Resul
 }
 
 #[tauri::command]
+pub async fn git_checkout_branch(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch_name = validate_local_branch_name(&branch_name)?;
+        ensure_local_branch(&path, branch_name)
+            .map_err(|_| format!("Checkout requires a local branch: {}", branch_name))?;
+        run_git_status(&path, &["checkout", branch_name], "git checkout")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let branch_name = validate_local_branch_name(&branch_name)?;

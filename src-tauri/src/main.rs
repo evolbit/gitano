@@ -38,6 +38,7 @@ fn main() {
             git::git_fetch,
             git::git_pull,
             git::git_push,
+            git::git_checkout_branch,
             git::git_branch_pull_fast_forward,
             git::git_branch_push,
             git::git_branch_set_upstream,
