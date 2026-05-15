@@ -12,6 +12,7 @@ import {
 import { GitWorktree } from "../../types/git";
 import { BranchTreeNode, groupNames } from "../../utils/branchTree";
 import { getFileName, getParentPath } from "../../utils/path";
+import { ConfirmModal } from "../confirm-modal/ConfirmModal";
 import {
   IconArrowFork,
   IconChevronDown,
@@ -143,6 +144,8 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<WorktreeContextMenu | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GitWorktree | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const currentBranch =
@@ -334,14 +337,9 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
 
   const removeWorktree = useCallback(
     async (worktree: GitWorktree) => {
-      if (worktree.isMain || worktree.isCurrent) return;
+      if (worktree.isMain || worktree.isCurrent || deleting) return;
 
-      const confirmed = window.confirm(
-        `Delete worktree "${getWorktreeDisplayName(worktree)}"?\n\nThis removes ${worktree.path}. Git will refuse if it has uncommitted changes.`,
-      );
-
-      if (!confirmed) return;
-
+      setDeleting(true);
       setError(null);
       try {
         await core.invoke("git_remove_worktree", {
@@ -353,9 +351,12 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
       } catch (worktreeError) {
         setError(String(worktreeError));
+      } finally {
+        setDeleting(false);
+        setDeleteTarget(null);
       }
     },
-    [refreshWorktrees, removeRepo, repoPath],
+    [deleting, refreshWorktrees, removeRepo, repoPath],
   );
 
   const updateName = (nextName: string) => {
@@ -546,7 +547,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
             canDelete
               ? () => {
                   closeContextMenu();
-                  void removeWorktree(worktree);
+                  setDeleteTarget(worktree);
                 }
               : undefined
           }>
@@ -704,6 +705,40 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
           </div>
         </div>
       ) : null}
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title="Delete Worktree"
+        description={
+          <>
+            Delete worktree{" "}
+            <span className="font-semibold text-zinc-100">
+              {deleteTarget ? getWorktreeDisplayName(deleteTarget) : ""}
+            </span>
+            ?
+          </>
+        }
+        details={
+          deleteTarget ? (
+            <>
+              This removes{" "}
+              <span className="font-mono text-zinc-300">{deleteTarget.path}</span>.
+              Git will refuse if it has uncommitted changes.
+            </>
+          ) : null
+        }
+        variant="danger"
+        confirmLabel="Delete Worktree"
+        cancelLabel="Cancel"
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          void removeWorktree(deleteTarget);
+        }}
+      />
     </div>
   );
 }
