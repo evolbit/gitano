@@ -43,6 +43,11 @@ type WorktreeContextMenu = {
   worktree: GitWorktree;
 };
 
+type WorktreeDeleteRequest = {
+  worktree: GitWorktree;
+  force: boolean;
+};
+
 const EMPTY_CREATE_FORM: CreateFormState = {
   baseRef: null,
   branch: "",
@@ -146,7 +151,8 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<WorktreeContextMenu | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<GitWorktree | null>(null);
+  const [deleteRequest, setDeleteRequest] =
+    useState<WorktreeDeleteRequest | null>(null);
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -338,7 +344,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   );
 
   const removeWorktree = useCallback(
-    async (worktree: GitWorktree) => {
+    async (worktree: GitWorktree, force: boolean) => {
       if (worktree.isMain || worktree.isCurrent || deleting) return;
 
       setDeleting(true);
@@ -347,10 +353,19 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         await core.invoke("git_remove_worktree", {
           path: repoPath,
           worktreePath: worktree.path,
+          force,
         });
         removeRepo(worktree.path);
         await refreshWorktrees();
         window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+        setGitActionNotice({
+          kind: "success",
+          title: force
+            ? "git worktree remove --force succeeded"
+            : "git worktree remove succeeded",
+          details: `Deleted worktree ${getWorktreeDisplayName(worktree)} at ${worktree.path}.`,
+          expanded: false,
+        });
       } catch (worktreeError) {
         const details =
           worktreeError instanceof Error
@@ -358,13 +373,15 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
             : String(worktreeError || "Unknown error");
         setGitActionNotice({
           kind: "error",
-          title: "git worktree remove failed",
+          title: force
+            ? "git worktree remove --force failed"
+            : "git worktree remove failed",
           details,
           expanded: false,
         });
       } finally {
         setDeleting(false);
-        setDeleteTarget(null);
+        setDeleteRequest(null);
       }
     },
     [deleting, refreshWorktrees, removeRepo, repoPath, setGitActionNotice],
@@ -531,6 +548,9 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     const actionClass = "px-4 py-2 hover:bg-zinc-700 cursor-pointer whitespace-nowrap";
     const disabledActionClass =
       "px-4 py-2 text-zinc-500 cursor-not-allowed whitespace-nowrap";
+    const disabledReason = worktree.isMain
+      ? "The main worktree cannot be deleted"
+      : "Switch to another worktree before deleting this one";
 
     return ReactDOM.createPortal(
       <div
@@ -547,22 +567,33 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         </div>
         <div
           className={canDelete ? `${actionClass} text-red-400` : disabledActionClass}
-          title={
-            canDelete
-              ? undefined
-              : worktree.isMain
-                ? "The main worktree cannot be deleted"
-                : "Switch to another worktree before deleting this one"
-          }
+          title={canDelete ? undefined : disabledReason}
           onClick={
             canDelete
               ? () => {
                   closeContextMenu();
-                  setDeleteTarget(worktree);
+                  setDeleteRequest({ worktree, force: false });
                 }
               : undefined
           }>
           Delete {getWorktreeDisplayName(worktree)}
+        </div>
+        <div
+          className={
+            canDelete
+              ? `${actionClass} text-red-400`
+              : disabledActionClass
+          }
+          title={canDelete ? undefined : disabledReason}
+          onClick={
+            canDelete
+              ? () => {
+                  closeContextMenu();
+                  setDeleteRequest({ worktree, force: true });
+                }
+              : undefined
+          }>
+          Delete {getWorktreeDisplayName(worktree)} (forced)
         </div>
       </div>,
       document.body,
@@ -718,36 +749,48 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
       ) : null}
 
       <ConfirmModal
-        open={deleteTarget !== null}
+        open={deleteRequest !== null}
         title="Delete Worktree"
         description={
           <>
             Delete worktree{" "}
             <span className="font-semibold text-zinc-100">
-              {deleteTarget ? getWorktreeDisplayName(deleteTarget) : ""}
+              {deleteRequest ? getWorktreeDisplayName(deleteRequest.worktree) : ""}
             </span>
+            {deleteRequest?.force ? " (forced)" : ""}
             ?
           </>
         }
         details={
-          deleteTarget ? (
+          deleteRequest ? (
             <>
-              This removes{" "}
-              <span className="font-mono text-zinc-300">{deleteTarget.path}</span>.
-              Git will refuse if it has uncommitted changes.
+              This runs{" "}
+              <span className="font-mono text-zinc-300">
+                git worktree remove{deleteRequest.force ? " --force" : ""}
+              </span>{" "}
+              for{" "}
+              <span className="font-mono text-zinc-300">
+                {deleteRequest.worktree.path}
+              </span>
+              .{" "}
+              {deleteRequest.force
+                ? "Uncommitted changes in that folder can be lost."
+                : "Git will refuse if it has uncommitted changes."}
             </>
           ) : null
         }
         variant="danger"
-        confirmLabel="Delete Worktree"
+        confirmLabel={
+          deleteRequest?.force ? "Delete Worktree (forced)" : "Delete Worktree"
+        }
         cancelLabel="Cancel"
         loading={deleting}
         onCancel={() => {
-          if (!deleting) setDeleteTarget(null);
+          if (!deleting) setDeleteRequest(null);
         }}
         onConfirm={() => {
-          if (!deleteTarget) return;
-          void removeWorktree(deleteTarget);
+          if (!deleteRequest) return;
+          void removeWorktree(deleteRequest.worktree, deleteRequest.force);
         }}
       />
     </div>

@@ -53,7 +53,10 @@ pub fn get_worktrees(path: String) -> Result<Vec<GitWorktree>, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut worktrees = Vec::new();
 
-    for block in stdout.split("\n\n").filter(|block| !block.trim().is_empty()) {
+    for block in stdout
+        .split("\n\n")
+        .filter(|block| !block.trim().is_empty())
+    {
         let mut worktree_path: Option<String> = None;
         let mut head: Option<String> = None;
         let mut branch: Option<String> = None;
@@ -156,8 +159,13 @@ pub fn git_create_worktree(
 }
 
 #[tauri::command]
-pub fn git_remove_worktree(path: String, worktree_path: String) -> Result<(), String> {
+pub fn git_remove_worktree(
+    path: String,
+    worktree_path: String,
+    force: Option<bool>,
+) -> Result<(), String> {
     let worktree_path = worktree_path.trim();
+    let force = force.unwrap_or(false);
 
     if worktree_path.is_empty() {
         return Err("Worktree path is required.".to_string());
@@ -179,11 +187,14 @@ pub fn git_remove_worktree(path: String, worktree_path: String) -> Result<(), St
         return Err("The active worktree cannot be removed.".to_string());
     }
 
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .arg("worktree")
-        .arg("remove")
+    let mut command = Command::new("git");
+    command.arg("-C").arg(&path).arg("worktree").arg("remove");
+
+    if force {
+        command.arg("--force");
+    }
+
+    let output = command
         .arg(worktree_path)
         .output()
         .map_err(|e| e.to_string())?;
