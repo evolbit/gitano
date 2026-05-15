@@ -2,6 +2,7 @@ import { core } from "@tauri-apps/api";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { APP_EVENTS } from "../../constants/events";
+import { useGitActionsStore } from "../../store/gitActions";
 import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
@@ -44,6 +45,9 @@ export function BranchList() {
   const repoPath = tab?.repoPath;
   const selectedBranch = tab?.selectedBranch;
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
+  const pendingGitAction = useGitActionsStore((s) => s.pendingAction);
+  const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
+  const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
   const branchTreeExpanded = useWorkspaceUiStore((s) =>
     repoPath
       ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
@@ -190,6 +194,50 @@ export function BranchList() {
     [hoveredRowKey, contextMenu],
   );
 
+  const runRemoteBranchAction = useCallback(
+    async (
+      command: "git_branch_pull_fast_forward" | "git_branch_push" | "git_branch_set_upstream",
+      branchName: string,
+      pendingAction: "pull" | "push",
+      successTitle: string,
+      successDetails: string,
+      failureTitle: string,
+    ) => {
+      if (!repoPath || pendingGitAction) return;
+
+      setPendingGitAction(pendingAction);
+      try {
+        await core.invoke(command, {
+          path: repoPath,
+          branchName,
+        });
+        setGitActionNotice({
+          kind: "success",
+          title: successTitle,
+          details: successDetails,
+          expanded: false,
+        });
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+      } catch (actionError) {
+        const details =
+          actionError instanceof Error
+            ? actionError.message
+            : String(actionError || "Unknown error");
+        setGitActionNotice({
+          kind: "error",
+          title: failureTitle,
+          details,
+          expanded: false,
+        });
+      } finally {
+        setPendingGitAction(null);
+      }
+    },
+    [pendingGitAction, repoPath, setGitActionNotice, setPendingGitAction],
+  );
+
   function renderTree(nodes: BranchTreeNode[], level = 0) {
     return (
       <ul className="m-0 w-full min-w-0 list-none p-0 select-none">
@@ -328,11 +376,42 @@ export function BranchList() {
     if (!contextMenu || !menuPos) return null;
     const { node } = contextMenu;
     const branchName = node.full || node.name;
+    const isBranchNode = node.type !== "group";
+    const remoteActionDisabledReason = !isBranchNode
+      ? "Remote actions are only available for branches"
+      : type === "remote"
+        ? "Remote actions are only available for local branches"
+        : null;
+    const remoteActionClass = remoteActionDisabledReason
+      ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+      : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
 
     // Helper to close both menus
     function closeMenus() {
       setContextMenu(null);
       setShowOther(false);
+    }
+
+    function runRemoteAction(
+      command:
+        | "git_branch_pull_fast_forward"
+        | "git_branch_push"
+        | "git_branch_set_upstream",
+      pendingAction: "pull" | "push",
+      successTitle: string,
+      successDetails: string,
+      failureTitle: string,
+    ) {
+      if (remoteActionDisabledReason) return;
+      closeMenus();
+      void runRemoteBranchAction(
+        command,
+        branchName,
+        pendingAction,
+        successTitle,
+        successDetails,
+        failureTitle,
+      );
     }
 
     // Delayed mouseleave handler (grace period)
@@ -374,23 +453,44 @@ export function BranchList() {
             Remote actions
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={remoteActionClass}
+            title={remoteActionDisabledReason ?? undefined}
             onClick={() => {
-              closeMenus();
+              runRemoteAction(
+                "git_branch_pull_fast_forward",
+                "pull",
+                "git pull succeeded",
+                `Fast-forwarded ${branchName} from its upstream.`,
+                "git pull failed",
+              );
             }}>
             Pull (fast-forward if possible)
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={remoteActionClass}
+            title={remoteActionDisabledReason ?? undefined}
             onClick={() => {
-              closeMenus();
+              runRemoteAction(
+                "git_branch_push",
+                "push",
+                "git push succeeded",
+                `Pushed ${branchName} to origin/${branchName}.`,
+                "git push failed",
+              );
             }}>
             Push
           </div>
           <div
-            className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
+            className={remoteActionClass}
+            title={remoteActionDisabledReason ?? undefined}
             onClick={() => {
-              closeMenus();
+              runRemoteAction(
+                "git_branch_set_upstream",
+                "push",
+                "git push --set-upstream succeeded",
+                `Set upstream for ${branchName} to origin/${branchName}.`,
+                "git push --set-upstream failed",
+              );
             }}>
             Set Upstream
           </div>

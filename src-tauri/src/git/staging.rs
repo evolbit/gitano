@@ -696,3 +696,140 @@ pub async fn git_pull(path: String, strategy: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+fn validate_local_branch_name(branch_name: &str) -> Result<&str, String> {
+    let branch_name = branch_name.trim();
+
+    if branch_name.is_empty() {
+        return Err("Branch is required.".to_string());
+    }
+
+    Ok(branch_name)
+}
+
+fn run_git_status(path: &str, args: &[&str], action: &str) -> Result<(), String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{} failed: {}",
+        action,
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+fn run_git_output(path: &str, args: &[&str], action: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+
+    Err(format!(
+        "{} failed: {}",
+        action,
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+fn ensure_local_branch(path: &str, branch_name: &str) -> Result<(), String> {
+    let ref_name = format!("refs/heads/{}", branch_name);
+    run_git_status(
+        path,
+        &["show-ref", "--verify", "--quiet", &ref_name],
+        "git show-ref",
+    )
+    .map_err(|_| format!("Remote actions require a local branch: {}", branch_name))
+}
+
+fn get_branch_upstream(path: &str, branch_name: &str) -> Result<String, String> {
+    let upstream_ref = format!("{}@{{upstream}}", branch_name);
+    run_git_output(
+        path,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            &upstream_ref,
+        ],
+        "git rev-parse",
+    )
+    .map_err(|_| {
+        format!(
+            "No upstream configured for {}. Use Set Upstream first.",
+            branch_name
+        )
+    })
+}
+
+fn split_upstream(upstream: &str) -> Result<(&str, &str), String> {
+    upstream
+        .split_once('/')
+        .filter(|(remote, branch)| !remote.is_empty() && !branch.is_empty())
+        .ok_or_else(|| format!("Could not parse upstream reference: {}", upstream))
+}
+
+#[tauri::command]
+pub async fn git_branch_push(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch_name = validate_local_branch_name(&branch_name)?;
+        ensure_local_branch(&path, branch_name)?;
+        run_git_status(&path, &["push", "origin", branch_name], "git push")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_branch_set_upstream(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch_name = validate_local_branch_name(&branch_name)?;
+        ensure_local_branch(&path, branch_name)?;
+        run_git_status(
+            &path,
+            &["push", "--set-upstream", "origin", branch_name],
+            "git push --set-upstream",
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch_name = validate_local_branch_name(&branch_name)?;
+        ensure_local_branch(&path, branch_name)?;
+
+        let upstream = get_branch_upstream(&path, branch_name)?;
+        let (remote, remote_branch) = split_upstream(&upstream)?;
+        let current_branch = run_git_output(
+            &path,
+            &["branch", "--show-current"],
+            "git branch --show-current",
+        )?;
+
+        if current_branch == branch_name {
+            run_git_status(&path, &["fetch", remote, remote_branch], "git fetch")?;
+            run_git_status(&path, &["merge", "--ff-only", &upstream], "git merge")
+        } else {
+            let refspec = format!("{}:{}", remote_branch, branch_name);
+            run_git_status(&path, &["fetch", remote, &refspec], "git fetch")
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
