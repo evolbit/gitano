@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { APP_EVENTS } from "../../constants/events";
+import { useGitActionsStore } from "../../store/gitActions";
 import { useRepoStore } from "../../store/repo";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
@@ -117,6 +118,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const updateTab = useRepoStore((s) => s.updateTab);
   const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
   const removeRepo = useRepoStore((s) => s.removeRepo);
+  const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
   const worktreeTreeExpanded = useWorkspaceUiStore(
     (s) =>
       (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
@@ -350,13 +352,22 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         await refreshWorktrees();
         window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
       } catch (worktreeError) {
-        setError(String(worktreeError));
+        const details =
+          worktreeError instanceof Error
+            ? worktreeError.message
+            : String(worktreeError || "Unknown error");
+        setGitActionNotice({
+          kind: "error",
+          title: "git worktree remove failed",
+          details,
+          expanded: false,
+        });
       } finally {
         setDeleting(false);
         setDeleteTarget(null);
       }
     },
-    [deleting, refreshWorktrees, removeRepo, repoPath],
+    [deleting, refreshWorktrees, removeRepo, repoPath, setGitActionNotice],
   );
 
   const updateName = (nextName: string) => {
