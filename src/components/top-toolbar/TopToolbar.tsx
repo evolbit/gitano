@@ -20,7 +20,7 @@ import {
 import { GitWorktree } from "../../types/git";
 import {
   IconArrowBarToUp,
-  IconBinaryTree2,
+  IconArrowFork,
   IconCheck,
   IconCloudDownload,
   IconCloudUpload,
@@ -142,13 +142,12 @@ const ToolbarDropdownActionItem: React.FC<{
 
 const WorktreeDropdownItem: React.FC<{
   worktree: GitWorktree;
-  selected: boolean;
   onClick: () => void;
-}> = ({ worktree, selected, onClick }) => (
+}> = ({ worktree, onClick }) => (
   <Menu.Item className={TOOLBAR_DROPDOWN_ITEM_CLASS} onClick={onClick}>
     <div className="flex min-w-0 items-start gap-3">
       <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-blue-300">
-        {selected ? <IconCheck size={15} /> : <IconBinaryTree2 size={15} />}
+        <IconArrowFork size={15} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="min-w-0 truncate text-sm font-medium text-zinc-100">
@@ -664,7 +663,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
             onClose={() => setWorkspaceMenuOpened(false)}>
             <Menu.Target>
               <Box className="inline-flex max-w-[300px] items-center gap-1.5 rounded px-2 py-1 text-zinc-400 transition-colors hover:bg-zinc-800/50 cursor-pointer">
-                <IconBinaryTree2
+                <IconArrowFork
                   size={16}
                   className="text-blue-400"
                 />
@@ -710,7 +709,6 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
                 <WorktreeDropdownItem
                   key={worktree.path}
                   worktree={worktree}
-                  selected={worktree.isCurrent}
                   onClick={() => handleWorktreeSelect(worktree)}
                 />
               ))}

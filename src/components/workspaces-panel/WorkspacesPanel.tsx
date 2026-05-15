@@ -12,11 +12,10 @@ import { GitWorktree } from "../../types/git";
 import { BranchTreeNode, groupNames } from "../../utils/branchTree";
 import { getFileName, getParentPath } from "../../utils/path";
 import {
-  IconCheck,
+  IconArrowFork,
   IconChevronDown,
   IconChevronRight,
   IconFolder,
-  IconFolderPlus,
   IconPlus,
   IconSearch,
 } from "../icons";
@@ -42,6 +41,9 @@ const EMPTY_CREATE_FORM: CreateFormState = {
   branchTouched: false,
   folderTouched: false,
 };
+
+const WORKTREE_CREATE_MENU_ITEM_CLASS =
+  "px-4 py-3 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
 
 function stripTrailingSlash(path: string) {
   return path.replace(/\/+$/, "");
@@ -382,11 +384,10 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
               tabIndex={0}
               onClick={() => selectWorktree(worktree)}>
               <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center">
-                {worktree.isCurrent ? (
-                  <IconCheck size={16} className="text-blue-300" />
-                ) : (
-                  <IconFolder size={17} className="text-slate-300" />
-                )}
+                <IconArrowFork
+                  size={17}
+                  className={worktree.isCurrent ? "text-blue-300" : "text-slate-300"}
+                />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="min-w-0 truncate font-medium">
@@ -417,7 +418,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
             />
             <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           </div>
-          <Menu shadow="md" width={360} position="bottom-end" withinPortal>
+          <Menu shadow="md" width={420} position="bottom-end" withinPortal>
             <Menu.Target>
               <button
                 type="button"
@@ -426,13 +427,20 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                 <IconPlus size={16} />
               </button>
             </Menu.Target>
-            <Menu.Dropdown className="bg-background border border-zinc-700 p-1">
+            <Menu.Dropdown className="bg-background border border-zinc-700 p-0">
               {createBaseOptions.map((option) => (
                 <Menu.Item
                   key={option.refName}
-                  leftSection={<IconPlus size={15} />}
+                  className={WORKTREE_CREATE_MENU_ITEM_CLASS}
                   onClick={() => beginCreateFromBase(option.refName)}>
-                  {option.label}
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-zinc-300">
+                      <IconArrowFork size={16} />
+                    </span>
+                    <span className="min-w-0 truncate text-sm text-zinc-100">
+                      {option.label}
+                    </span>
+                  </div>
                 </Menu.Item>
               ))}
             </Menu.Dropdown>
@@ -455,7 +463,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
       {form.baseRef ? (
         <div className="border-t border-border bg-background-emphasis p-3">
           <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
-            <IconFolderPlus size={15} className="text-blue-300" />
+            <IconArrowFork size={15} className="text-blue-300" />
             <span className="min-w-0 truncate">
               New worktree based on{" "}
               <span className="font-mono text-blue-200">{form.baseRef}</span>

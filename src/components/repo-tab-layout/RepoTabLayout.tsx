@@ -19,7 +19,7 @@ import ChangesPanel from "../changes-panel/ChangesPanel";
 import CommitList from "../commit-list/CommitList";
 import CurrentChangesCommitBar from "../current-changes-commit-bar/CurrentChangesCommitBar";
 import InlineDiffSurface from "../diff-viewer/InlineDiffSurface";
-import { IconBinaryTree2, IconGitBranch, IconStack2, IconTag } from "../icons";
+import { IconArrowFork, IconGitBranch, IconStack2, IconTag } from "../icons";
 import StashesPanel from "../stashes-panel/StashesPanel";
 import { TagsPanel } from "../tags-panel/TagsPanel";
 import TopToolbar from "../top-toolbar/TopToolbar";
@@ -32,7 +32,7 @@ const LEFT_PANE_SECTIONS: ReadonlyArray<{
 }> = [
   { key: "changes", label: "Changes", icon: IconStack2 },
   { key: "branches", label: "Branches", icon: IconGitBranch },
-  { key: "workspaces", label: "Workspaces", icon: IconBinaryTree2 },
+  { key: "workspaces", label: "Workspaces", icon: IconArrowFork },
   { key: "tags", label: "Tags", icon: IconTag },
   { key: "stashes", label: "Stashes", icon: IconStack2 },
 ];

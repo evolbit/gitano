@@ -15,7 +15,6 @@ import {
   IconDotsVertical,
   IconFolder,
   IconGitBranch,
-  IconGitMerge,
   IconSearch,
 } from "../icons";
 import {
@@ -31,17 +30,10 @@ function BranchIcon({ name }: { name: string }) {
   const priority = isPriorityBranchName(name);
   return (
     <span className="inline-flex items-center justify-center w-5 h-5">
-      {["master", "main", "dev", "develop"].includes(name.toLowerCase()) ? (
-        <IconGitMerge
-          size={18}
-          className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
-        />
-      ) : (
-        <IconGitBranch
-          size={18}
-          className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
-        />
-      )}
+      <IconGitBranch
+        size={18}
+        className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
+      />
     </span>
   );
 }

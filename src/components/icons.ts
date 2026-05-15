@@ -2,6 +2,7 @@ export {
   IconArrowBackUp,
   IconArrowBarToUp,
   IconArrowForwardUp,
+  IconArrowFork,
   IconBrandGit,
   IconCheck,
   IconChevronDown,
