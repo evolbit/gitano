@@ -821,6 +821,30 @@ pub async fn git_checkout_branch(path: String, branch_name: String) -> Result<()
 }
 
 #[tauri::command]
+pub async fn git_create_branch(
+    path: String,
+    branch_name: String,
+    base_ref: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let branch_name = validate_local_branch_name(&branch_name)?;
+        let base_ref = base_ref.trim();
+
+        if base_ref.is_empty() {
+            return Err("Base ref is required.".to_string());
+        }
+
+        run_git_status(
+            &path,
+            &["branch", "--", branch_name, base_ref],
+            "git branch",
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let branch_name = validate_local_branch_name(&branch_name)?;

@@ -16,6 +16,7 @@ import {
   IconDotsVertical,
   IconFolder,
   IconGitBranch,
+  IconPlus,
   IconSearch,
 } from "../icons";
 import {
@@ -31,6 +32,48 @@ import {
 
 const PRIORITY_BRANCH_COLOR = "text-lime-400";
 const DEFAULT_BRANCH_ICON_COLOR = "text-slate-300";
+
+type BranchCreateFormState = {
+  baseRef: string;
+  prefix: string;
+  name: string;
+};
+
+function stripEdgeSlashes(value: string) {
+  return value.trim().replace(/^\/+|\/+$/g, "");
+}
+
+function buildBranchName(prefix: string, name: string) {
+  const cleanPrefix = prefix.replace(/^\/+/, "").replace(/\/+$/, "");
+  const cleanName = stripEdgeSlashes(name);
+
+  if (!cleanName) return "";
+  if (!cleanPrefix) return cleanName;
+
+  return `${cleanPrefix}/${cleanName}`;
+}
+
+function stripRemotePrefix(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return "";
+  return parts.slice(1).join("/");
+}
+
+function getBranchCreatePrefix(
+  node: BranchTreeNode,
+  branchType: "local" | "remote",
+) {
+  const localPath = branchType === "remote" ? stripRemotePrefix(node.full) : node.full;
+
+  if (!localPath) return "";
+
+  if (node.type === "group") {
+    return `${stripEdgeSlashes(localPath)}/`;
+  }
+
+  const lastSlash = localPath.lastIndexOf("/");
+  return lastSlash >= 0 ? `${localPath.slice(0, lastSlash)}/` : "";
+}
 
 function BranchName({ children }: { children: string }) {
   return <span className="font-semibold text-zinc-100">{children}</span>;
@@ -79,8 +122,15 @@ export function BranchList() {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    node: any | null;
+    node: BranchTreeNode;
   } | null>(null);
+  const [createForm, setCreateForm] = useState<BranchCreateFormState | null>(
+    null,
+  );
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [createBranchError, setCreateBranchError] = useState<string | null>(
+    null,
+  );
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -212,6 +262,72 @@ export function BranchList() {
       hoveredRowKey === rowKey || contextMenu?.node?.full === rowKey,
     [hoveredRowKey, contextMenu],
   );
+
+  const beginCreateBranch = useCallback(
+    (baseRef: string, prefix = "") => {
+      setCreateBranchError(null);
+      setCreateForm({
+        baseRef,
+        prefix,
+        name: "",
+      });
+    },
+    [],
+  );
+
+  const createBranch = useCallback(async () => {
+    if (!repoPath || !createForm || creatingBranch) return;
+
+    const branchName = buildBranchName(createForm.prefix, createForm.name);
+    if (!branchName) {
+      setCreateBranchError("Branch name is required.");
+      return;
+    }
+
+    setCreatingBranch(true);
+    setCreateBranchError(null);
+
+    try {
+      await core.invoke("git_create_branch", {
+        path: repoPath,
+        branchName,
+        baseRef: createForm.baseRef,
+      });
+
+      setCreateForm(null);
+      setType("local");
+      setSelectedRowBranch(branchName);
+      await refreshBranches();
+      setGitActionNotice({
+        kind: "success",
+        title: "Created branch",
+        details: `Created ${branchName} from ${createForm.baseRef}.`,
+        expanded: false,
+      });
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+    } catch (branchError) {
+      const details =
+        branchError instanceof Error
+          ? branchError.message
+          : String(branchError || "Unknown error");
+      setCreateBranchError(details);
+      setGitActionNotice({
+        kind: "error",
+        title: "Create branch failed",
+        details,
+        expanded: false,
+      });
+    } finally {
+      setCreatingBranch(false);
+    }
+  }, [
+    createForm,
+    creatingBranch,
+    refreshBranches,
+    repoPath,
+    setGitActionNotice,
+  ]);
 
   const checkoutBranch = useCallback(
     async (branchName: string) => {
@@ -707,7 +823,10 @@ export function BranchList() {
           <div
             className="px-4 py-2 hover:bg-zinc-700 cursor-pointer"
             onClick={() => {
+              const prefix = getBranchCreatePrefix(node, type);
+              const baseRef = isBranchNode ? branchName : selectedBranch || "HEAD";
               closeMenus();
+              beginCreateBranch(baseRef, prefix);
             }}>
             Create branch here
           </div>
@@ -879,6 +998,15 @@ export function BranchList() {
               <IconCloud size={15} />
             </button>
           </div>
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+            onClick={() => beginCreateBranch(selectedBranch || "HEAD")}
+            title="Add branch"
+            aria-label="Add branch"
+          >
+            <IconPlus size={16} />
+          </button>
         </div>
       </div>
       {loading && <div className="text-sm text-zinc-400">Loading...</div>}
@@ -890,6 +1018,92 @@ export function BranchList() {
         {renderTree(grouped)}
         {renderContextMenu()}
       </div>
+      {createForm
+        ? (() => {
+            const branchName = buildBranchName(createForm.prefix, createForm.name);
+
+            return (
+              <div className="border-t border-border bg-background-emphasis p-3">
+                <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
+                  <IconGitBranch size={15} className="text-blue-300" />
+                  <span className="min-w-0 truncate">
+                    New branch based on{" "}
+                    <span className="font-mono text-blue-200">
+                      {createForm.baseRef}
+                    </span>
+                  </span>
+                </div>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Branch name
+                  <div className="flex min-w-0">
+                    {createForm.prefix ? (
+                      <span className="flex h-8 max-w-[45%] items-center rounded-l border border-r-0 border-border bg-background px-2 font-mono text-sm text-zinc-400">
+                        <span className="truncate">{createForm.prefix}</span>
+                      </span>
+                    ) : null}
+                    <input
+                      type="text"
+                      autoFocus
+                      className={`h-8 min-w-0 flex-1 border border-border bg-background px-2 text-sm text-foreground focus:outline-none ${
+                        createForm.prefix ? "rounded-r" : "rounded"
+                      }`}
+                      value={createForm.name}
+                      onChange={(event) =>
+                        setCreateForm((current) =>
+                          current
+                            ? { ...current, name: event.target.value }
+                            : current,
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void createBranch();
+                        }
+                        if (event.key === "Escape") {
+                          setCreateForm(null);
+                          setCreateBranchError(null);
+                        }
+                      }}
+                    />
+                  </div>
+                </label>
+                {branchName ? (
+                  <div className="mt-2 truncate text-xs text-muted-foreground">
+                    Full branch:{" "}
+                    <span className="font-mono text-zinc-200">{branchName}</span>
+                  </div>
+                ) : null}
+                {createBranchError ? (
+                  <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
+                    {createBranchError}
+                  </div>
+                ) : null}
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="h-8 rounded border border-border bg-background px-3 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+                    onClick={() => {
+                      setCreateForm(null);
+                      setCreateBranchError(null);
+                    }}
+                    disabled={creatingBranch}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 rounded border border-blue-500/50 bg-blue-500/20 px-3 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => {
+                      void createBranch();
+                    }}
+                    disabled={creatingBranch || !branchName}>
+                    {creatingBranch ? "Creating..." : "Create Branch"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()
+        : null}
     </div>
   );
 }
