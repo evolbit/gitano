@@ -23,7 +23,9 @@ pub fn open_local_repo(path: String) -> Result<String, String> {
 pub fn get_branches(path: String) -> Result<Vec<String>, String> {
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let mut branches = Vec::new();
-    let branch_iter = repo.branches(None).map_err(|e| e.to_string())?;
+    let branch_iter = repo
+        .branches(Some(BranchType::Local))
+        .map_err(|e| e.to_string())?;
     for branch in branch_iter {
         let (branch, _) = branch.map_err(|e| e.to_string())?;
         if let Some(name) = branch.name().map_err(|e| e.to_string())? {

@@ -7,24 +7,35 @@ describe("filterBranchesByType", () => {
     "develop",
     "feature/login",
     "bugfix/crash",
+    "codex/test-remote",
     "origin/main",
     "origin/feature/remote-login",
     "upstream/release",
   ];
 
-  it("keeps plain and recognized local branch prefixes for local branches", () => {
-    expect(filterBranchesByType(branches, "local")).toEqual([
+  it("keeps local slash branches and removes known remote branches", () => {
+    expect(
+      filterBranchesByType(branches, "local", [
+        "origin/main",
+        "origin/feature/remote-login",
+        "upstream/release",
+      ]),
+    ).toEqual([
       "main",
       "develop",
       "feature/login",
       "bugfix/crash",
+      "codex/test-remote",
     ]);
   });
 
-  it("keeps remote-prefixed branches for remote branches", () => {
+  it("keeps remote command results unchanged for remote branches", () => {
     expect(filterBranchesByType(branches, "remote")).toEqual([
+      "main",
+      "develop",
       "feature/login",
       "bugfix/crash",
+      "codex/test-remote",
       "origin/main",
       "origin/feature/remote-login",
       "upstream/release",

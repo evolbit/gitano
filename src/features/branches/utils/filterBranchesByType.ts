@@ -1,25 +1,12 @@
 import type { BranchType } from "../types";
 
-const localBranchPrefixes = [
-  "feature/",
-  "hotfix/",
-  "release/",
-  "bugfix/",
-  "chore/",
-  "test/",
-  "fix/",
-  "refactor/",
-  "task/",
-];
+export function filterBranchesByType(
+  branches: string[],
+  type: BranchType,
+  remoteBranches: string[] = [],
+) {
+  if (type === "remote") return branches;
 
-export function filterBranchesByType(branches: string[], type: BranchType) {
-  if (type === "remote") {
-    return branches.filter((branch) => /^\w+\//.test(branch));
-  }
-
-  return branches.filter(
-    (branch) =>
-      !/^\w+\//.test(branch) ||
-      localBranchPrefixes.some((prefix) => branch.startsWith(prefix)),
-  );
+  const remoteBranchSet = new Set(remoteBranches);
+  return branches.filter((branch) => !remoteBranchSet.has(branch));
 }

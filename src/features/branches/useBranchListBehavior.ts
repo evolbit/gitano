@@ -108,6 +108,15 @@ export function useBranchListBehavior() {
     setError(null);
 
     try {
+      if (type === "local") {
+        const [localBranches, remoteBranches] = await Promise.all([
+          getBranches(repoPath, "local"),
+          getBranches(repoPath, "remote"),
+        ]);
+        setBranches(filterBranchesByType(localBranches, type, remoteBranches));
+        return;
+      }
+
       const allBranches = await getBranches(repoPath, type);
       setBranches(filterBranchesByType(allBranches, type));
     } catch (branchError) {
