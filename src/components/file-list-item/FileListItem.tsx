@@ -1,4 +1,4 @@
-import { getFileName, getParentPath } from "../../utils/path";
+import { getFileName, getParentPath } from "@/shared/lib/path";
 import {
   IconCopy,
   IconExchange,

@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
-import { useStagedLinesStore } from "../../store/staging";
-import { DiffLine, FileChange } from "../../types/git";
+import { useStagedLinesStore } from "@/features/working-changes/stores/stagingStore";
+import { DiffLine, FileChange } from "@/shared/types/git";
 import FileListItem from "../file-list-item/FileListItem";
 import { IconCheck, IconSearch } from "../icons";
 import { DiffFileListProps } from "./types";

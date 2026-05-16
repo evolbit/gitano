@@ -1,4 +1,4 @@
-import { PullStrategy } from "../../store/workspaceUi";
+import type { PullStrategy } from "@/features/repository-workspace/stores/workspaceUiStore";
 
 export type ToolbarDropdownProps = {
   searchValue: string;

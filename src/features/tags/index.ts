@@ -1,0 +1,2 @@
+export { TagsPanel } from "./TagsPanel";
+

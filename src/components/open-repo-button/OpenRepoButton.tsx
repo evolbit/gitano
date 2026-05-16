@@ -1,6 +1,6 @@
-import { core } from "@tauri-apps/api";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
+import { openLocalRepository } from "@/shared/api/repositories";
+import { openDirectoryDialog } from "@/shared/platform/tauri/dialog";
 import { IconFolderPlus } from "../icons";
 
 export function OpenRepoButton() {
@@ -10,15 +10,13 @@ export function OpenRepoButton() {
   const handleOpenRepo = async () => {
     setLoading(true);
     setResult(null);
-    const selected = await open({ directory: true });
-    if (selected && typeof selected === "string") {
+    const selected = await openDirectoryDialog();
+    if (selected) {
       try {
-        const res = await core.invoke<string>("open_local_repo", {
-          path: selected,
-        });
+        const res = await openLocalRepository(selected);
         setResult(res);
-      } catch (e: any) {
-        setResult(e.toString());
+      } catch (error) {
+        setResult(String(error));
       }
     }
     setLoading(false);

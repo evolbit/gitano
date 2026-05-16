@@ -107,11 +107,43 @@ pnpm tauri build
 
 ```
 src/
-├── components/          # React components
-├── hooks/              # Custom hooks
-├── store/              # Global state (Zustand)
-├── types/              # TypeScript types
-└── utils/              # Utilities
+├── app/                # Bootstrap, providers, shell composition, app hooks
+├── features/           # Feature-first Git workflows
+│   ├── branches/       # Branch UI, behavior, API boundary, tests
+│   ├── diffs/          # Diff viewer UI and diff-local state
+│   ├── history/        # Commit list and commit changes panel
+│   ├── launchpad/      # Repository opening and recent/favorite repos UI
+│   ├── repository-workspace/
+│   │   ├── components/ # Repository layout and tab bar
+│   │   └── stores/     # Persisted repo tabs, workspace UI, Git action notices
+│   ├── stashes/        # Stash panel and stash file helpers
+│   ├── tags/           # Tag panel and tag URL helpers
+│   ├── working-changes/# Changes explorer, commit bars, staging hooks/store
+│   └── worktrees/      # Worktree panel and worktree helper logic
+├── shared/
+│   ├── api/            # Typed frontend adapters for Tauri Git commands
+│   ├── config/         # App event names and layout constants
+│   ├── lib/            # Feature-independent pure utilities
+│   ├── platform/       # Tauri dialog/event/storage/window wrappers
+│   ├── types/          # Cross-feature Git DTOs and domain types
+│   └── ui/             # Generic UI helpers
+├── components/         # Reusable generic UI still shared by multiple features
+└── test/               # Vitest setup
+```
+
+### Reglas de Arquitectura
+
+- `app` compone la aplicacion y puede importar features.
+- `features/<feature>` contiene sus componentes, hooks, stores, tipos, utilidades y tests.
+- `shared` no debe importar desde `features` ni desde `app`.
+- El codigo nuevo debe usar aliases (`@/app`, `@/features`, `@/shared`) para imports entre capas.
+- Las llamadas Tauri/Git desde frontend deben pasar por `src/shared/api` o `src/shared/platform`.
+
+### Tests Frontend
+
+```bash
+pnpm test
+npm run build
 ```
 
 ## Contribuir

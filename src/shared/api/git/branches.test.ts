@@ -1,0 +1,69 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createGitBranch,
+  getBranches,
+  runGitBranchOperation,
+} from "./branches";
+
+const invokeCommandMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/shared/platform/tauri/command", () => ({
+  invokeCommand: invokeCommandMock,
+}));
+
+describe("branch Git API", () => {
+  beforeEach(() => {
+    invokeCommandMock.mockReset();
+  });
+
+  it("uses the local branches command for local branch lists", async () => {
+    invokeCommandMock.mockResolvedValueOnce(["main"]);
+
+    await expect(getBranches("/repo", "local")).resolves.toEqual(["main"]);
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("get_branches", {
+      path: "/repo",
+    });
+  });
+
+  it("uses the remote branches command for remote branch lists", async () => {
+    invokeCommandMock.mockResolvedValueOnce(["origin/main"]);
+
+    await expect(getBranches("/repo", "remote")).resolves.toEqual([
+      "origin/main",
+    ]);
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("get_remote_branches", {
+      path: "/repo",
+    });
+  });
+
+  it("preserves branch mutation payloads", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await createGitBranch("/repo", "feature/auth", "main");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_create_branch", {
+      path: "/repo",
+      branchName: "feature/auth",
+      baseRef: "main",
+    });
+  });
+
+  it("passes typed branch operation commands through", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await runGitBranchOperation(
+      "/repo",
+      "git_branch_rebase_onto",
+      "feature/auth",
+      "main",
+    );
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_branch_rebase_onto", {
+      path: "/repo",
+      targetBranch: "feature/auth",
+      sourceBranch: "main",
+    });
+  });
+});

@@ -10,14 +10,14 @@ import {
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
-import { APP_EVENTS } from "../../constants/events";
-import { useRepoStore } from "../../store/repo";
-import { useGitActionsStore } from "../../store/gitActions";
+import { APP_EVENTS } from "@/shared/config/events";
+import { useRepoStore } from "@/features/repository-workspace/stores/repoStore";
+import { useGitActionsStore } from "@/features/repository-workspace/stores/gitActionsStore";
 import {
-  PullStrategy,
+  type PullStrategy,
   useWorkspaceUiStore,
-} from "../../store/workspaceUi";
-import { GitWorktree } from "../../types/git";
+} from "@/features/repository-workspace/stores/workspaceUiStore";
+import type { GitWorktree } from "@/shared/types/git";
 import {
   IconArrowBarToUp,
   IconArrowFork,

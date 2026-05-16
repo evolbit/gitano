@@ -1,4 +1,4 @@
-import { FileChange } from "../../types/git";
+import { FileChange } from "@/shared/types/git";
 
 export type DiffFileListProps = {
   files: FileChange[];

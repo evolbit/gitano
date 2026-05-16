@@ -1,0 +1,2 @@
+export { WorkspacesPanel } from "./WorkspacesPanel";
+
