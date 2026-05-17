@@ -201,3 +201,55 @@ impl From<git2::Delta> for ChangeType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod change_type {
+        use super::*;
+
+        #[test]
+        fn serializes_with_lowercase_names() {
+            let serialized =
+                serde_json::to_string(&ChangeType::Added).expect("status should serialize");
+
+            assert_eq!(serialized, "\"added\"");
+        }
+    }
+
+    mod staged_file_selection_state {
+        use super::*;
+
+        #[test]
+        fn skips_absent_flags_and_uses_camel_case_for_present_flags() {
+            let state = StagedFileSelectionState {
+                is_new_file: Some(true),
+                is_whole_file_staged: None,
+                hunks: HashMap::new(),
+            };
+
+            let serialized = serde_json::to_value(state).expect("staged state should serialize");
+
+            assert_eq!(
+                serialized,
+                serde_json::json!({
+                    "isNewFile": true,
+                    "hunks": {}
+                })
+            );
+        }
+    }
+
+    mod repo_change_kind {
+        use super::*;
+
+        #[test]
+        fn serializes_with_kebab_case_names() {
+            let serialized =
+                serde_json::to_string(&RepoChangeKind::RemoteRefs).expect("kind should serialize");
+
+            assert_eq!(serialized, "\"remote-refs\"");
+        }
+    }
+}

@@ -407,3 +407,120 @@ pub fn sync_repo_watchers(app: AppHandle, repo_paths: Vec<String>) -> Result<(),
     let mut manager = REPO_WATCH_MANAGER.lock().map_err(|e| e.to_string())?;
     manager.sync(&app, &repo_paths)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kinds(values: &[RepoChangeKind]) -> HashSet<RepoChangeKind> {
+        values.iter().copied().collect()
+    }
+
+    mod repo_snapshot {
+        use super::*;
+
+        #[test]
+        fn reports_changed_snapshot_sections_as_repo_change_kinds() {
+            let previous = RepoSnapshot {
+                head_ref: Some("refs/heads/main".to_string()),
+                head_oid: Some("a".to_string()),
+                branches_sig: "main:a".to_string(),
+                tags_sig: "v1:a".to_string(),
+                stash_oid: None,
+                remote_refs_sig: "origin/main:a".to_string(),
+            };
+            let next = RepoSnapshot {
+                head_ref: Some("refs/heads/feature".to_string()),
+                head_oid: Some("b".to_string()),
+                branches_sig: "feature:b|main:a".to_string(),
+                tags_sig: "v1:b".to_string(),
+                stash_oid: Some("stash".to_string()),
+                remote_refs_sig: "origin/main:b".to_string(),
+            };
+
+            assert_eq!(
+                previous.diff_kinds(&next),
+                kinds(&[
+                    RepoChangeKind::Head,
+                    RepoChangeKind::Branches,
+                    RepoChangeKind::Tags,
+                    RepoChangeKind::Stashes,
+                    RepoChangeKind::RemoteRefs,
+                ])
+            );
+        }
+    }
+
+    mod classify_path {
+        use super::*;
+
+        #[test]
+        fn classifies_index_changes_as_index_and_working_tree_refreshes() {
+            let mut pending_kinds = HashSet::new();
+
+            classify_path(
+                &PathBuf::from("/repo/.git/index"),
+                Path::new("/repo/.git"),
+                &mut pending_kinds,
+            );
+
+            assert_eq!(
+                pending_kinds,
+                kinds(&[RepoChangeKind::Index, RepoChangeKind::WorkingTree])
+            );
+        }
+
+        #[test]
+        fn classifies_branch_ref_changes_as_branch_and_head_refreshes() {
+            let mut pending_kinds = HashSet::new();
+
+            classify_path(
+                &PathBuf::from("/repo/.git/refs/heads/feature"),
+                Path::new("/repo/.git"),
+                &mut pending_kinds,
+            );
+
+            assert_eq!(
+                pending_kinds,
+                kinds(&[RepoChangeKind::Branches, RepoChangeKind::Head])
+            );
+        }
+
+        #[test]
+        fn treats_worktree_paths_outside_git_dir_as_working_tree_changes() {
+            let mut pending_kinds = HashSet::new();
+
+            classify_path(
+                &PathBuf::from("/repo/src/file.rs"),
+                Path::new("/repo/.git"),
+                &mut pending_kinds,
+            );
+
+            assert_eq!(pending_kinds, kinds(&[RepoChangeKind::WorkingTree]));
+        }
+    }
+
+    mod repo_change_kind_order {
+        use super::*;
+
+        #[test]
+        fn keeps_event_payloads_in_stable_refresh_order() {
+            let mut kinds = vec![
+                RepoChangeKind::Config,
+                RepoChangeKind::WorkingTree,
+                RepoChangeKind::Branches,
+            ];
+
+            kinds.sort_by_key(repo_change_kind_order);
+
+            assert_eq!(
+                kinds,
+                vec![
+                    RepoChangeKind::WorkingTree,
+                    RepoChangeKind::Branches,
+                    RepoChangeKind::Config,
+                ]
+            );
+        }
+    }
+}

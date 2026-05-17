@@ -231,3 +231,71 @@ pub fn git_remove_worktree(
         String::from_utf8_lossy(&output.stderr)
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod normalize_branch_ref {
+        use super::*;
+
+        #[test]
+        fn strips_local_and_remote_ref_prefixes() {
+            assert_eq!(normalize_branch_ref("refs/heads/main"), "main");
+            assert_eq!(
+                normalize_branch_ref("refs/remotes/origin/main"),
+                "origin/main"
+            );
+        }
+    }
+
+    mod worktree_display_name {
+        use super::*;
+
+        #[test]
+        fn uses_parent_name_when_linked_worktree_folder_matches_main_checkout() {
+            assert_eq!(
+                worktree_display_name("/repos/repo-feature/repo", Some("repo")),
+                "repo-feature"
+            );
+        }
+
+        #[test]
+        fn uses_path_basename_for_distinct_worktree_folders() {
+            assert_eq!(
+                worktree_display_name("/repos/repo.worktrees/feature-a", Some("repo")),
+                "feature-a"
+            );
+        }
+    }
+
+    mod git_create_worktree {
+        use super::*;
+
+        #[test]
+        fn rejects_missing_required_fields_before_running_git() {
+            let result = git_create_worktree(
+                "/repo".to_string(),
+                "/tmp/worktree".to_string(),
+                " ".to_string(),
+                "main".to_string(),
+            );
+
+            assert_eq!(
+                result.expect_err("missing branch should fail"),
+                "Branch is required to create a worktree."
+            );
+        }
+    }
+
+    mod git_remove_worktree {
+        use super::*;
+
+        #[test]
+        fn rejects_blank_paths_before_listing_worktrees() {
+            let result = git_remove_worktree("/repo".to_string(), " ".to_string(), None);
+
+            assert_eq!(result, Err("Worktree path is required.".to_string()));
+        }
+    }
+}

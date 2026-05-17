@@ -1111,3 +1111,88 @@ pub fn get_current_branch(path: String) -> Result<String, String> {
         Ok("Detached HEAD".to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod parse_ref_labels {
+        use super::*;
+
+        #[test]
+        fn trims_labels_and_strips_head_arrow_prefix() {
+            let labels = parse_ref_labels("HEAD -> main, tag: v1.0.0, origin/main");
+
+            assert_eq!(labels, vec!["main", "tag: v1.0.0", "origin/main"]);
+        }
+    }
+
+    mod parse_raw_commit_rows {
+        use super::*;
+
+        #[test]
+        fn skips_blank_rows_and_extracts_commit_fields() {
+            let rows = parse_raw_commit_rows(
+                "\nabc123\x1fparent1 parent2\x1f42\x1fAda\x1fada@example.invalid\x1fHEAD -> main\x1fInitial commit\n",
+            );
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].sha, "abc123");
+            assert_eq!(rows[0].parents, vec!["parent1", "parent2"]);
+            assert_eq!(rows[0].refs, vec!["main"]);
+        }
+    }
+
+    mod author_initial {
+        use super::*;
+
+        #[test]
+        fn returns_the_first_alphanumeric_character_uppercased() {
+            assert_eq!(author_initial("  -ada"), "A");
+        }
+
+        #[test]
+        fn falls_back_when_author_has_no_alphanumeric_characters() {
+            assert_eq!(author_initial(" - "), "?");
+        }
+    }
+
+    mod gravatar_avatar_url {
+        use super::*;
+
+        #[test]
+        fn hashes_normalized_email_addresses() {
+            let lower = gravatar_avatar_url("ada@example.invalid");
+            let mixed = gravatar_avatar_url(" Ada@Example.Invalid ");
+
+            assert_eq!(mixed, lower);
+        }
+
+        #[test]
+        fn returns_none_for_blank_emails() {
+            assert_eq!(gravatar_avatar_url("  "), None);
+        }
+    }
+
+    mod build_zed_style_commit_rows {
+        use super::*;
+
+        #[test]
+        fn assigns_minimum_graph_width_and_author_metadata() {
+            let rows = build_zed_style_commit_rows(vec![RawCommitRow {
+                sha: "child".to_string(),
+                parents: vec!["parent".to_string()],
+                date: 10,
+                author: "Ada Lovelace".to_string(),
+                author_email: "ada@example.invalid".to_string(),
+                refs: vec!["main".to_string()],
+                message: "Ship it".to_string(),
+            }]);
+
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].graph_width, MIN_GRAPH_LANES);
+            assert_eq!(rows[0].author_initial, "A");
+            assert!(rows[0].author_avatar_url.is_some());
+        }
+    }
+}

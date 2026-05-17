@@ -617,3 +617,85 @@ pub fn get_branch_comparison_file_diff(
 
     Ok(parse_unified_diff(&diff))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::{commit_file, init_repo, run_git};
+
+    mod parse_unified_diff {
+        use super::*;
+
+        #[test]
+        fn returns_hunk_headers_and_line_numbers_for_mixed_changes() {
+            let hunks = parse_unified_diff(
+                "\
+diff --git a/file.txt b/file.txt
+@@ -1,2 +1,3 @@
+ same
+-old
++new
++extra
+",
+            );
+
+            assert_eq!(hunks.len(), 1);
+            assert_eq!(hunks[0].header, "@@ -1,2 +1,3 @@");
+            assert_eq!(hunks[0].lines[1].kind, DiffLineKind::Del);
+            assert_eq!(hunks[0].lines[1].old_lineno, Some(2));
+            assert_eq!(hunks[0].lines[2].kind, DiffLineKind::Add);
+            assert_eq!(hunks[0].lines[2].new_lineno, Some(2));
+        }
+
+        #[test]
+        fn defaults_missing_range_counts_to_one_line() {
+            let hunks = parse_unified_diff(
+                "\
+@@ -7 +9 @@
+-old
++new
+",
+            );
+
+            assert_eq!(hunks[0].old_lines, 1);
+            assert_eq!(hunks[0].new_lines, 1);
+        }
+    }
+
+    mod branch_comparison {
+        use super::*;
+
+        #[test]
+        fn returns_changed_files_between_base_and_head_refs() {
+            let repo = init_repo();
+            commit_file(repo.path(), "src/file.txt", "one\n", "initial");
+            run_git(repo.path(), &["checkout", "-b", "feature"]);
+            commit_file(repo.path(), "src/file.txt", "one\ntwo\n", "change file");
+
+            let changes = get_branch_comparison_files(
+                repo.path().to_string_lossy().to_string(),
+                "main".to_string(),
+                "feature".to_string(),
+                Some(BranchComparisonMode::Direct),
+            )
+            .expect("branch comparison should succeed");
+
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0].path, "src/file.txt");
+            assert_eq!(changes[0].insertions, 1);
+        }
+
+        #[test]
+        fn rejects_blank_base_refs_before_opening_the_repo() {
+            let error = get_branch_comparison_files(
+                "/does-not-need-to-exist".to_string(),
+                " ".to_string(),
+                "feature".to_string(),
+                None,
+            )
+            .expect_err("blank base ref should fail validation");
+
+            assert_eq!(error, "Base branch is required.");
+        }
+    }
+}

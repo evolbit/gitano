@@ -308,3 +308,95 @@ pub fn get_stash_file_diff(
 ) -> Result<Vec<DiffHunk>, String> {
     get_commit_file_diff(path, sha, file_path, context)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::{commit_file, init_repo, write_file};
+
+    mod resolve_stash_message {
+        use super::*;
+
+        #[test]
+        fn uses_trimmed_custom_messages() {
+            let message = resolve_stash_message("/repo", Some("  WIP custom  ".to_string()))
+                .expect("custom messages should not need git");
+
+            assert_eq!(message, "WIP custom");
+        }
+
+        #[test]
+        fn derives_default_message_from_current_branch() {
+            let repo = init_repo();
+            commit_file(repo.path(), "file.txt", "one\n", "initial");
+
+            let message =
+                resolve_stash_message(&repo.path().to_string_lossy(), None).expect("branch exists");
+
+            assert_eq!(message, "WIP-main");
+        }
+    }
+
+    mod git_stash_selected {
+        use super::*;
+
+        #[test]
+        fn rejects_empty_file_selections_before_running_git() {
+            let result = git_stash_selected("/repo".to_string(), Vec::new(), None);
+
+            assert_eq!(result, Err("No files selected for stash.".to_string()));
+        }
+    }
+
+    mod git_stash_apply_files {
+        use super::*;
+
+        #[test]
+        fn rejects_empty_file_selections_before_reading_the_stash() {
+            let result =
+                git_stash_apply_files("/repo".to_string(), "stash@{0}".to_string(), Vec::new());
+
+            assert_eq!(
+                result,
+                Err("No stash files selected for apply.".to_string())
+            );
+        }
+    }
+
+    mod git_stash_all {
+        use super::*;
+
+        #[test]
+        fn creates_a_stash_with_a_custom_message() {
+            let repo = init_repo();
+            commit_file(repo.path(), "file.txt", "one\n", "initial");
+            write_file(repo.path(), "file.txt", "one\ntwo\n");
+
+            git_stash_all(
+                repo.path().to_string_lossy().to_string(),
+                Some("custom stash".to_string()),
+            )
+            .expect("stash should be created");
+
+            let stashes =
+                git_stash_list(repo.path().to_string_lossy().to_string()).expect("stash exists");
+            assert_eq!(stashes.len(), 1);
+            assert!(stashes[0].message.contains("custom stash"));
+        }
+    }
+
+    mod git_stash_edit_message {
+        use super::*;
+
+        #[test]
+        fn rejects_empty_replacement_messages_before_running_git() {
+            let result = git_stash_edit_message(
+                "/repo".to_string(),
+                "stash@{0}".to_string(),
+                " ".to_string(),
+            );
+
+            assert_eq!(result, Err("Stash message cannot be empty.".to_string()));
+        }
+    }
+}
