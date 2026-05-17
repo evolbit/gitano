@@ -53,24 +53,24 @@ export type DiffHunkProps = {
   extraContext?: { above: DiffLine[]; below: DiffLine[] };
   isHovered: boolean;
   setHoveredHunkIdx: React.Dispatch<React.SetStateAction<number | null>>;
-  handleExpandContext: (
+  handleExpandContext?: (
     hunkIdx: number,
     direction: ContextDirection,
     lines: number,
   ) => void;
-  handleLineMouseDown: (
+  handleLineMouseDown?: (
     hunkIdx: number,
     lineIdx: number,
     isStageable: boolean,
     isStaged: boolean,
   ) => void;
-  handleLineMouseEnter: (
+  handleLineMouseEnter?: (
     hunkIdx: number,
     lineIdx: number,
     isStageable: boolean,
     isStaged: boolean,
   ) => void;
-  handleStageBlock: (hunkIdx: number, lineIdxs: number[]) => void;
+  handleStageBlock?: (hunkIdx: number, lineIdxs: number[]) => void;
   canStage?: boolean;
   displayMode?: DiffDisplayMode;
 };

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getCommitFileDiff, getDiffContext, getStashFileDiff } from "./diffs";
+import {
+  getBranchComparisonFileDiff,
+  getBranchComparisonFiles,
+  getCommitFileDiff,
+  getDiffContext,
+  getStashFileDiff,
+} from "./diffs";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
 
@@ -70,5 +76,51 @@ describe("diff Git API", () => {
       context: 3,
       offset: 0,
     });
+  });
+
+  it("requests branch comparison files with the expected command", async () => {
+    invokeCommandMock.mockResolvedValueOnce([]);
+
+    await getBranchComparisonFiles({
+      path: "/repo",
+      baseRef: "main",
+      headRef: "feature/auth",
+      comparisonMode: "direct",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "get_branch_comparison_files",
+      {
+        path: "/repo",
+        baseRef: "main",
+        headRef: "feature/auth",
+        comparisonMode: "direct",
+      },
+    );
+  });
+
+  it("requests branch comparison file diffs with the expected command", async () => {
+    invokeCommandMock.mockResolvedValueOnce([]);
+
+    await getBranchComparisonFileDiff({
+      path: "/repo",
+      baseRef: "main",
+      headRef: "feature/auth",
+      filePath: "src/file.ts",
+      context: 3,
+      comparisonMode: "direct",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "get_branch_comparison_file_diff",
+      {
+        path: "/repo",
+        baseRef: "main",
+        headRef: "feature/auth",
+        filePath: "src/file.ts",
+        context: 3,
+        comparisonMode: "direct",
+      },
+    );
   });
 });

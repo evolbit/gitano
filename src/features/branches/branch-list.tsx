@@ -1,4 +1,5 @@
 import { BranchConfirmModals } from "./branch-confirm-modals";
+import { BranchCompareModal } from "./branch-compare-modal";
 import { BranchContextMenu } from "./branch-context-menu";
 import { BranchCreateForm } from "./branch-create-form";
 import { BranchListHeader } from "./branch-list-header";
@@ -78,6 +79,7 @@ export function BranchList() {
             onCopyBranchTipSha={(branchName) => {
               void branchList.copyBranchTipSha(branchName);
             }}
+            onCompareBranch={branchList.openBranchCompare}
             onRequestRenameBranch={branchList.requestRenameBranch}
             onRequestDeleteBranch={branchList.requestDeleteBranch}
           />
@@ -111,6 +113,14 @@ export function BranchList() {
           void branchList.deleteBranch();
         }}
       />
+      {branchList.compareSourceBranch ? (
+        <BranchCompareModal
+          repoPath={branchList.repoPath}
+          sourceBranch={branchList.compareSourceBranch}
+          currentBranch={branchList.selectedBranch}
+          onClose={branchList.closeBranchCompare}
+        />
+      ) : null}
     </>
   );
 }

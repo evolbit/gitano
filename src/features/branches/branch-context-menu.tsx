@@ -46,6 +46,7 @@ type BranchContextMenuProps = {
   onCreateRandomWorktreeFromBranch: (baseRef: string) => void;
   onCopyText: (text: string, successTitle: string, successDetails: string) => void;
   onCopyBranchTipSha: (branchName: string) => void;
+  onCompareBranch: (branchName: string) => void;
   onRequestRenameBranch: (branchName: string) => void;
   onRequestDeleteBranch: (branchName: string) => void;
 };
@@ -65,6 +66,7 @@ export function BranchContextMenu({
   onCreateRandomWorktreeFromBranch,
   onCopyText,
   onCopyBranchTipSha,
+  onCompareBranch,
   onRequestRenameBranch,
   onRequestDeleteBranch,
 }: BranchContextMenuProps) {
@@ -138,6 +140,12 @@ export function BranchContextMenu({
       ? "A worktree is already being created"
       : null;
   const createWorktreeActionClass = createWorktreeDisabledReason
+    ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+    : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
+  const compareDisabledReason = !isBranchNode
+    ? "Compare is only available for branches"
+    : null;
+  const compareActionClass = compareDisabledReason
     ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
 
@@ -244,7 +252,13 @@ export function BranchContextMenu({
           onCloseMenus={closeMenus}
         />
         <BranchContextMenuSeparator />
-        <BranchContextMenuCompareItems onCloseMenus={closeMenus} />
+        <BranchContextMenuCompareItems
+          branchName={branchName}
+          disabledReason={compareDisabledReason}
+          itemClass={compareActionClass}
+          onCompareBranch={onCompareBranch}
+          onCloseMenus={closeMenus}
+        />
         <BranchContextMenuSeparator />
         <BranchContextMenuOtherActions
           branchName={branchName}

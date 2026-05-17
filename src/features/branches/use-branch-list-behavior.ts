@@ -100,6 +100,9 @@ export function useBranchListBehavior() {
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
+  const [compareSourceBranch, setCompareSourceBranch] = useState<string | null>(
+    null,
+  );
   const menuRef = useRef<HTMLDivElement>(null);
 
   const refreshBranches = useCallback(async () => {
@@ -591,6 +594,14 @@ export function useBranchListBehavior() {
     setDeleteRequest({ branchName });
   }, []);
 
+  const openBranchCompare = useCallback((branchName: string) => {
+    setCompareSourceBranch(branchName);
+  }, []);
+
+  const closeBranchCompare = useCallback(() => {
+    setCompareSourceBranch(null);
+  }, []);
+
   const cancelRenameBranch = useCallback(() => {
     if (branchActionLoading) return;
     setRenameRequest(null);
@@ -627,6 +638,7 @@ export function useBranchListBehavior() {
     menuPos,
     menuRef,
     creatingWorktree,
+    compareSourceBranch,
     isRowActionsVisible,
     setHoveredRowKey,
     openContextMenu,
@@ -639,6 +651,8 @@ export function useBranchListBehavior() {
     runBranchOperation,
     copyText,
     copyBranchTipSha,
+    openBranchCompare,
+    closeBranchCompare,
     renameBranch,
     deleteBranch,
     runRemoteBranchAction,

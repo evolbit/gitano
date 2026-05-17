@@ -1,6 +1,11 @@
 import React from "react";
 import { IconCheck } from "@/components/icons";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
+import {
+  createDiffLineAnchor,
+  useDiffInteraction,
+  type DiffLineAnchor,
+} from "./diff-interaction-context";
 import type {
   DiffHunkProps,
   DiffLine,
@@ -37,11 +42,14 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
     });
     return index;
   }, [blocks]);
+  const diffInteraction = useDiffInteraction();
   const canRenderGutters = !hunk.is_new_file && canStage;
   const splitRows = React.useMemo(
     () => (displayMode === "split" ? buildSplitRows(hunk.lines, blocks) : []),
     [displayMode, hunk.lines, blocks],
   );
+  const renderLineAccessory = diffInteraction.renderLineAccessory;
+  const renderLineBelow = diffInteraction.renderLineBelow;
 
   return (
     <div
@@ -60,7 +68,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
         </span>
       </div>
 
-      {!hunk.is_new_file && canStage && (
+      {!hunk.is_new_file && canStage && handleExpandContext && (
         <>
           <div className="flex justify-center py-1">
             <button
@@ -114,13 +122,17 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
               <SplitDiffRow
                 key={row.key}
                 row={row}
+                filePath={filePath}
+                hunkIdx={hunkIdx}
                 canStage={canRenderGutters}
                 isBlockFullyStaged={isBlockFullyStaged}
                 isBlockPartiallyStaged={isBlockPartiallyStaged}
                 isRowChecked={isRowChecked}
                 isRowIndeterminate={isRowIndeterminate}
+                renderLineAccessory={renderLineAccessory}
+                renderLineBelow={renderLineBelow}
                 onBlockMouseDown={
-                  row.block && canRenderGutters
+                  row.block && canRenderGutters && handleStageBlock
                     ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -129,7 +141,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onLineGutterMouseDown={
-                  canRenderGutters && row.lineIdxs.length > 0
+                  canRenderGutters && row.lineIdxs.length > 0 && handleStageBlock
                     ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -138,7 +150,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onLeftMouseDown={
-                  row.left && canRenderGutters
+                  row.left && canRenderGutters && handleLineMouseDown
                     ? (event) => {
                         event.preventDefault();
                         handleLineMouseDown(
@@ -151,7 +163,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onLeftMouseEnter={
-                  row.left && canRenderGutters
+                  row.left && canRenderGutters && handleLineMouseEnter
                     ? () =>
                         handleLineMouseEnter(
                           hunkIdx,
@@ -162,7 +174,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onRightMouseDown={
-                  row.right && canRenderGutters
+                  row.right && canRenderGutters && handleLineMouseDown
                     ? (event) => {
                         event.preventDefault();
                         handleLineMouseDown(
@@ -175,7 +187,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onRightMouseEnter={
-                  row.right && canRenderGutters
+                  row.right && canRenderGutters && handleLineMouseEnter
                     ? () =>
                         handleLineMouseEnter(
                           hunkIdx,
@@ -206,18 +218,26 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
               !!block &&
               blockStagedCount > 0 &&
               blockStagedCount < block.lineIdxs.length;
-
+            const anchor = createDiffLineAnchor({
+              filePath,
+              hunkIdx,
+              lineIdx,
+              line,
+            });
             return (
               <UnifiedLineRow
                 key={lineIdx}
                 line={line}
+                anchor={anchor}
+                lineAccessory={renderLineAccessory?.(anchor)}
+                lineBelow={renderLineBelow?.(anchor)}
                 showHunkGutter={canRenderGutters}
                 showLineGutter={canRenderGutters && isStageable}
                 isBlockStart={isBlockStart}
                 isBlockFullyStaged={isBlockFullyStaged}
                 isBlockPartiallyStaged={isBlockPartiallyStaged}
                 onBlockMouseDown={
-                  block && canRenderGutters
+                  block && canRenderGutters && handleStageBlock
                     ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -227,7 +247,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                 }
                 isStaged={isStaged}
                 onMouseDown={
-                  canRenderGutters
+                  canRenderGutters && handleLineMouseDown
                     ? (event) => {
                         event.preventDefault();
                         handleLineMouseDown(hunkIdx, lineIdx, isStageable, isStaged);
@@ -235,7 +255,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                     : undefined
                 }
                 onMouseEnter={
-                  canRenderGutters
+                  canRenderGutters && handleLineMouseEnter
                     ? () =>
                         handleLineMouseEnter(hunkIdx, lineIdx, isStageable, isStaged)
                     : undefined
@@ -244,7 +264,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             );
           })}
 
-      {!hunk.is_new_file && canStage && (
+      {!hunk.is_new_file && canStage && handleExpandContext && (
         <>
           {extraContext?.below?.map((line, i) =>
             displayMode === "split" ? (
@@ -365,6 +385,9 @@ function buildSplitRows(lines: DiffLine[], blocks: StageableBlock[]): SplitRow[]
 
 const UnifiedLineRow: React.FC<{
   line: DiffLine;
+  anchor?: DiffLineAnchor;
+  lineAccessory?: React.ReactNode;
+  lineBelow?: React.ReactNode;
   showHunkGutter?: boolean;
   isBlockStart?: boolean;
   isBlockFullyStaged?: boolean;
@@ -376,6 +399,8 @@ const UnifiedLineRow: React.FC<{
   onMouseEnter?: () => void;
 }> = ({
   line,
+  lineAccessory,
+  lineBelow,
   showHunkGutter = true,
   isBlockStart = false,
   isBlockFullyStaged = false,
@@ -395,49 +420,67 @@ const UnifiedLineRow: React.FC<{
         : "bg-transparent";
 
   return (
-    <div
-      className="flex items-stretch font-mono group"
-      style={{
-        fontSize: "var(--diff-font-size)",
-        fontVariantNumeric: "tabular-nums",
-        cursor: showLineGutter ? "pointer" : undefined,
-      }}
-      onMouseDown={onMouseDown}
-      onMouseEnter={onMouseEnter}
-    >
-      <CenterBlockGutter
-        show={showHunkGutter}
-        isBlockStart={isBlockStart}
-        isBlockFullyStaged={isBlockFullyStaged}
-        isBlockPartiallyStaged={isBlockPartiallyStaged}
-        onMouseDown={onBlockMouseDown}
-      />
-      <CenterLineGutter
-        show={showLineGutter}
-        isChecked={isStaged}
-        isIndeterminate={false}
+    <div>
+      <div
+        className="group flex items-stretch font-mono"
+        style={{
+          fontSize: "var(--diff-font-size)",
+          fontVariantNumeric: "tabular-nums",
+          cursor: showLineGutter ? "pointer" : undefined,
+        }}
         onMouseDown={onMouseDown}
-      />
-      <div className={`flex flex-1 items-start px-4 ${baseColor} ${contentTone}`}>
-        <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
-          {line.old_lineno ?? ""}
-        </span>
-        <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
-          {line.new_lineno ?? ""}
-        </span>
-        <span className="min-w-0 flex-1 whitespace-pre-wrap pt-1">{line.content}</span>
+        onMouseEnter={onMouseEnter}
+      >
+        <CenterBlockGutter
+          show={showHunkGutter}
+          isBlockStart={isBlockStart}
+          isBlockFullyStaged={isBlockFullyStaged}
+          isBlockPartiallyStaged={isBlockPartiallyStaged}
+          onMouseDown={onBlockMouseDown}
+        />
+        <CenterLineGutter
+          show={showLineGutter}
+          isChecked={isStaged}
+          isIndeterminate={false}
+          onMouseDown={onMouseDown}
+        />
+        <div className={`flex flex-1 items-start px-4 ${baseColor} ${contentTone}`}>
+          <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
+            {line.old_lineno ?? ""}
+          </span>
+          <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
+            {line.new_lineno ?? ""}
+          </span>
+          {lineAccessory ? (
+            <span className="mr-2 flex min-h-7 w-7 shrink-0 items-start justify-center pt-0.5">
+              {lineAccessory}
+            </span>
+          ) : null}
+          <span className="min-w-0 flex-1 whitespace-pre-wrap pt-1">
+            {line.content}
+          </span>
+        </div>
       </div>
+      {lineBelow ? (
+        <div className="border-t border-border/40 bg-background px-16 py-2 font-sans">
+          {lineBelow}
+        </div>
+      ) : null}
     </div>
   );
 };
 
 const SplitDiffRow: React.FC<{
   row: SplitRow;
+  filePath: string;
+  hunkIdx: number;
   canStage: boolean;
   isBlockFullyStaged: boolean;
   isBlockPartiallyStaged: boolean;
   isRowChecked: boolean;
   isRowIndeterminate: boolean;
+  renderLineAccessory?: (anchor: DiffLineAnchor) => React.ReactNode;
+  renderLineBelow?: (anchor: DiffLineAnchor) => React.ReactNode;
   onBlockMouseDown?: (e: React.MouseEvent) => void;
   onLineGutterMouseDown?: (e: React.MouseEvent) => void;
   onLeftMouseDown?: (e: React.MouseEvent) => void;
@@ -446,11 +489,15 @@ const SplitDiffRow: React.FC<{
   onRightMouseEnter?: () => void;
 }> = ({
   row,
+  filePath,
+  hunkIdx,
   canStage,
   isBlockFullyStaged,
   isBlockPartiallyStaged,
   isRowChecked,
   isRowIndeterminate,
+  renderLineAccessory,
+  renderLineBelow,
   onBlockMouseDown,
   onLineGutterMouseDown,
   onLeftMouseDown,
@@ -460,6 +507,24 @@ const SplitDiffRow: React.FC<{
 }) => {
   const leftTone = row.left ? getLineTone(row.left.line) : "bg-background";
   const rightTone = row.right ? getLineTone(row.right.line) : "bg-background";
+  const leftAnchor = row.left
+    ? createDiffLineAnchor({
+        filePath,
+        hunkIdx,
+        lineIdx: row.left.lineIdx,
+        line: row.left.line,
+        side: "old",
+      })
+    : undefined;
+  const rightAnchor = row.right
+    ? createDiffLineAnchor({
+        filePath,
+        hunkIdx,
+        lineIdx: row.right.lineIdx,
+        line: row.right.line,
+        side: "new",
+      })
+    : undefined;
   return (
     <div
       className="grid items-stretch font-mono"
@@ -472,6 +537,11 @@ const SplitDiffRow: React.FC<{
       <SplitSideCell
         cell={row.left}
         tone={leftTone}
+        anchor={leftAnchor}
+        lineAccessory={
+          leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
+        }
+        lineBelow={leftAnchor ? renderLineBelow?.(leftAnchor) : undefined}
         onMouseDown={onLeftMouseDown}
         onMouseEnter={onLeftMouseEnter}
       />
@@ -501,6 +571,11 @@ const SplitDiffRow: React.FC<{
       <SplitSideCell
         cell={row.right}
         tone={rightTone}
+        anchor={rightAnchor}
+        lineAccessory={
+          rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
+        }
+        lineBelow={rightAnchor ? renderLineBelow?.(rightAnchor) : undefined}
         onMouseDown={onRightMouseDown}
         onMouseEnter={onRightMouseEnter}
       />
@@ -529,17 +604,32 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
 const SplitSideCell: React.FC<{
   cell?: SplitCell;
   tone: string;
+  anchor?: DiffLineAnchor;
+  lineAccessory?: React.ReactNode;
+  lineBelow?: React.ReactNode;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
-}> = ({ cell, tone, onMouseDown, onMouseEnter }) => (
+}> = ({ cell, tone, lineAccessory, lineBelow, onMouseDown, onMouseEnter }) => (
   <div
-    className={`px-4 pt-1 whitespace-pre-wrap min-w-0 ${tone} ${
+    className={`min-w-0 whitespace-pre-wrap px-4 pt-1 ${tone} ${
       cell && onMouseDown ? "cursor-pointer" : ""
     }`}
     onMouseDown={cell ? onMouseDown : undefined}
     onMouseEnter={cell ? onMouseEnter : undefined}
   >
-    {cell?.line.content ?? ""}
+    <div className="flex min-w-0 items-start">
+      {lineAccessory ? (
+        <span className="mr-2 flex min-h-7 w-7 shrink-0 items-start justify-center pt-0.5">
+          {lineAccessory}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1">{cell?.line.content ?? ""}</span>
+    </div>
+    {lineBelow ? (
+      <div className="mt-1 border-t border-border/40 bg-background/80 py-2 font-sans">
+        {lineBelow}
+      </div>
+    ) : null}
   </div>
 );
 

@@ -1,4 +1,5 @@
 export { BranchList } from "./branch-list";
+export { BranchCompareModal } from "./branch-compare-modal";
 export type {
   BranchContextMenuState,
   BranchContextRequest,

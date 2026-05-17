@@ -8,10 +8,9 @@ import {
 import { stageLines } from "@/shared/api/git/staging";
 import { useFileHunksStore } from "@/features/diffs/stores/file-hunks-store";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
-import DiffHunk from "./diff-hunk";
+import DiffViewerBase from "./diff-viewer-base";
 import {
   ContextDirection,
-  DiffDisplayMode,
   DiffHunk as DiffHunkData,
   DiffLine as DiffLineData,
   DiffViewerProps,
@@ -60,8 +59,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   const wholeFileStaged = useStagedLinesStore(
     (s) => !!s.stagedLines[filePath]?.isWholeFileStaged
   );
-  // Hunk hover state
-  const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
   // State for drag-based multi-selection
   const [isDragging, setIsDragging] = useState(false);
   const [dragHunkIdx, setDragHunkIdx] = useState<number | null>(null);
@@ -433,47 +430,20 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   }, [canSelectLines, dragHunkIdx, dragMode, handleToggleLineStage, isDragging]);
 
   return (
-    <div className="bg-background-emphasis h-full flex flex-col text-sm">
-      <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-border bg-background">
-        {(["unified", "split"] as DiffDisplayMode[]).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={`rounded px-2 py-1 text-xs transition-colors ${
-              displayMode === mode
-                ? "bg-zinc-700 text-white"
-                : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-            }`}
-            onClick={() => onDisplayModeChange?.(mode)}
-          >
-            {mode === "unified" ? "Unified" : "Split"}
-          </button>
-        ))}
-      </div>
-      {/* Scrollable diff area */}
-      <div className="flex-1 overflow-auto px-4 pt-4">
-        {loading && <div className="text-blue-400">Loading diff...</div>}
-        {error && <div className="text-red-400">{error}</div>}
-        {hunks.length === 0 && !loading && !error && <div>No changes.</div>}
-        {hunks.map((hunk, idx) => (
-          <DiffHunk
-            key={idx}
-            hunk={hunk}
-            filePath={filePath}
-            hunkIdx={idx}
-            extraContext={extraContext[idx]}
-            isHovered={hoveredHunkIdx === idx}
-            setHoveredHunkIdx={setHoveredHunkIdx}
-            handleExpandContext={handleExpandContext}
-            handleLineMouseDown={handleLineMouseDown}
-            handleLineMouseEnter={handleLineMouseEnter}
-            handleStageBlock={handleStageBlock}
-            canStage={canSelectLines}
-            displayMode={displayMode}
-          />
-        ))}
-      </div>
-    </div>
+    <DiffViewerBase
+      filePath={filePath}
+      hunks={hunks}
+      loading={loading}
+      error={error}
+      extraContext={extraContext}
+      displayMode={displayMode}
+      onDisplayModeChange={onDisplayModeChange}
+      onExpandContext={handleExpandContext}
+      onLineMouseDown={handleLineMouseDown}
+      onLineMouseEnter={handleLineMouseEnter}
+      onStageBlock={handleStageBlock}
+      canStage={canSelectLines}
+    />
   );
 };
 

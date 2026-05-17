@@ -26,6 +26,8 @@ fn main() {
             git::get_file_diff_hunks,
             git::get_diff_context,
             git::get_commit_file_diff,
+            git::get_branch_comparison_files,
+            git::get_branch_comparison_file_diff,
             git::get_working_directory_changes,
             git::get_index_diffs_for_files,
             git::git_add_file,

@@ -433,35 +433,35 @@ function ChangesExplorer({
           <span className="text-sm font-semibold text-foreground">
             {files.length} Changes
           </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded p-1 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
-              onClick={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                openContextMenu(rect.left, rect.bottom + 4, { kind: "pane" });
-              }}
-              aria-label="Open changes menu"
-            >
-              <IconDotsVertical size={16} />
-            </button>
-            <button
-              type="button"
-              className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                showFileCheckboxes && repoPath && normalizedFiles.length > 0
-                  ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                  : "bg-zinc-800 text-zinc-400"
-              }`}
-              onClick={() => {
-                void toggleAllFilesSelection();
-              }}
-              disabled={
-                !showFileCheckboxes || !repoPath || normalizedFiles.length === 0
-              }
-            >
-              {areAllFilesFullySelected ? "Unstage All" : "Stage All"}
-            </button>
-          </div>
+          {showFileCheckboxes ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
+                onClick={(e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  openContextMenu(rect.left, rect.bottom + 4, { kind: "pane" });
+                }}
+                aria-label="Open changes menu"
+              >
+                <IconDotsVertical size={16} />
+              </button>
+              <button
+                type="button"
+                className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                  repoPath && normalizedFiles.length > 0
+                    ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                    : "bg-zinc-800 text-zinc-400"
+                }`}
+                onClick={() => {
+                  void toggleAllFilesSelection();
+                }}
+                disabled={!repoPath || normalizedFiles.length === 0}
+              >
+                {areAllFilesFullySelected ? "Unstage All" : "Stage All"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

@@ -4,18 +4,31 @@ import {
 } from "./branch-context-menu-parts";
 
 export function BranchContextMenuCompareItems({
+  branchName,
+  disabledReason,
+  itemClass,
+  onCompareBranch,
   onCloseMenus,
 }: {
+  branchName: string;
+  disabledReason: string | null;
+  itemClass: string;
+  onCompareBranch: (branchName: string) => void;
   onCloseMenus: () => void;
 }) {
   return (
     <>
       <BranchContextMenuSectionTitle>Compare</BranchContextMenuSectionTitle>
       <BranchContextMenuItem
-        className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
-        onClick={onCloseMenus}
+        className={itemClass}
+        title={disabledReason ?? undefined}
+        onClick={() => {
+          if (disabledReason) return;
+          onCloseMenus();
+          onCompareBranch(branchName);
+        }}
       >
-        Compare commit against working directory
+        Compare to...
       </BranchContextMenuItem>
     </>
   );
