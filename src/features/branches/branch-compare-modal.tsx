@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconPlus, IconX, IconPencil } from "@/components/icons";
+import { IconPlus, IconX } from "@/components/icons";
 import {
   DiffInteractionProvider,
   DiffViewerBase,
@@ -22,16 +22,21 @@ import {
   getBranchComparisonFiles,
 } from "@/shared/api/git/diffs";
 import type { FileChange } from "@/shared/types/git";
-import { getBranches } from "./api";
 import {
-  commentsForAnchor,
-  createDraftComment,
-  deleteDraftComment,
-  getBranchComparisonPairKey,
-  getDraftCommentAnchorKey,
-  updateDraftComment,
-  type DraftDiffComment,
-} from "./branch-compare-comments";
+  addReviewThreadReply,
+  deleteReviewThreadComment,
+  findReviewThreadForAnchor,
+  getReviewComparisonPairKey,
+  getReviewThreadAnchorKey,
+  ReviewThreadView,
+  setReviewThreadStatus,
+  toReviewThreadAnchor,
+  updateReviewThreadComment,
+  upsertReviewThreadComment,
+  type ReviewCommentAuthor,
+  type ReviewThread,
+} from "@/features/review-comments";
+import { getBranches } from "./api";
 import { BranchCompareTargetDropdown } from "./branch-compare-target-dropdown";
 import { getDefaultBranchComparisonBase } from "./branch-compare-utils";
 
@@ -44,6 +49,12 @@ type BranchCompareModalProps = {
 
 const DIFF_CONTEXT_LINES = 3;
 const BRANCH_COMPARE_MODE = "direct" as const;
+const CURRENT_REVIEW_AUTHOR: ReviewCommentAuthor = {
+  id: "local-current-user",
+  name: "You",
+  initials: "Y",
+  kind: "user",
+};
 
 export function BranchCompareModal({
   repoPath,
@@ -66,17 +77,16 @@ export function BranchCompareModal({
   const [displayMode, setDisplayMode] =
     useState<DiffDisplayMode>("unified");
   const [viewMode, setViewMode] = useState<ChangesExplorerViewMode>("tree");
-  const [comments, setComments] = useState<DraftDiffComment[]>([]);
-  const [activeDraftAnchor, setActiveDraftAnchor] =
+  const [reviewThreads, setReviewThreads] = useState<ReviewThread[]>([]);
+  const [activeReviewAnchor, setActiveReviewAnchor] =
     useState<DiffLineAnchor | null>(null);
-  const [draftBody, setDraftBody] = useState("");
   const filesRequestId = useRef(0);
   const hunksRequestId = useRef(0);
 
   const pairKey = useMemo(
     () =>
       baseBranch
-        ? getBranchComparisonPairKey(baseBranch, sourceBranch)
+        ? getReviewComparisonPairKey(baseBranch, sourceBranch)
         : "",
     [baseBranch, sourceBranch],
   );
@@ -194,86 +204,116 @@ export function BranchCompareModal({
     [files, selectedPath],
   );
 
-  const beginDraftComment = useCallback((anchor: DiffLineAnchor) => {
-    setActiveDraftAnchor(anchor);
-    setDraftBody("");
+  const beginReviewThread = useCallback((anchor: DiffLineAnchor) => {
+    setActiveReviewAnchor(anchor);
   }, []);
-
-  const saveDraftComment = useCallback(() => {
-    if (!activeDraftAnchor || !pairKey) return;
-    const body = draftBody.trim();
-    if (!body) return;
-
-    setComments((current) => [
-      ...current,
-      createDraftComment(pairKey, activeDraftAnchor, body),
-    ]);
-    setActiveDraftAnchor(null);
-    setDraftBody("");
-  }, [activeDraftAnchor, draftBody, pairKey]);
 
   const interactionValue = useMemo<DiffInteractionContextValue>(
     () => ({
       renderLineAccessory: (anchor) => {
-        const anchorComments = pairKey
-          ? commentsForAnchor(comments, pairKey, anchor)
-          : [];
+        const thread = pairKey
+          ? findReviewThreadForAnchor(
+              reviewThreads,
+              pairKey,
+              toReviewThreadAnchor(anchor),
+            )
+          : undefined;
+        const commentCount = thread?.comments.length ?? 0;
         return (
           <button
             type="button"
             className={`flex h-6 min-w-6 items-center justify-center rounded border text-[11px] transition-colors ${
-              anchorComments.length > 0
+              commentCount > 0
                 ? "border-blue-500/50 bg-blue-500/20 text-blue-100"
                 : "border-border bg-background text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-zinc-100"
             }`}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              beginDraftComment(anchor);
+              beginReviewThread(anchor);
             }}
-            aria-label="Add comment"
+            aria-label={commentCount > 0 ? "Open review thread" : "Add comment"}
           >
-            {anchorComments.length > 0 ? anchorComments.length : <IconPlus size={13} />}
+            {commentCount > 0 ? commentCount : <IconPlus size={13} />}
           </button>
         );
       },
-      renderLineBelow: (anchor) => {
+      renderLineBelowFullWidth: (anchor) => {
         if (!pairKey) return null;
-        const anchorKey = getDraftCommentAnchorKey(pairKey, anchor);
-        const isComposing =
-          activeDraftAnchor &&
-          getDraftCommentAnchorKey(pairKey, activeDraftAnchor) === anchorKey;
-        const anchorComments = commentsForAnchor(comments, pairKey, anchor);
+        const threadAnchor = toReviewThreadAnchor(anchor);
+        const thread = findReviewThreadForAnchor(
+          reviewThreads,
+          pairKey,
+          threadAnchor,
+        ) ?? null;
+        const isCreating =
+          !!activeReviewAnchor &&
+          !thread &&
+          getReviewThreadAnchorKey(pairKey, toReviewThreadAnchor(activeReviewAnchor)) ===
+            getReviewThreadAnchorKey(pairKey, threadAnchor);
 
-        if (!isComposing && anchorComments.length === 0) return null;
+        if (!isCreating && !thread) return null;
 
         return (
-          <DraftCommentThread
-            comments={anchorComments}
-            draftBody={isComposing ? draftBody : null}
-            onDraftBodyChange={setDraftBody}
-            onSaveDraft={saveDraftComment}
-            onCancelDraft={() => {
-              setActiveDraftAnchor(null);
-              setDraftBody("");
+          <ReviewThreadView
+            thread={thread}
+            isCreating={isCreating}
+            currentAuthor={CURRENT_REVIEW_AUTHOR}
+            onSaveInitial={(bodyMarkdown) => {
+              setReviewThreads((current) =>
+                upsertReviewThreadComment({
+                  threads: current,
+                  pairKey,
+                  anchor,
+                  author: CURRENT_REVIEW_AUTHOR,
+                  bodyMarkdown,
+                }),
+              );
+              setActiveReviewAnchor(null);
             }}
-            onUpdateComment={(commentId, body) =>
-              setComments((current) => updateDraftComment(current, commentId, body))
+            onCancelInitial={() => setActiveReviewAnchor(null)}
+            onReply={(threadId, bodyMarkdown) =>
+              setReviewThreads((current) =>
+                addReviewThreadReply({
+                  threads: current,
+                  threadId,
+                  author: CURRENT_REVIEW_AUTHOR,
+                  bodyMarkdown,
+                }),
+              )
             }
-            onDeleteComment={(commentId) =>
-              setComments((current) => deleteDraftComment(current, commentId))
+            onResolveThread={(threadId, resolved) =>
+              setReviewThreads((current) =>
+                setReviewThreadStatus({
+                  threads: current,
+                  threadId,
+                  status: resolved ? "resolved" : "open",
+                }),
+              )
             }
+            onUpdateComment={(commentId, bodyMarkdown) =>
+              setReviewThreads((current) =>
+                updateReviewThreadComment({
+                  threads: current,
+                  commentId,
+                  bodyMarkdown,
+                }),
+              )
+            }
+            onDeleteComment={(commentId) => {
+              setReviewThreads((current) =>
+                deleteReviewThreadComment({ threads: current, commentId }),
+              );
+            }}
           />
         );
       },
     }),
     [
-      activeDraftAnchor,
-      beginDraftComment,
-      comments,
-      draftBody,
+      activeReviewAnchor,
+      beginReviewThread,
       pairKey,
-      saveDraftComment,
+      reviewThreads,
     ],
   );
 
@@ -361,138 +401,4 @@ export function BranchCompareModal({
   );
 
   return ReactDOM.createPortal(modalContent, document.body);
-}
-
-function DraftCommentThread({
-  comments,
-  draftBody,
-  onDraftBodyChange,
-  onSaveDraft,
-  onCancelDraft,
-  onUpdateComment,
-  onDeleteComment,
-}: {
-  comments: DraftDiffComment[];
-  draftBody: string | null;
-  onDraftBodyChange: (value: string) => void;
-  onSaveDraft: () => void;
-  onCancelDraft: () => void;
-  onUpdateComment: (commentId: string, body: string) => void;
-  onDeleteComment: (commentId: string) => void;
-}) {
-  return (
-    <div className="space-y-2 text-sm">
-      {comments.map((comment) => (
-        <DraftCommentItem
-          key={comment.id}
-          comment={comment}
-          onUpdateComment={onUpdateComment}
-          onDeleteComment={onDeleteComment}
-        />
-      ))}
-      {draftBody !== null ? (
-        <div className="rounded border border-blue-500/30 bg-blue-500/10 p-2">
-          <textarea
-            value={draftBody}
-            onChange={(event) => onDraftBodyChange(event.target.value)}
-            className="min-h-20 w-full resize-none rounded border border-border bg-background p-2 text-sm text-foreground focus:outline-none"
-            autoFocus
-          />
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-              onClick={onCancelDraft}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="rounded bg-blue-600 px-2 py-1 text-xs text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={onSaveDraft}
-              disabled={!draftBody.trim()}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DraftCommentItem({
-  comment,
-  onUpdateComment,
-  onDeleteComment,
-}: {
-  comment: DraftDiffComment;
-  onUpdateComment: (commentId: string, body: string) => void;
-  onDeleteComment: (commentId: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [body, setBody] = useState(comment.body);
-
-  useEffect(() => {
-    if (!editing) setBody(comment.body);
-  }, [comment.body, editing]);
-
-  if (editing) {
-    return (
-      <div className="rounded border border-border bg-background p-2">
-        <textarea
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          className="min-h-20 w-full resize-none rounded border border-border bg-background-emphasis p-2 text-sm text-foreground focus:outline-none"
-          autoFocus
-        />
-        <div className="mt-2 flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-            onClick={() => setEditing(false)}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="rounded bg-blue-600 px-2 py-1 text-xs text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => {
-              const nextBody = body.trim();
-              if (!nextBody) return;
-              onUpdateComment(comment.id, nextBody);
-              setEditing(false);
-            }}
-            disabled={!body.trim()}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded border border-border bg-background p-2">
-      <div className="whitespace-pre-wrap text-zinc-200">{comment.body}</div>
-      <div className="mt-2 flex justify-end gap-1">
-        <button
-          type="button"
-          className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-          onClick={() => setEditing(true)}
-          aria-label="Edit comment"
-        >
-          <IconPencil size={14} />
-        </button>
-        <button
-          type="button"
-          className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-200"
-          onClick={() => onDeleteComment(comment.id)}
-          aria-label="Delete comment"
-        >
-          <IconX size={14} />
-        </button>
-      </div>
-    </div>
-  );
 }

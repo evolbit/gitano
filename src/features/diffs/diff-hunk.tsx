@@ -50,6 +50,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   );
   const renderLineAccessory = diffInteraction.renderLineAccessory;
   const renderLineBelow = diffInteraction.renderLineBelow;
+  const renderLineBelowFullWidth = diffInteraction.renderLineBelowFullWidth;
 
   return (
     <div
@@ -131,6 +132,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                 isRowIndeterminate={isRowIndeterminate}
                 renderLineAccessory={renderLineAccessory}
                 renderLineBelow={renderLineBelow}
+                renderLineBelowFullWidth={renderLineBelowFullWidth}
                 onBlockMouseDown={
                   row.block && canRenderGutters && handleStageBlock
                     ? (event) => {
@@ -231,6 +233,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                 anchor={anchor}
                 lineAccessory={renderLineAccessory?.(anchor)}
                 lineBelow={renderLineBelow?.(anchor)}
+                lineBelowFullWidth={renderLineBelowFullWidth?.(anchor)}
                 showHunkGutter={canRenderGutters}
                 showLineGutter={canRenderGutters && isStageable}
                 isBlockStart={isBlockStart}
@@ -388,6 +391,7 @@ const UnifiedLineRow: React.FC<{
   anchor?: DiffLineAnchor;
   lineAccessory?: React.ReactNode;
   lineBelow?: React.ReactNode;
+  lineBelowFullWidth?: React.ReactNode;
   showHunkGutter?: boolean;
   isBlockStart?: boolean;
   isBlockFullyStaged?: boolean;
@@ -401,6 +405,7 @@ const UnifiedLineRow: React.FC<{
   line,
   lineAccessory,
   lineBelow,
+  lineBelowFullWidth,
   showHunkGutter = true,
   isBlockStart = false,
   isBlockFullyStaged = false,
@@ -466,6 +471,11 @@ const UnifiedLineRow: React.FC<{
           {lineBelow}
         </div>
       ) : null}
+      {lineBelowFullWidth ? (
+        <div className="border-t border-border/40 bg-background px-8 py-3 font-sans">
+          {lineBelowFullWidth}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -481,6 +491,7 @@ const SplitDiffRow: React.FC<{
   isRowIndeterminate: boolean;
   renderLineAccessory?: (anchor: DiffLineAnchor) => React.ReactNode;
   renderLineBelow?: (anchor: DiffLineAnchor) => React.ReactNode;
+  renderLineBelowFullWidth?: (anchor: DiffLineAnchor) => React.ReactNode;
   onBlockMouseDown?: (e: React.MouseEvent) => void;
   onLineGutterMouseDown?: (e: React.MouseEvent) => void;
   onLeftMouseDown?: (e: React.MouseEvent) => void;
@@ -498,6 +509,7 @@ const SplitDiffRow: React.FC<{
   isRowIndeterminate,
   renderLineAccessory,
   renderLineBelow,
+  renderLineBelowFullWidth,
   onBlockMouseDown,
   onLineGutterMouseDown,
   onLeftMouseDown,
@@ -525,61 +537,74 @@ const SplitDiffRow: React.FC<{
         side: "new",
       })
     : undefined;
+  const fullWidthBelow = [
+    leftAnchor ? renderLineBelowFullWidth?.(leftAnchor) : null,
+    rightAnchor ? renderLineBelowFullWidth?.(rightAnchor) : null,
+  ].filter(Boolean);
   return (
-    <div
-      className="grid items-stretch font-mono"
-      style={{
-        fontSize: "var(--diff-font-size)",
-        fontVariantNumeric: "tabular-nums",
-        gridTemplateColumns: "minmax(0,1fr) 2.5rem 1.5rem 1.5rem 2.5rem minmax(0,1fr)",
-      }}
-    >
-      <SplitSideCell
-        cell={row.left}
-        tone={leftTone}
-        anchor={leftAnchor}
-        lineAccessory={
-          leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
-        }
-        lineBelow={leftAnchor ? renderLineBelow?.(leftAnchor) : undefined}
-        onMouseDown={onLeftMouseDown}
-        onMouseEnter={onLeftMouseEnter}
-      />
-      <span
-        className={`flex items-start justify-end pr-2 pt-1 select-none text-zinc-200 ${leftTone}`}
+    <>
+      <div
+        className="grid items-stretch font-mono"
+        style={{
+          fontSize: "var(--diff-font-size)",
+          fontVariantNumeric: "tabular-nums",
+          gridTemplateColumns: "minmax(0,1fr) 2.5rem 1.5rem 1.5rem 2.5rem minmax(0,1fr)",
+        }}
       >
-        {row.left?.line.old_lineno ?? ""}
-      </span>
-      <CenterBlockGutter
-        show={canStage && !!row.block}
-        isBlockStart={row.isBlockStart}
-        isBlockFullyStaged={isBlockFullyStaged}
-        isBlockPartiallyStaged={isBlockPartiallyStaged}
-        onMouseDown={onBlockMouseDown}
-      />
-      <CenterLineGutter
-        show={canStage && row.lineIdxs.length > 0}
-        isChecked={isRowChecked}
-        isIndeterminate={isRowIndeterminate}
-        onMouseDown={onLineGutterMouseDown}
-      />
-      <span
-        className={`flex items-start justify-end pr-2 pt-1 select-none text-zinc-200 ${rightTone}`}
-      >
-        {row.right?.line.new_lineno ?? ""}
-      </span>
-      <SplitSideCell
-        cell={row.right}
-        tone={rightTone}
-        anchor={rightAnchor}
-        lineAccessory={
-          rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
-        }
-        lineBelow={rightAnchor ? renderLineBelow?.(rightAnchor) : undefined}
-        onMouseDown={onRightMouseDown}
-        onMouseEnter={onRightMouseEnter}
-      />
-    </div>
+        <SplitSideCell
+          cell={row.left}
+          tone={leftTone}
+          anchor={leftAnchor}
+          lineAccessory={
+            leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
+          }
+          lineBelow={leftAnchor ? renderLineBelow?.(leftAnchor) : undefined}
+          onMouseDown={onLeftMouseDown}
+          onMouseEnter={onLeftMouseEnter}
+        />
+        <span
+          className={`flex items-start justify-end pr-2 pt-1 select-none text-zinc-200 ${leftTone}`}
+        >
+          {row.left?.line.old_lineno ?? ""}
+        </span>
+        <CenterBlockGutter
+          show={canStage && !!row.block}
+          isBlockStart={row.isBlockStart}
+          isBlockFullyStaged={isBlockFullyStaged}
+          isBlockPartiallyStaged={isBlockPartiallyStaged}
+          onMouseDown={onBlockMouseDown}
+        />
+        <CenterLineGutter
+          show={canStage && row.lineIdxs.length > 0}
+          isChecked={isRowChecked}
+          isIndeterminate={isRowIndeterminate}
+          onMouseDown={onLineGutterMouseDown}
+        />
+        <span
+          className={`flex items-start justify-end pr-2 pt-1 select-none text-zinc-200 ${rightTone}`}
+        >
+          {row.right?.line.new_lineno ?? ""}
+        </span>
+        <SplitSideCell
+          cell={row.right}
+          tone={rightTone}
+          anchor={rightAnchor}
+          lineAccessory={
+            rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
+          }
+          lineBelow={rightAnchor ? renderLineBelow?.(rightAnchor) : undefined}
+          onMouseDown={onRightMouseDown}
+          onMouseEnter={onRightMouseEnter}
+        />
+      </div>
+      {fullWidthBelow.length > 0 ? (
+        <div className="space-y-3 border-t border-border/40 bg-background px-8 py-3 font-sans">
+          {fullWidthBelow.map((content, index) => (
+            <React.Fragment key={index}>{content}</React.Fragment>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 };
 

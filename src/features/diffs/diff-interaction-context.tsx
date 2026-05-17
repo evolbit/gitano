@@ -16,6 +16,7 @@ export type DiffLineAnchor = {
 export type DiffInteractionContextValue = {
   renderLineAccessory?: (anchor: DiffLineAnchor) => React.ReactNode;
   renderLineBelow?: (anchor: DiffLineAnchor) => React.ReactNode;
+  renderLineBelowFullWidth?: (anchor: DiffLineAnchor) => React.ReactNode;
 };
 
 const DiffInteractionContext = createContext<DiffInteractionContextValue>({});
