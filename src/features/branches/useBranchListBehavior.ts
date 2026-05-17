@@ -467,8 +467,8 @@ export function useBranchListBehavior() {
         details: `Deleted ${deleteRequest.branchName}.`,
         expanded: false,
       });
-      setDeleteRequest(null);
       await refreshBranchState(undefined);
+      setDeleteRequest(null);
     } catch (deleteError) {
       notifyError("Delete branch failed", deleteError);
       await refreshBranchState();

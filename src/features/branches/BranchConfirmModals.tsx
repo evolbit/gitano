@@ -57,6 +57,7 @@ export function BranchConfirmModals({
           </label>
         }
         confirmLabel="Rename Branch"
+        loadingLabel="Renaming..."
         loading={branchActionLoading}
         confirmDisabled={
           !renameBranchName.trim() ||
@@ -85,6 +86,7 @@ export function BranchConfirmModals({
           ) : null
         }
         confirmLabel="Delete Branch"
+        loadingLabel="Deleting..."
         variant="danger"
         loading={branchActionLoading}
         onCancel={onCancelDelete}

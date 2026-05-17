@@ -10,6 +10,7 @@ type ConfirmModalProps = {
   description?: ReactNode;
   details?: ReactNode;
   confirmLabel?: string;
+  loadingLabel?: string;
   cancelLabel?: string;
   variant?: ConfirmModalVariant;
   loading?: boolean;
@@ -24,6 +25,7 @@ export function ConfirmModal({
   description,
   details,
   confirmLabel = "Confirm",
+  loadingLabel = "Working...",
   cancelLabel = "Cancel",
   variant = "default",
   loading = false,
@@ -116,10 +118,17 @@ export function ConfirmModal({
           </button>
           <button
             type="button"
-            className={`h-8 rounded border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${confirmButtonClass}`}
+            className={`inline-flex h-8 items-center justify-center gap-2 rounded border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${confirmButtonClass}`}
             onClick={onConfirm}
             disabled={loading || confirmDisabled}>
-            {loading ? "Working..." : confirmLabel}
+            {loading ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
+                {loadingLabel}
+              </>
+            ) : (
+              confirmLabel
+            )}
           </button>
         </div>
       </div>
