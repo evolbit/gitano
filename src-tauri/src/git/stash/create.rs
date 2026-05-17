@@ -1,8 +1,11 @@
 use super::helpers::{resolve_stash_message, run_git_status};
+use crate::git::repository_state::ensure_repository_has_commits;
 use std::process::Command;
 
 #[tauri::command]
 pub fn git_stash_all(path: String, message: Option<String>) -> Result<(), String> {
+    ensure_repository_has_commits(&path, "git stash")?;
+
     let stash_message = resolve_stash_message(&path, message)?;
     run_git_status(&path, &["stash", "push", "-u", "-m", &stash_message])
 }
@@ -16,6 +19,8 @@ pub fn git_stash_selected(
     if file_paths.is_empty() {
         return Err("No files selected for stash.".to_string());
     }
+
+    ensure_repository_has_commits(&path, "git stash")?;
 
     let stash_message = resolve_stash_message(&path, message)?;
     let mut cmd = Command::new("git");

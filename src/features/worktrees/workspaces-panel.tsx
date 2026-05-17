@@ -6,6 +6,7 @@ import {
   getWorktrees,
   removeGitWorktree,
 } from "@/shared/api/git/worktrees";
+import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { openDirectoryDialog } from "@/shared/platform/tauri/dialog";
 import { ConfirmModal } from "@/components/confirm-modal/confirm-modal";
@@ -25,6 +26,7 @@ import {
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
 import type { GitWorktree } from "@/shared/types/git";
+import type { RepositoryState } from "@/shared/types/git";
 import { groupNames, type BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import { getParentPath } from "@/shared/lib/path";
 import {
@@ -113,7 +115,10 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [deleteRequest, setDeleteRequest] =
     useState<WorktreeDeleteRequest | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [repositoryState, setRepositoryState] =
+    useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const requiresInitialCommit = repositoryState?.hasCommits === false;
 
   const currentBranch =
     activeTab?.selectedBranch ??
@@ -147,6 +152,38 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   useEffect(() => {
     void refreshWorktrees();
   }, [refreshWorktrees]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshRepositoryState = async () => {
+      try {
+        const nextState = await getRepositoryState(repoPath);
+        if (!cancelled) {
+          setRepositoryState(nextState);
+          if (nextState.hasCommits === false) {
+            setWorktreeCreateBaseRef(repoPath, null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setRepositoryState(null);
+        }
+      }
+    };
+
+    void refreshRepositoryState();
+
+    const handleRepoRefsRefresh = () => {
+      void refreshRepositoryState();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [repoPath, setWorktreeCreateBaseRef]);
 
   useEffect(() => {
     const handleRepoRefsRefresh = () => {
@@ -193,6 +230,11 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
 
   const beginCreateFromBase = useCallback(
     (baseRef: string) => {
+      if (requiresInitialCommit) {
+        setCreateError("Create the initial commit before creating worktrees.");
+        return;
+      }
+
       const defaultName = getDefaultNameFromRef(baseRef);
       const defaultBranch = getDefaultBranchFromName(
         baseRef === defaultName ? `${defaultName}-worktree` : defaultName,
@@ -209,7 +251,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         folderTouched: false,
       });
     },
-    [mainWorktreePath, repoPath, setWorktreeCreateBaseRef],
+    [mainWorktreePath, repoPath, requiresInitialCommit, setWorktreeCreateBaseRef],
   );
 
   useEffect(() => {
@@ -378,7 +420,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   };
 
   const createWorktree = async () => {
-    if (!activeTabId || !form.baseRef || creating) return;
+    if (!activeTabId || !form.baseRef || creating || requiresInitialCommit) return;
 
     setCreating(true);
     setCreateError(null);
@@ -577,12 +619,23 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
             <Menu.Target>
               <button
                 type="button"
-                className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={requiresInitialCommit}
+                title={
+                  requiresInitialCommit
+                    ? "Create the initial commit before creating worktrees"
+                    : "Create worktree"
+                }
                 aria-label="Create worktree">
                 <IconPlus size={16} />
               </button>
             </Menu.Target>
             <Menu.Dropdown className="bg-background border border-zinc-700 p-0">
+              {requiresInitialCommit ? (
+                <div className="px-4 py-3 text-sm text-zinc-400">
+                  Create the initial commit before creating worktrees.
+                </div>
+              ) : null}
               {createBaseOptions.map((option) => (
                 <Menu.Item
                   key={option.refName}

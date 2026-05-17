@@ -1,8 +1,11 @@
+use crate::git::repository_state::ensure_repository_has_commits;
 use git2::{Oid, Repository};
 use tauri::command;
 
 #[command]
 pub fn amend_commit_message(path: String, sha: String, new_message: String) -> Result<(), String> {
+    ensure_repository_has_commits(&path, "git commit --amend")?;
+
     let repo = Repository::open(&path).map_err(|e| e.to_string())?;
     let oid = Oid::from_str(&sha).map_err(|e| e.to_string())?;
     let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;

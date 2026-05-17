@@ -1,4 +1,5 @@
 use super::graph::{build_zed_style_commit_rows, parse_raw_commit_rows};
+use crate::git::repository_state::repository_has_commits;
 use crate::git::types::*;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -53,6 +54,10 @@ fn collect_commit_rows_with_graph(
     path: &str,
     history_mode: CommitHistoryMode,
 ) -> Result<Vec<CommitListItem>, String> {
+    if !repository_has_commits(path)? {
+        return Ok(Vec::new());
+    }
+
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(path)
@@ -83,4 +88,27 @@ fn collect_commit_rows_with_graph(
 
     let raw_commits = parse_raw_commit_rows(&String::from_utf8_lossy(&output.stdout));
     Ok(build_zed_style_commit_rows(raw_commits))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::init_repo;
+
+    #[test]
+    fn returns_empty_page_for_unborn_repository() {
+        let repo = init_repo();
+
+        let page = get_commits_list_paginated(
+            repo.path().to_string_lossy().to_string(),
+            None,
+            0,
+            50,
+            Some(true),
+        )
+        .expect("unborn history should load");
+
+        assert!(page.commits.is_empty());
+        assert!(!page.has_more);
+    }
 }

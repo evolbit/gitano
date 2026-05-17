@@ -1,8 +1,11 @@
+use crate::git::repository_state::ensure_repository_has_commits;
 use std::process::Command;
 
 #[tauri::command]
 pub async fn git_push(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git push")?;
+
         let output = Command::new("git")
             .arg("-C")
             .arg(&path)
@@ -61,6 +64,8 @@ pub async fn git_pull(path: String, strategy: String) -> Result<(), String> {
                 return Err(format!("Unsupported pull strategy: {}", other));
             }
         }
+
+        ensure_repository_has_commits(&path, "git pull")?;
 
         let output = cmd.output().map_err(|e| e.to_string())?;
         if !output.status.success() {

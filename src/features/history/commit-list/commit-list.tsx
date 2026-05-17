@@ -20,6 +20,7 @@ import {
   revertCommit,
 } from "@/shared/api/git/commits";
 import { createTag } from "@/shared/api/git/tags";
+import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { buildRemoteCommitUrl } from "@/shared/lib/git/remote-url";
 import {
@@ -36,6 +37,7 @@ import { useGitActionsStore } from "@/features/repository-workspace/stores/git-a
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { buildDefaultWorktreeFolder } from "@/features/worktrees/utils/worktree-defaults";
 import type { CommitListItem } from "@/shared/types/git";
+import type { RepositoryState } from "@/shared/types/git";
 import CommitAuthorCell from "./commit-author-cell";
 import {
   CommitCompareModal,
@@ -189,6 +191,8 @@ export default function CommitList() {
   const [dialogLoading, setDialogLoading] = useState(false);
   const [commitCompare, setCommitCompare] =
     useState<CommitCompareState | null>(null);
+  const [repositoryState, setRepositoryState] =
+    useState<RepositoryState | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -454,6 +458,36 @@ export default function CommitList() {
 
     return () => {
       cancelled = true;
+    };
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!repoPath) {
+      setRepositoryState(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshRepositoryState = async () => {
+      try {
+        const nextState = await getRepositoryState(repoPath);
+        if (!cancelled) setRepositoryState(nextState);
+      } catch {
+        if (!cancelled) setRepositoryState(null);
+      }
+    };
+
+    void refreshRepositoryState();
+
+    const handleRepoRefsRefresh = () => {
+      void refreshRepositoryState();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
     };
   }, [repoPath]);
 
@@ -1041,17 +1075,23 @@ export default function CommitList() {
       <div
         ref={setContainerRef}
         className="flex-1 overflow-y-auto focus:outline-none">
-        <TableVirtualResizable
-          columns={columns}
-          data={tableRows}
-          rowHeight={COMMIT_ROW_HEIGHT}
-          loading={loading}
-          onRowClick={handleRowClick}
-          onRowContextMenu={handleRowContextMenu}
-          selectedRowIndex={selectedRowIndex}
-          keyboardNavigation={keyboardNavigation}
-          setKeyboardNavigation={setKeyboardNavigation}
-        />
+        {!loading && !error && repositoryState?.hasCommits === false ? (
+          <div className="flex h-full min-h-[240px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Stage files and create the initial commit to start repository history.
+          </div>
+        ) : (
+          <TableVirtualResizable
+            columns={columns}
+            data={tableRows}
+            rowHeight={COMMIT_ROW_HEIGHT}
+            loading={loading}
+            onRowClick={handleRowClick}
+            onRowContextMenu={handleRowContextMenu}
+            selectedRowIndex={selectedRowIndex}
+            keyboardNavigation={keyboardNavigation}
+            setKeyboardNavigation={setKeyboardNavigation}
+          />
+        )}
       </div>
       {contextMenu && menuPos ? (
         <CommitContextMenu

@@ -1,6 +1,27 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryHeadStatus {
+    Normal,
+    Unborn,
+    Detached,
+    Unknown,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryState {
+    pub path: String,
+    pub is_valid: bool,
+    pub branch: Option<String>,
+    pub head_status: RepositoryHeadStatus,
+    pub has_commits: bool,
+    pub is_unborn: bool,
+    pub is_detached: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommitGraphSegment {
     pub color_idx: usize,

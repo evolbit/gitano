@@ -1,3 +1,4 @@
+use crate::git::repository_state::{ensure_repository_has_commits, load_repository_state};
 use std::process::Command;
 
 fn validate_local_branch_name(branch_name: &str) -> Result<&str, String> {
@@ -55,6 +56,22 @@ fn run_git_output(path: &str, args: &[&str], action: &str) -> Result<String, Str
         action,
         String::from_utf8_lossy(&output.stderr)
     ))
+}
+
+fn ensure_base_ref_can_create_branch(path: &str, base_ref: &str) -> Result<(), String> {
+    let state = load_repository_state(path)?;
+    if state.has_commits {
+        return Ok(());
+    }
+
+    if Some(base_ref) == state.branch.as_deref() || base_ref == "HEAD" {
+        return Err(
+            "git branch requires an initial commit when the base ref is the unborn current branch. Create the initial commit before trying again."
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 fn ensure_local_branch(path: &str, branch_name: &str) -> Result<(), String> {
@@ -127,6 +144,7 @@ fn split_upstream(upstream: &str) -> Result<(&str, &str), String> {
 #[tauri::command]
 pub async fn git_branch_push(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git push")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)?;
         run_git_status(&path, &["push", "origin", branch_name], "git push")
@@ -138,6 +156,7 @@ pub async fn git_branch_push(path: String, branch_name: String) -> Result<(), St
 #[tauri::command]
 pub async fn git_branch_set_upstream(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git push --set-upstream")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)?;
         run_git_status(
@@ -153,6 +172,7 @@ pub async fn git_branch_set_upstream(path: String, branch_name: String) -> Resul
 #[tauri::command]
 pub async fn git_checkout_branch(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git checkout")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)
             .map_err(|_| format!("Checkout requires a local branch: {}", branch_name))?;
@@ -176,6 +196,8 @@ pub async fn git_create_branch(
             return Err("Base ref is required.".to_string());
         }
 
+        ensure_base_ref_can_create_branch(&path, base_ref)?;
+
         run_git_status(
             &path,
             &["branch", "--", branch_name, base_ref],
@@ -193,6 +215,7 @@ pub async fn git_branch_fast_forward_to_branch(
     source_branch: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git merge --ff-only")?;
         let target_branch = validate_local_branch_name(&target_branch)?;
         let source_branch = validate_local_branch_name(&source_branch)?;
         ensure_local_branch(&path, target_branch)
@@ -231,6 +254,7 @@ pub async fn git_branch_merge_into(
     source_branch: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git merge")?;
         let target_branch = validate_local_branch_name(&target_branch)?;
         let source_branch = validate_local_branch_name(&source_branch)?;
         ensure_local_branch(&path, target_branch)
@@ -256,6 +280,7 @@ pub async fn git_branch_rebase_onto(
     source_branch: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git rebase")?;
         let target_branch = validate_local_branch_name(&target_branch)?;
         let source_branch = validate_local_branch_name(&source_branch)?;
         ensure_local_branch(&path, target_branch)
@@ -281,6 +306,7 @@ pub async fn git_rename_branch(
     new_branch_name: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git branch -m")?;
         let old_branch_name = validate_local_branch_name(&old_branch_name)?;
         let new_branch_name = validate_local_branch_name(&new_branch_name)?;
         validate_branch_name_format(&path, new_branch_name)?;
@@ -304,6 +330,7 @@ pub async fn git_rename_branch(
 #[tauri::command]
 pub async fn git_delete_branch(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git branch -d")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)
             .map_err(|_| format!("Branch not found: {}", branch_name))?;
@@ -324,6 +351,7 @@ pub async fn git_delete_branch(path: String, branch_name: String) -> Result<(), 
 #[tauri::command]
 pub async fn git_branch_tip_sha(path: String, branch_name: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git rev-parse")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         let candidates = [
             format!("refs/heads/{}", branch_name),
@@ -351,6 +379,7 @@ pub async fn git_branch_tip_sha(path: String, branch_name: String) -> Result<Str
 #[tauri::command]
 pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git branch pull")?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)?;
 

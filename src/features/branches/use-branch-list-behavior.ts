@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { APP_EVENTS } from "@/shared/config/events";
+import { getRepositoryState } from "@/shared/api/repositories";
+import type { RepositoryState } from "@/shared/types/git";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import {
@@ -107,7 +109,10 @@ export function useBranchListBehavior() {
   const [compareSourceBranch, setCompareSourceBranch] = useState<string | null>(
     null,
   );
+  const [repositoryState, setRepositoryState] =
+    useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const requiresInitialCommit = repositoryState?.hasCommits === false;
 
   const refreshBranches = useCallback(async () => {
     if (!repoPath) return;
@@ -149,6 +154,40 @@ export function useBranchListBehavior() {
   useEffect(() => {
     void refreshBranches();
   }, [refreshBranches]);
+
+  useEffect(() => {
+    if (!repoPath) {
+      setRepositoryState(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshRepositoryState = async () => {
+      try {
+        const nextState = await getRepositoryState(repoPath);
+        if (!cancelled) {
+          setRepositoryState(nextState);
+        }
+      } catch {
+        if (!cancelled) {
+          setRepositoryState(null);
+        }
+      }
+    };
+
+    void refreshRepositoryState();
+
+    const handleRepoRefsRefresh = () => {
+      void refreshRepositoryState();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [repoPath]);
 
   useEffect(() => {
     setSelectedRowBranch(selectedBranch ?? null);
@@ -218,14 +257,24 @@ export function useBranchListBehavior() {
     [branchTreeExpanded, repoPath, setBranchTreeExpanded],
   );
 
-  const beginCreateBranch = useCallback((baseRef: string, prefix = "") => {
-    setCreateBranchError(null);
-    setCreateForm({
-      baseRef,
-      prefix,
-      name: "",
-    });
-  }, []);
+  const beginCreateBranch = useCallback(
+    (baseRef: string, prefix = "") => {
+      if (requiresInitialCommit) {
+        setCreateBranchError(
+          "Create the initial commit before creating branches.",
+        );
+        return;
+      }
+
+      setCreateBranchError(null);
+      setCreateForm({
+        baseRef,
+        prefix,
+        name: "",
+      });
+    },
+    [requiresInitialCommit],
+  );
 
   const cancelCreateBranch = useCallback(() => {
     setCreateForm(null);
@@ -532,6 +581,15 @@ export function useBranchListBehavior() {
   const createRandomWorktreeFromBranch = useCallback(
     async (baseRef: string) => {
       if (!repoPath || !activeTabId || creatingWorktree) return;
+      if (requiresInitialCommit) {
+        setGitActionNotice({
+          kind: "error",
+          title: "Create worktree failed",
+          details: "Create the initial commit before creating worktrees.",
+          expanded: false,
+        });
+        return;
+      }
 
       setCreatingWorktree(true);
       try {
@@ -587,6 +645,7 @@ export function useBranchListBehavior() {
       addRecentRepo,
       creatingWorktree,
       repoPath,
+      requiresInitialCommit,
       setGitActionNotice,
       updateTab,
     ],
@@ -601,9 +660,22 @@ export function useBranchListBehavior() {
     setDeleteRequest({ branchName });
   }, []);
 
-  const openBranchCompare = useCallback((branchName: string) => {
-    setCompareSourceBranch(branchName);
-  }, []);
+  const openBranchCompare = useCallback(
+    (branchName: string) => {
+      if (requiresInitialCommit) {
+        setGitActionNotice({
+          kind: "error",
+          title: "Compare branches failed",
+          details: "Create the initial commit before comparing branches.",
+          expanded: false,
+        });
+        return;
+      }
+
+      setCompareSourceBranch(branchName);
+    },
+    [requiresInitialCommit, setGitActionNotice],
+  );
 
   const closeBranchCompare = useCallback(() => {
     setCompareSourceBranch(null);
@@ -646,6 +718,7 @@ export function useBranchListBehavior() {
     menuRef,
     creatingWorktree,
     compareSourceBranch,
+    requiresInitialCommit,
     isRowActionsVisible,
     setHoveredRowKey,
     openContextMenu,

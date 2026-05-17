@@ -1,5 +1,6 @@
 use super::helpers::same_path;
 use super::list::get_worktrees;
+use crate::git::repository_state::ensure_repository_has_commits;
 use crate::git::types::GitWorktree;
 use std::fs;
 use std::path::Path;
@@ -27,6 +28,8 @@ pub fn git_create_worktree(
     if worktree_path.is_empty() {
         return Err("Worktree folder is required.".to_string());
     }
+
+    ensure_repository_has_commits(&path, "git worktree add")?;
 
     if let Some(parent) = Path::new(worktree_path).parent() {
         if !parent.as_os_str().is_empty() {

@@ -2,6 +2,7 @@ pub mod commands;
 pub mod commits;
 pub mod diff;
 pub mod realtime;
+pub mod repository_state;
 pub mod staging;
 pub mod stash;
 #[cfg(test)]

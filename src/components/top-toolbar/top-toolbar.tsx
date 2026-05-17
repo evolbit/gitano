@@ -10,6 +10,12 @@ import {
 import { core } from "@tauri-apps/api";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
+import {
+  getBranches,
+  getCurrentBranch,
+  getWorktrees,
+} from "@/shared/api/git/branches";
+import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
@@ -18,6 +24,7 @@ import {
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
 import type { GitWorktree } from "@/shared/types/git";
+import type { RepositoryState } from "@/shared/types/git";
 import {
   IconArrowBarToUp,
   IconArrowFork,
@@ -220,7 +227,7 @@ const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
     </div>
   );
 
-  if (!tooltip || disabled) {
+  if (!tooltip) {
     return content;
   }
 
@@ -313,6 +320,9 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
   const [worktreesLoading, setWorktreesLoading] = useState(false);
   const [worktreesError, setWorktreesError] = useState<string | null>(null);
+  const [repositoryState, setRepositoryState] =
+    useState<RepositoryState | null>(null);
+  const requiresInitialCommit = repositoryState?.hasCommits === false;
 
   useEffect(() => {
     if (!repoPath) {
@@ -321,8 +331,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
     }
     setBranchesLoading(true);
     setBranchesError(null);
-    core
-      .invoke<string[]>("get_branches", { path: repoPath })
+    getBranches(repoPath, "local")
       .then((allBranches) => {
         setBranches(allBranches);
       })
@@ -338,8 +347,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
 
     setWorktreesLoading(true);
     setWorktreesError(null);
-    core
-      .invoke<GitWorktree[]>("get_worktrees", { path: repoPath })
+    getWorktrees(repoPath)
       .then((nextWorktrees) => {
         setWorktrees(nextWorktrees);
       })
@@ -348,12 +356,31 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   }, [repoPath, branchesRefreshNonce]);
 
   useEffect(() => {
+    if (!repoPath) {
+      setRepositoryState(null);
+      return;
+    }
+
+    let cancelled = false;
+    getRepositoryState(repoPath)
+      .then((nextState) => {
+        if (!cancelled) setRepositoryState(nextState);
+      })
+      .catch(() => {
+        if (!cancelled) setRepositoryState(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, branchesRefreshNonce]);
+
+  useEffect(() => {
     if (!repoPath || !activeTabId) return;
 
     let cancelled = false;
 
-    core
-      .invoke<string>("get_current_branch", { path: repoPath })
+    getCurrentBranch(repoPath)
       .then((branch) => {
         if (cancelled) return;
         setTabBranch(activeTabId, branch === "Detached HEAD" ? null : branch);
@@ -385,15 +412,24 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   );
 
   const resolvedBranch =
-    selectedBranch || (branchesLoading ? null : branches[0] || null);
+    selectedBranch ||
+    repositoryState?.branch ||
+    (branchesLoading ? null : branches[0] || null);
   const currentWorktree =
     worktrees.find((worktree) => worktree.isCurrent) ?? null;
-  const createBaseOptions = getCreateBaseOptions(resolvedBranch);
+  const createBaseOptions = requiresInitialCommit
+    ? []
+    : getCreateBaseOptions(resolvedBranch);
 
-  const pushTooltip = resolvedBranch
+  const initialCommitTooltip = "Create the initial commit before using this action";
+  const pushTooltip = requiresInitialCommit
+    ? initialCommitTooltip
+    : resolvedBranch
     ? `Push to origin/${resolvedBranch}`
     : "Push current branch";
-  const pullTooltip = getPullStrategyLabel(pullStrategy);
+  const pullTooltip = requiresInitialCommit
+    ? initialCommitTooltip
+    : getPullStrategyLabel(pullStrategy);
 
   const handleWorktreeSelect = (worktree: GitWorktree) => {
     if (!activeTabId) return;
@@ -488,7 +524,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   }, []);
 
   const executePull = async () => {
-    if (!repoPath || pendingGitAction) return;
+    if (!repoPath || pendingGitAction || requiresInitialCommit) return;
 
     setPendingGitAction("pull");
     await waitForNextFrame();
@@ -520,7 +556,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   };
 
   const executePush = async () => {
-    if (!repoPath || pendingGitAction) return;
+    if (!repoPath || pendingGitAction || requiresInitialCommit) return;
 
     setPendingGitAction("push");
     await waitForNextFrame();
@@ -543,7 +579,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   };
 
   const executeStash = async () => {
-    if (!repoPath || pendingGitAction) return;
+    if (!repoPath || pendingGitAction || requiresInitialCommit) return;
 
     setPendingGitAction("stash");
     await waitForNextFrame();
@@ -569,7 +605,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   };
 
   const executePop = async () => {
-    if (!repoPath || pendingGitAction) return;
+    if (!repoPath || pendingGitAction || requiresInitialCommit) return;
 
     setPendingGitAction("pop");
     await waitForNextFrame();
@@ -591,6 +627,8 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   };
 
   const isGitActionDisabled = !repoPath || pendingGitAction !== null;
+  const isCommitDependentActionDisabled =
+    isGitActionDisabled || requiresInitialCommit;
 
   const pullRightSlot = (
     <Menu
@@ -606,11 +644,11 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
         <button
           type="button"
           className={`flex w-7 items-center justify-center ${
-            isGitActionDisabled
+            isCommitDependentActionDisabled
               ? "cursor-not-allowed text-zinc-500"
               : "cursor-pointer text-zinc-300 hover:bg-zinc-800/70"
           }`}
-          disabled={isGitActionDisabled}
+          disabled={isCommitDependentActionDisabled}
           aria-label="Select pull strategy">
           <HiChevronDown size={16} />
         </button>
@@ -700,6 +738,11 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
                   onClick={() => handleCreateWorktreeIntent(option.refName)}
                 />
               ))}
+              {requiresInitialCommit ? (
+                <div className="px-4 py-2 text-zinc-500 text-xs">
+                  Create the initial commit before creating worktrees.
+                </div>
+              ) : null}
               <div className="my-1 border-t border-zinc-700" />
               {worktreesLoading && (
                 <div className="px-4 py-2 text-zinc-400 text-sm">Loading...</div>
@@ -812,7 +855,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
             onClick={() => {
               void executePull();
             }}
-            disabled={isGitActionDisabled}
+            disabled={isCommitDependentActionDisabled}
             loading={pendingGitAction === "pull"}
             tooltip={pullTooltip}
             rightSlot={pullRightSlot}
@@ -823,7 +866,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
             onClick={() => {
               void executePush();
             }}
-            disabled={isGitActionDisabled}
+            disabled={isCommitDependentActionDisabled}
             loading={pendingGitAction === "push"}
             tooltip={pushTooltip}
           />
@@ -848,9 +891,13 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
               onClick={() => {
                 void executeStash();
               }}
-              disabled={isGitActionDisabled}
+              disabled={isCommitDependentActionDisabled}
               loading={pendingGitAction === "stash"}
-              tooltip="Stash all current working-tree changes"
+              tooltip={
+                requiresInitialCommit
+                  ? initialCommitTooltip
+                  : "Stash all current working-tree changes"
+              }
             />
           </Stack>
           <Stack
@@ -862,9 +909,13 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
               onClick={() => {
                 void executePop();
               }}
-              disabled={isGitActionDisabled}
+              disabled={isCommitDependentActionDisabled}
               loading={pendingGitAction === "pop"}
-              tooltip="Pop the most recent stash entry"
+              tooltip={
+                requiresInitialCommit
+                  ? initialCommitTooltip
+                  : "Pop the most recent stash entry"
+              }
             />
           </Stack>
         </Group>

@@ -22,6 +22,8 @@ export function BranchList() {
           onCreateBranch={() =>
             branchList.beginCreateBranch(branchList.selectedBranch || "HEAD")
           }
+          createDisabled={branchList.requiresInitialCommit}
+          createDisabledReason="Create the initial commit before creating branches"
         />
         {branchList.loading ? (
           <div className="text-sm text-zinc-400">Loading...</div>
@@ -34,7 +36,9 @@ export function BranchList() {
           !branchList.error &&
           branchList.grouped.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">
-              No branches found
+              {branchList.requiresInitialCommit
+                ? "Create the initial commit before branch actions are available"
+                : "No branches found"}
             </div>
           ) : null}
           <BranchTree

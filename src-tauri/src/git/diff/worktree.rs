@@ -1,14 +1,42 @@
 use super::parse_unified_diff;
+use crate::git::repository_state::repository_has_commits;
 use crate::git::types::*;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+fn new_file_hunks(file_content: &str) -> Vec<DiffHunk> {
+    let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
+
+    let diff_lines: Vec<DiffLine> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| DiffLine {
+            kind: DiffLineKind::Add,
+            content: line.clone(),
+            old_lineno: None,
+            new_lineno: Some(i + 1),
+        })
+        .collect();
+
+    vec![DiffHunk {
+        header: format!("@@ -0,0 +1,{} @@", lines.len()),
+        old_start: 0,
+        old_lines: 0,
+        new_start: 1,
+        new_lines: lines.len(),
+        lines: diff_lines,
+        is_new_file: true,
+    }]
+}
 
 pub fn get_file_diff_hunks(
     path: String,
     file_path: String,
     context: usize,
 ) -> Result<Vec<DiffHunk>, String> {
+    let has_commits = repository_has_commits(&path)?;
+
     // Check whether the file is in the Git index
     let ls_files_output = Command::new("git")
         .arg("-C")
@@ -21,6 +49,15 @@ pub fn get_file_diff_hunks(
     let is_tracked = !ls_files_output.stdout.is_empty();
     let file_path_obj = Path::new(&file_path);
     let full_path = Path::new(&path).join(file_path_obj);
+
+    if !has_commits {
+        if !full_path.exists() {
+            return Ok(vec![]);
+        }
+
+        let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
+        return Ok(new_file_hunks(&file_content));
+    }
 
     if !full_path.exists() {
         // A file may be missing from both working tree and index when its deletion
@@ -69,31 +106,7 @@ pub fn get_file_diff_hunks(
     if !is_tracked {
         // Read the file contents
         let file_content = fs::read_to_string(&full_path).map_err(|e| e.to_string())?;
-        let lines: Vec<String> = file_content.lines().map(|s| s.to_string()).collect();
-
-        // Create a special hunk for a new file
-        let diff_lines: Vec<DiffLine> = lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| DiffLine {
-                kind: DiffLineKind::Add,
-                content: line.clone(),
-                old_lineno: None,
-                new_lineno: Some(i + 1),
-            })
-            .collect();
-
-        let hunk = DiffHunk {
-            header: format!("@@ -0,0 +1,{} @@", lines.len()),
-            old_start: 0,
-            old_lines: 0,
-            new_start: 1,
-            new_lines: lines.len(),
-            lines: diff_lines,
-            is_new_file: true,
-        };
-
-        return Ok(vec![hunk]);
+        return Ok(new_file_hunks(&file_content));
     }
 
     // Tracked file: get the full working diff against HEAD so staged selections

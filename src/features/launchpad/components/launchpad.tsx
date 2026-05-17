@@ -1,7 +1,10 @@
 import { ActionIcon, Box, Button, Group, Menu, Text } from "@mantine/core";
 import React, { useEffect, useMemo, useState } from "react";
-import { getCurrentBranch } from "@/shared/api/git/branches";
-import { openLocalRepoDialog } from "@/shared/api/repositories";
+import {
+  getRepositoryState,
+  initLocalRepoDialog,
+  openLocalRepoDialog,
+} from "@/shared/api/repositories";
 import { revealPathInFileManager } from "@/shared/platform/tauri/opener";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import InputText from "@/components/form/input-text";
@@ -10,6 +13,7 @@ import {
   IconFolder,
   IconFolderPlus,
   IconPlug,
+  IconPlus,
   IconSearch,
   IconStar,
 } from "@/components/icons";
@@ -68,6 +72,10 @@ const RepoRow = ({
           <Text className="text-muted-foreground text-xs">Cargando...</Text>
         ) : repoInfo.error ? (
           <Text className="text-red-500 text-xs">Error</Text>
+        ) : repoInfo.isUnborn || repoInfo.hasCommits === false ? (
+          <Text className="text-muted-foreground text-xs bg-secondary px-2 py-1 rounded">
+            {repoInfo.branch ? `${repoInfo.branch} - no commits` : "No commits yet"}
+          </Text>
         ) : repoInfo.branch ? (
           <Text className="text-muted-foreground text-xs bg-secondary px-2 py-1 rounded">
             {repoInfo.branch}
@@ -142,12 +150,15 @@ export const Launchpad = ({
       const infos = await Promise.all(
         recentRepos.map(async (path) => {
           try {
-            const branch = await getCurrentBranch(path);
+            const state = await getRepositoryState(path);
             const name = path.split("/").pop() || path;
             return {
               path,
               name,
-              branch,
+              branch: state.branch,
+              hasCommits: state.hasCommits,
+              isUnborn: state.isUnborn,
+              isDetached: state.isDetached,
               loading: false,
               error: null,
             };
@@ -158,6 +169,9 @@ export const Launchpad = ({
               path,
               name,
               branch: null,
+              hasCommits: null,
+              isUnborn: false,
+              isDetached: false,
               loading: false,
               error: "Failed to load branch",
             };
@@ -195,6 +209,14 @@ export const Launchpad = ({
     }
   };
 
+  const handleCreateRepository = async () => {
+    const path = await initLocalRepoDialog();
+    if (path) {
+      addRecentRepo(path);
+      onRepoOpened?.(path);
+    }
+  };
+
   const handleOpenFolder = async (path: string) => {
     try {
       await revealPathInFileManager(path);
@@ -225,6 +247,16 @@ export const Launchpad = ({
             Connect
           </Button>
           <Button
+            size="xs"
+            onClick={handleCreateRepository}>
+            <IconPlus
+              size={16}
+              className="mr-2"
+            />
+            New Repository
+          </Button>
+          <Button
+            variant="default"
             size="xs"
             onClick={handleBrowse}>
             <IconFolderPlus
@@ -294,7 +326,8 @@ export const Launchpad = ({
         <Box className="text-center py-10">
           <Text>No repositories found.</Text>
           <Text className="text-muted-foreground text-sm">
-            Use the "Browse" button to add your local repositories.
+            Use "New Repository" to initialize a folder or "Browse" to open an
+            existing repository.
           </Text>
         </Box>
       )}

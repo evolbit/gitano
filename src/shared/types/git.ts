@@ -8,6 +8,18 @@ export interface CommitGraphSegment {
   control_y?: number | null;
 }
 
+export type RepositoryHeadStatus = "normal" | "unborn" | "detached" | "unknown";
+
+export interface RepositoryState {
+  path: string;
+  isValid: boolean;
+  branch: string | null;
+  headStatus: RepositoryHeadStatus;
+  hasCommits: boolean;
+  isUnborn: boolean;
+  isDetached: boolean;
+}
+
 export interface CommitListItem {
   sha: string;
   parents?: string[];

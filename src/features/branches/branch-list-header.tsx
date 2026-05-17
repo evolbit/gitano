@@ -12,6 +12,8 @@ type BranchListHeaderProps = {
   onSearchChange: (search: string) => void;
   onTypeChange: (type: BranchType) => void;
   onCreateBranch: () => void;
+  createDisabled?: boolean;
+  createDisabledReason?: string;
 };
 
 export function BranchListHeader({
@@ -20,6 +22,8 @@ export function BranchListHeader({
   onSearchChange,
   onTypeChange,
   onCreateBranch,
+  createDisabled = false,
+  createDisabledReason,
 }: BranchListHeaderProps) {
   return (
     <div className="border-b border-border bg-background-emphasis p-2">
@@ -64,9 +68,10 @@ export function BranchListHeader({
         </div>
         <button
           type="button"
-          className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={onCreateBranch}
-          title="Add branch"
+          disabled={createDisabled}
+          title={createDisabled ? createDisabledReason : "Add branch"}
           aria-label="Add branch"
         >
           <IconPlus size={16} />

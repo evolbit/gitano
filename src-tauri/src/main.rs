@@ -10,6 +10,8 @@ fn main() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             git::open_local_repo,
+            git::get_repository_state,
+            git::init_local_repo,
             git::get_branches,
             git::get_remote_branches,
             git::get_tags,

@@ -6,6 +6,7 @@ import {
   getTags,
   searchTagCommits,
 } from "@/shared/api/git/tags";
+import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import {
   writeClipboardText,
@@ -28,6 +29,7 @@ import {
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
 import type { TagCommitOption } from "@/shared/types/git";
+import type { RepositoryState } from "@/shared/types/git";
 import { BranchTreeNode, groupNames } from "@/shared/lib/tree/branch-tree";
 import { buildRemoteTagUrl } from "./utils/remote-tag-url";
 
@@ -80,8 +82,11 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
   const [commitLoading, setCommitLoading] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [repositoryState, setRepositoryState] =
+    useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const commitSearchRequestRef = useRef(0);
+  const requiresInitialCommit = repositoryState?.hasCommits === false;
 
   const refreshTags = useCallback(async () => {
     setLoading(true);
@@ -100,6 +105,38 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
   useEffect(() => {
     void refreshTags();
   }, [refreshTags]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshRepositoryState = async () => {
+      try {
+        const nextState = await getRepositoryState(repoPath);
+        if (!cancelled) {
+          setRepositoryState(nextState);
+          if (nextState.hasCommits === false) {
+            setAddPanelOpen(false);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setRepositoryState(null);
+        }
+      }
+    };
+
+    void refreshRepositoryState();
+
+    const handleRepoRefsRefresh = () => {
+      void refreshRepositoryState();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [repoPath]);
 
   useEffect(() => {
     const handleRepoRefsRefresh = () => {
@@ -215,10 +252,15 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
   }, []);
 
   const openAddPanel = useCallback(() => {
+    if (requiresInitialCommit) {
+      setCreateError("Create the initial commit before adding tags.");
+      return;
+    }
+
     setAddPanelOpen(true);
     setCommitDropdownOpen(false);
     setCreateError(null);
-  }, []);
+  }, [requiresInitialCommit]);
 
   const closeAddPanel = useCallback(() => {
     setAddPanelOpen(false);
@@ -467,7 +509,9 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
   function renderAddTagPanel() {
     if (!addPanelOpen) return null;
 
-    const canCreateTag = Boolean(tagName.trim() && selectedCommit && !createLoading);
+    const canCreateTag = Boolean(
+      tagName.trim() && selectedCommit && !createLoading && !requiresInitialCommit,
+    );
 
     return (
       <div className="flex-shrink-0 border-t border-border bg-background-emphasis p-3 shadow-[0_-12px_32px_rgba(0,0,0,0.24)]">
@@ -653,8 +697,13 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
           </div>
           <button
             type="button"
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-            title="Add tag"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={requiresInitialCommit}
+            title={
+              requiresInitialCommit
+                ? "Create the initial commit before adding tags"
+                : "Add tag"
+            }
             aria-label="Add tag"
             onClick={openAddPanel}>
             <IconPlus size={17} />

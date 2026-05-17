@@ -180,10 +180,27 @@ pub fn git_unstage_all(path: String) -> Result<(), String> {
         return Ok(());
     }
 
+    let remove_cached_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("rm")
+        .arg("--cached")
+        .arg("-r")
+        .arg("--quiet")
+        .arg("--")
+        .arg(".")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if remove_cached_output.status.success() {
+        return Ok(());
+    }
+
     Err(format!(
-        "git unstage all failed:\nrestore: {}\nreset: {}",
+        "git unstage all failed:\nrestore: {}\nreset: {}\nrm --cached: {}",
         String::from_utf8_lossy(&restore_output.stderr),
-        String::from_utf8_lossy(&reset_output.stderr)
+        String::from_utf8_lossy(&reset_output.stderr),
+        String::from_utf8_lossy(&remove_cached_output.stderr)
     ))
 }
 
@@ -242,6 +259,26 @@ pub fn git_discard_file_changes(path: String, file_path: String) -> Result<(), S
         String::from_utf8_lossy(&restore_output.stderr),
         String::from_utf8_lossy(&checkout_output.stderr)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::{init_repo, run_git, write_file};
+
+    #[test]
+    fn unstages_all_files_before_first_commit() {
+        let repo = init_repo();
+        write_file(repo.path(), "file.txt", "hello\n");
+        run_git(repo.path(), &["add", "file.txt"]);
+
+        git_unstage_all(repo.path().to_string_lossy().to_string())
+            .expect("unstage all should work before first commit");
+
+        let has_staged = git_has_staged_changes(repo.path().to_string_lossy().to_string())
+            .expect("staged check should work before first commit");
+        assert!(!has_staged);
+    }
 }
 
 #[tauri::command]

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getRepositoryState } from "@/shared/api/repositories";
 import { pushRepository } from "@/shared/api/git/staging";
 import { stashSelectedFiles } from "@/shared/api/git/stashes";
 import { APP_EVENTS } from "@/shared/config/events";
@@ -22,6 +23,7 @@ export default function CurrentChangesCommitBar({
   const [amend, setAmend] = useState(false);
   const [showCommitMenu, setShowCommitMenu] = useState(false);
   const [stashLoading, setStashLoading] = useState(false);
+  const [requiresInitialCommit, setRequiresInitialCommit] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
   const clearAllStagedLines = useStagedLinesStore((s) => s.clearAllStagedLines);
   const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
@@ -42,8 +44,45 @@ export default function CurrentChangesCommitBar({
   );
   const isBusy = loading || stashLoading;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshRepositoryState = async () => {
+      try {
+        const state = await getRepositoryState(repoPath);
+        if (cancelled) return;
+        const nextRequiresInitialCommit = state.hasCommits === false;
+        setRequiresInitialCommit(nextRequiresInitialCommit);
+        if (nextRequiresInitialCommit) {
+          setAmend(false);
+          setPush(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setRequiresInitialCommit(false);
+        }
+      }
+    };
+
+    void refreshRepositoryState();
+
+    const handleRepoRefsRefresh = () => {
+      void refreshRepositoryState();
+    };
+
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [repoPath]);
+
   const notifyCommitRefresh = () => {
     window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+  };
+
+  const notifyRepoRefsRefresh = () => {
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
   };
 
   const notifyWorkingChangesRefresh = () => {
@@ -87,6 +126,7 @@ export default function CurrentChangesCommitBar({
         push: false,
         amend,
       });
+      notifyRepoRefsRefresh();
       notifyCommitRefresh();
 
       if (pushOverride ?? push) {
@@ -129,7 +169,7 @@ export default function CurrentChangesCommitBar({
   };
 
   const handleStashSelection = async () => {
-    if (isBusy) return;
+    if (isBusy || requiresInitialCommit) return;
     const selectedFiles = getSelectedFilePathsForStash();
     if (selectedFiles.length === 0) return;
 
@@ -192,7 +232,12 @@ export default function CurrentChangesCommitBar({
                 type="checkbox"
                 checked={push}
                 onChange={(event) => setPush(event.target.checked)}
-                disabled={isBusy}
+                disabled={isBusy || requiresInitialCommit}
+                title={
+                  requiresInitialCommit
+                    ? "Create the initial commit before pushing"
+                    : undefined
+                }
               />
               Push
             </label>
@@ -231,11 +276,17 @@ export default function CurrentChangesCommitBar({
                 </button>
                 <button
                   type="button"
-                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800"
+                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
                   onClick={() => {
                     setAmend(true);
                     setShowCommitMenu(false);
                   }}
+                  disabled={requiresInitialCommit}
+                  title={
+                    requiresInitialCommit
+                      ? "Create the initial commit before amending"
+                      : undefined
+                  }
                 >
                   Amend
                 </button>
@@ -245,7 +296,12 @@ export default function CurrentChangesCommitBar({
                   onClick={() => {
                     void handleStashSelection();
                   }}
-                  disabled={isBusy || !hasStagedChanges}
+                  disabled={isBusy || !hasStagedChanges || requiresInitialCommit}
+                  title={
+                    requiresInitialCommit
+                      ? "Create the initial commit before stashing"
+                      : undefined
+                  }
                 >
                   Stash
                 </button>

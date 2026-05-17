@@ -1,3 +1,4 @@
+use crate::git::repository_state::repository_has_commits;
 use crate::git::types::TagCommitOption;
 use git2::{ObjectType, Oid, Repository, Signature};
 use std::process::Command;
@@ -9,6 +10,10 @@ pub fn search_tag_commits(
     query: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<TagCommitOption>, String> {
+    if !repository_has_commits(&path)? {
+        return Ok(Vec::new());
+    }
+
     let query = query.unwrap_or_default().trim().to_lowercase();
     let safe_limit = limit.unwrap_or(50).clamp(1, 100);
     let max_scan = if query.is_empty() {
