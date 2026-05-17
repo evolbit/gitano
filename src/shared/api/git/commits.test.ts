@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   amendCommitMessage,
+  cherryPickCommit,
   getCommitDiff,
+  getCommitPatch,
   getCommitsListPaginated,
+  revertCommit,
 } from "./commits";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
@@ -57,6 +60,39 @@ describe("commit Git API", () => {
       path: "/repo",
       sha: "abc123",
       newMessage: "New message",
+    });
+  });
+
+  it("requests commit patches with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce("patch");
+
+    await getCommitPatch("/repo", "abc123");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_commit_patch", {
+      path: "/repo",
+      sha: "abc123",
+    });
+  });
+
+  it("cherry-picks commits with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await cherryPickCommit("/repo", "abc123");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_cherry_pick_commit", {
+      path: "/repo",
+      sha: "abc123",
+    });
+  });
+
+  it("reverts commits with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await revertCommit("/repo", "abc123");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_revert_commit", {
+      path: "/repo",
+      sha: "abc123",
     });
   });
 });

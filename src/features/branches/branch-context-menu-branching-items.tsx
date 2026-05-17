@@ -39,24 +39,6 @@ export function BranchContextMenuBranchingItems({
       >
         Create branch here
       </BranchContextMenuItem>
-      <BranchContextMenuItem
-        className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
-        onClick={onCloseMenus}
-      >
-        Cherry pick commit
-      </BranchContextMenuItem>
-      <BranchContextMenuItem
-        className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
-        onClick={onCloseMenus}
-      >
-        Reset ... to this commit
-      </BranchContextMenuItem>
-      <BranchContextMenuItem
-        className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
-        onClick={onCloseMenus}
-      >
-        Revert commit
-      </BranchContextMenuItem>
     </>
   );
 }

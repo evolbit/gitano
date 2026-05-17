@@ -34,6 +34,17 @@ export type GetBranchComparisonFileDiffRequest =
     context: number;
   };
 
+export type GetCommitWorktreeComparisonFilesRequest = {
+  path: string;
+  baseRef: string;
+};
+
+export type GetCommitWorktreeComparisonFileDiffRequest =
+  GetCommitWorktreeComparisonFilesRequest & {
+    filePath: string;
+    context: number;
+  };
+
 export async function getCommitFileDiff(request: GetFileDiffRequest) {
   return invokeCommand<DiffHunk[]>("get_commit_file_diff", request);
 }
@@ -56,4 +67,22 @@ export async function getBranchComparisonFileDiff(
   request: GetBranchComparisonFileDiffRequest,
 ) {
   return invokeCommand<DiffHunk[]>("get_branch_comparison_file_diff", request);
+}
+
+export async function getCommitWorktreeComparisonFiles(
+  request: GetCommitWorktreeComparisonFilesRequest,
+) {
+  return invokeCommand<FileChange[]>(
+    "get_commit_worktree_comparison_files",
+    request,
+  );
+}
+
+export async function getCommitWorktreeComparisonFileDiff(
+  request: GetCommitWorktreeComparisonFileDiffRequest,
+) {
+  return invokeCommand<DiffHunk[]>(
+    "get_commit_worktree_comparison_file_diff",
+    request,
+  );
 }

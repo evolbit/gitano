@@ -3,6 +3,8 @@ import {
   getBranchComparisonFileDiff,
   getBranchComparisonFiles,
   getCommitFileDiff,
+  getCommitWorktreeComparisonFileDiff,
+  getCommitWorktreeComparisonFiles,
   getDiffContext,
   getStashFileDiff,
 } from "./diffs";
@@ -120,6 +122,44 @@ describe("diff Git API", () => {
         filePath: "src/file.ts",
         context: 3,
         comparisonMode: "direct",
+      },
+    );
+  });
+
+  it("requests commit-to-worktree comparison files with the expected command", async () => {
+    invokeCommandMock.mockResolvedValueOnce([]);
+
+    await getCommitWorktreeComparisonFiles({
+      path: "/repo",
+      baseRef: "abc123",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "get_commit_worktree_comparison_files",
+      {
+        path: "/repo",
+        baseRef: "abc123",
+      },
+    );
+  });
+
+  it("requests commit-to-worktree comparison file diffs with the expected command", async () => {
+    invokeCommandMock.mockResolvedValueOnce([]);
+
+    await getCommitWorktreeComparisonFileDiff({
+      path: "/repo",
+      baseRef: "abc123",
+      filePath: "src/app.ts",
+      context: 3,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "get_commit_worktree_comparison_file_diff",
+      {
+        path: "/repo",
+        baseRef: "abc123",
+        filePath: "src/app.ts",
+        context: 3,
       },
     );
   });

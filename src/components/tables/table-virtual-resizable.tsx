@@ -24,6 +24,7 @@ export type TableVirtualResizableProps<T> = {
   onLoadMore?: () => void;
   loadMoreThreshold?: number;
   onRowClick?: (row: T, index: number) => void;
+  onRowContextMenu?: (row: T, index: number, event: React.MouseEvent) => void;
   selectedRowIndex?: number;
   keyboardNavigation?: boolean;
   setKeyboardNavigation?: (v: boolean) => void;
@@ -42,6 +43,7 @@ export default function TableVirtualResizable<
   onLoadMore,
   loadMoreThreshold = 200,
   onRowClick,
+  onRowContextMenu,
   selectedRowIndex = -1,
   keyboardNavigation = false,
   setKeyboardNavigation,
@@ -342,7 +344,13 @@ export default function TableVirtualResizable<
                   width: tableWidth,
                   minWidth: "100%",
                 }}
-                onClick={() => onRowClick && onRowClick(row, virtualRow.index)}>
+                onClick={(event) => {
+                  if (event.button !== 0) return;
+                  onRowClick?.(row, virtualRow.index);
+                }}
+                onContextMenu={(event) =>
+                  onRowContextMenu?.(row, virtualRow.index, event)
+                }>
                 {columns.map((col) => (
                   <div
                     key={col.key}

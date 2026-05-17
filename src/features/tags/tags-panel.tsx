@@ -7,6 +7,10 @@ import {
   searchTagCommits,
 } from "@/shared/api/git/tags";
 import { APP_EVENTS } from "@/shared/config/events";
+import {
+  writeClipboardText,
+  writeClipboardTextFromPromise,
+} from "@/shared/platform/clipboard";
 import { classNames } from "@/shared/ui";
 import {
   IconCheck,
@@ -46,7 +50,7 @@ function TagsPanelState({ message }: { message: string }) {
 }
 
 async function copyText(text: string) {
-  await navigator.clipboard.writeText(text);
+  await writeClipboardText(text);
 }
 
 export function TagsPanel({ repoPath }: TagsPanelProps) {
@@ -270,13 +274,15 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
 
   const copyRemoteLink = useCallback(
     async (tagName: string) => {
-      const remoteUrl = await getRemoteUrl(repoPath, "origin");
+      await writeClipboardTextFromPromise(
+        getRemoteUrl(repoPath, "origin").then((remoteUrl) => {
+          if (!remoteUrl) {
+            throw new Error("Remote origin is not configured");
+          }
 
-      if (!remoteUrl) {
-        throw new Error("Remote origin is not configured");
-      }
-
-      await copyText(buildRemoteTagUrl(remoteUrl, tagName));
+          return buildRemoteTagUrl(remoteUrl, tagName);
+        }),
+      );
     },
     [repoPath],
   );

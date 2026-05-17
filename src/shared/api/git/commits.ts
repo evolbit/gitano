@@ -36,6 +36,27 @@ export async function amendCommitMessage(
   });
 }
 
+export async function getCommitPatch(repoPath: string, sha: string) {
+  return invokeCommand<string>("git_commit_patch", {
+    path: repoPath,
+    sha,
+  });
+}
+
+export async function cherryPickCommit(repoPath: string, sha: string) {
+  return invokeCommand<void>("git_cherry_pick_commit", {
+    path: repoPath,
+    sha,
+  });
+}
+
+export async function revertCommit(repoPath: string, sha: string) {
+  return invokeCommand<void>("git_revert_commit", {
+    path: repoPath,
+    sha,
+  });
+}
+
 export async function getRemoteUrl(repoPath: string, remoteName = "origin") {
   return invokeCommand<string | null>("get_remote_url", {
     path: repoPath,

@@ -1,15 +1,50 @@
 import { Tooltip } from "@mantine/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCommitsListPaginated } from "@/shared/api/git/commits";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ConfirmModal } from "@/components/confirm-modal/confirm-modal";
+import {
+  createGitBranch,
+  createGitWorktree,
+} from "@/shared/api/git/branches";
+import {
+  cherryPickCommit,
+  getCommitPatch,
+  getCommitsListPaginated,
+  getRemoteUrl,
+  revertCommit,
+} from "@/shared/api/git/commits";
+import { createTag } from "@/shared/api/git/tags";
 import { APP_EVENTS } from "@/shared/config/events";
+import { buildRemoteCommitUrl } from "@/shared/lib/git/remote-url";
+import {
+  writeClipboardText,
+  writeClipboardTextFromPromise,
+} from "@/shared/platform/clipboard";
+import { openExternalUrl } from "@/shared/platform/tauri/opener";
 import { IconChevronRight, IconSearch } from "@/components/icons";
 import InputText from "@/components/form/input-text";
 import TableVirtualResizable, {
   type TableColumn,
 } from "@/components/tables/table-virtual-resizable";
+import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
+import { buildDefaultWorktreeFolder } from "@/features/worktrees/utils/worktree-defaults";
 import type { CommitListItem } from "@/shared/types/git";
 import CommitAuthorCell from "./commit-author-cell";
+import {
+  CommitCompareModal,
+  type CommitCompareMode,
+} from "./commit-compare-modal";
+import {
+  CommitContextMenu,
+  type CommitContextMenuAction,
+} from "./commit-context-menu";
 import CommitGraphCell from "./commit-graph-cell";
 
 const FULL_LOG_COMMIT_LIMIT = 100_000;
@@ -37,6 +72,22 @@ type CommitTableRow = {
   authorInitial: string;
   authorAvatarUrl?: string | null;
   sha: string;
+  commit: CommitListItem;
+};
+
+type CommitContextMenuState = {
+  row: CommitTableRow;
+  x: number;
+  y: number;
+};
+
+type CommitDialogState = {
+  kind: "branch" | "tag" | "worktree" | "cherryPick" | "revert";
+  commit: CommitListItem;
+};
+
+type CommitCompareState = {
+  mode: CommitCompareMode;
   commit: CommitListItem;
 };
 
@@ -106,7 +157,11 @@ export default function CommitList() {
   const selectedCommit = useRepoStore(
     (s) => s.tabs.find((t) => t.id === activeTabId)?.selectedCommit
   );
+  const selectedBranch = useRepoStore(
+    (s) => s.tabs.find((t) => t.id === activeTabId)?.selectedBranch
+  );
   const setTabCommit = useRepoStore((s) => s.setTabCommit);
+  const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
 
   const [search, setSearch] = useState("");
   const [commits, setCommits] = useState<CommitListItem[]>([]);
@@ -119,9 +174,25 @@ export default function CommitList() {
   const [selectedRowIndex, setSelectedRowIndex] = useState<number>(-1);
   const [isTableFocused, setIsTableFocused] = useState(false);
   const [keyboardNavigation, setKeyboardNavigation] = useState(false);
+  const [contextMenu, setContextMenu] =
+    useState<CommitContextMenuState | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<CommitDialogState | null>(null);
+  const [branchName, setBranchName] = useState("");
+  const [tagName, setTagName] = useState("");
+  const [tagAnnotated, setTagAnnotated] = useState(false);
+  const [tagDescription, setTagDescription] = useState("");
+  const [worktreeBranch, setWorktreeBranch] = useState("");
+  const [worktreePath, setWorktreePath] = useState("");
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogLoading, setDialogLoading] = useState(false);
+  const [commitCompare, setCommitCompare] =
+    useState<CommitCompareState | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const normalizedSearch = search.trim().toLowerCase();
   const isMacLike =
     typeof navigator !== "undefined" &&
@@ -135,6 +206,56 @@ export default function CommitList() {
   }, []);
 
   const previousViewKeyRef = useRef<string | null>(null);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+    setMenuPos(null);
+  }, []);
+
+  const notifySuccess = useCallback(
+    (title: string, details: string) => {
+      setGitActionNotice({
+        kind: "success",
+        title,
+        details,
+        expanded: false,
+      });
+    },
+    [setGitActionNotice],
+  );
+
+  const notifyError = useCallback(
+    (title: string, actionError: unknown) => {
+      setGitActionNotice({
+        kind: "error",
+        title,
+        details:
+          actionError instanceof Error
+            ? actionError.message
+            : String(actionError || "Unknown error"),
+        expanded: false,
+      });
+    },
+    [setGitActionNotice],
+  );
+
+  const refreshRepositorySurfaces = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+    window.dispatchEvent(new CustomEvent(APP_EVENTS.workingChangesRefresh));
+  }, []);
+
+  const copyText = useCallback(
+    async (text: string, successTitle: string, successDetails: string) => {
+      try {
+        await writeClipboardText(text);
+        notifySuccess(successTitle, successDetails);
+      } catch (copyError) {
+        notifyError("Copy failed", copyError);
+      }
+    },
+    [notifyError, notifySuccess],
+  );
 
   const tableRows = useMemo<CommitTableRow[]>(
     () =>
@@ -318,6 +439,67 @@ export default function CommitList() {
 
   useEffect(() => {
     if (!repoPath) {
+      setRemoteUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    getRemoteUrl(repoPath, "origin")
+      .then((nextRemoteUrl) => {
+        if (!cancelled) setRemoteUrl(nextRemoteUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    function handleClick(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        closeContextMenu();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    }
+
+    window.addEventListener("mousedown", handleClick);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeContextMenu, contextMenu]);
+
+  useLayoutEffect(() => {
+    if (!contextMenu || !menuRef.current || !menuPos) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const nextPos = { ...menuPos };
+
+    if (menuPos.y + rect.height > window.innerHeight - 8) {
+      nextPos.y = Math.max(8, menuPos.y - rect.height);
+    }
+
+    if (menuPos.x + rect.width > window.innerWidth - 8) {
+      nextPos.x = Math.max(8, window.innerWidth - rect.width - 8);
+    }
+
+    if (nextPos.x !== menuPos.x || nextPos.y !== menuPos.y) {
+      setMenuPos(nextPos);
+    }
+  }, [contextMenu, menuPos]);
+
+  useEffect(() => {
+    if (!repoPath) {
       return;
     }
 
@@ -466,6 +648,215 @@ export default function CommitList() {
     }
   };
 
+  const openCommitDialog = useCallback(
+    (kind: CommitDialogState["kind"], commit: CommitListItem) => {
+      const shortSha = commit.sha.slice(0, 7);
+      setDialog({ kind, commit });
+      setDialogError(null);
+      setBranchName(`commit-${shortSha}`);
+      setTagName("");
+      setTagAnnotated(false);
+      setTagDescription("");
+      setWorktreeBranch(`commit-${shortSha}`);
+      setWorktreePath(buildDefaultWorktreeFolder(repoPath ?? "", `commit-${shortSha}`));
+    },
+    [repoPath],
+  );
+
+  const handleRowContextMenu = useCallback(
+    (row: CommitTableRow, _index: number, event: React.MouseEvent) => {
+      event.preventDefault();
+      setKeyboardNavigation(false);
+      setContextMenu({ row, x: event.clientX, y: event.clientY });
+      setMenuPos({ x: event.clientX, y: event.clientY });
+    },
+    [],
+  );
+
+  const handleCommitMenuAction = useCallback(
+    (action: CommitContextMenuAction) => {
+      if (!contextMenu || !repoPath) return;
+
+      const { commit } = contextMenu.row;
+      const remoteCommitUrl = remoteUrl
+        ? buildRemoteCommitUrl(remoteUrl, commit.sha)
+        : null;
+      closeContextMenu();
+
+      switch (action) {
+        case "copySha":
+          void copyText(
+            commit.sha,
+            "Copied commit SHA",
+            `Copied ${commit.sha.slice(0, 12)}.`,
+          );
+          return;
+        case "copyMessage":
+          void copyText(
+            commit.message,
+            "Copied commit message",
+            `Copied message for ${commit.sha.slice(0, 12)}.`,
+          );
+          return;
+        case "copyPatch":
+          void writeClipboardTextFromPromise(
+            getCommitPatch(repoPath, commit.sha),
+          )
+            .then(() =>
+              notifySuccess(
+                "Copied patch",
+                `Copied patch for ${commit.sha.slice(0, 12)}.`,
+              ),
+            )
+            .catch((patchError) => notifyError("Copy patch failed", patchError));
+          return;
+        case "compareWithParent":
+          setCommitCompare({ mode: "parent", commit });
+          return;
+        case "compareWithWorkingTree":
+          setCommitCompare({ mode: "workingTree", commit });
+          return;
+        case "createBranch":
+          openCommitDialog("branch", commit);
+          return;
+        case "createTag":
+          openCommitDialog("tag", commit);
+          return;
+        case "createWorktree":
+          openCommitDialog("worktree", commit);
+          return;
+        case "cherryPick":
+          if (selectedBranch) openCommitDialog("cherryPick", commit);
+          return;
+        case "revert":
+          if (selectedBranch) openCommitDialog("revert", commit);
+          return;
+        case "openRemote":
+          if (remoteCommitUrl) {
+            void openExternalUrl(remoteCommitUrl).catch((openError) =>
+              notifyError("Open commit on remote failed", openError),
+            );
+          }
+          return;
+        case "copyRemoteUrl":
+          if (remoteCommitUrl) {
+            void copyText(
+              remoteCommitUrl,
+              "Copied commit URL",
+              `Copied remote URL for ${commit.sha.slice(0, 12)}.`,
+            );
+          }
+          return;
+      }
+    },
+    [
+      closeContextMenu,
+      contextMenu,
+      copyText,
+      notifyError,
+      notifySuccess,
+      openCommitDialog,
+      remoteUrl,
+      repoPath,
+      selectedBranch,
+    ],
+  );
+
+  const closeDialog = useCallback(() => {
+    if (dialogLoading) return;
+    setDialog(null);
+    setDialogError(null);
+  }, [dialogLoading]);
+
+  const handleConfirmDialog = useCallback(async () => {
+    if (!dialog || !repoPath || dialogLoading) return;
+
+    const { commit } = dialog;
+    setDialogLoading(true);
+    setDialogError(null);
+
+    try {
+      if (dialog.kind === "branch") {
+        const nextBranchName = branchName.trim();
+        await createGitBranch(repoPath, nextBranchName, commit.sha);
+        notifySuccess(
+          "Created branch",
+          `Created ${nextBranchName} from ${commit.sha.slice(0, 12)}.`,
+        );
+      } else if (dialog.kind === "tag") {
+        const nextTagName = tagName.trim();
+        await createTag(
+          repoPath,
+          nextTagName,
+          commit.sha,
+          tagAnnotated,
+          tagAnnotated ? tagDescription.trim() : null,
+        );
+        notifySuccess(
+          "Created tag",
+          `Created ${nextTagName} at ${commit.sha.slice(0, 12)}.`,
+        );
+      } else if (dialog.kind === "worktree") {
+        const nextBranch = worktreeBranch.trim();
+        const nextPath = worktreePath.trim();
+        await createGitWorktree(repoPath, nextPath, nextBranch, commit.sha);
+        notifySuccess(
+          "Created worktree",
+          `Created ${nextBranch} from ${commit.sha.slice(0, 12)} at ${nextPath}.`,
+        );
+      } else if (dialog.kind === "cherryPick") {
+        await cherryPickCommit(repoPath, commit.sha);
+        notifySuccess(
+          "Cherry-pick succeeded",
+          `Cherry-picked ${commit.sha.slice(0, 12)} onto ${selectedBranch}.`,
+        );
+      } else if (dialog.kind === "revert") {
+        await revertCommit(repoPath, commit.sha);
+        notifySuccess(
+          "Revert succeeded",
+          `Reverted ${commit.sha.slice(0, 12)} on ${selectedBranch}.`,
+        );
+      }
+
+      setDialog(null);
+      refreshRepositorySurfaces();
+    } catch (operationError) {
+      const details =
+        operationError instanceof Error
+          ? operationError.message
+          : String(operationError || "Unknown error");
+      setDialogError(details);
+      notifyError(
+        dialog.kind === "cherryPick"
+          ? "Cherry-pick failed"
+          : dialog.kind === "revert"
+            ? "Revert failed"
+            : "Commit action failed",
+        operationError,
+      );
+
+      if (dialog.kind === "cherryPick" || dialog.kind === "revert") {
+        refreshRepositorySurfaces();
+      }
+    } finally {
+      setDialogLoading(false);
+    }
+  }, [
+    branchName,
+    dialog,
+    dialogLoading,
+    notifyError,
+    notifySuccess,
+    refreshRepositorySurfaces,
+    repoPath,
+    selectedBranch,
+    tagAnnotated,
+    tagDescription,
+    tagName,
+    worktreeBranch,
+    worktreePath,
+  ]);
+
   useEffect(() => {
     if (
       selectedRowIndex >= 0 &&
@@ -532,6 +923,49 @@ export default function CommitList() {
 
     setSelectedRowIndex(-1);
   }, [tableRows, selectedCommit]);
+
+  const dialogCommitLabel = dialog
+    ? `${dialog.commit.sha.slice(0, 7)} · ${dialog.commit.message || "Untitled commit"}`
+    : "";
+  const dialogTitle = dialog
+    ? dialog.kind === "branch"
+      ? "Create Branch From Commit"
+      : dialog.kind === "tag"
+        ? "Create Tag At Commit"
+        : dialog.kind === "worktree"
+          ? "Create Worktree From Commit"
+          : dialog.kind === "cherryPick"
+            ? "Cherry-pick Commit"
+            : "Revert Commit"
+    : "";
+  const dialogConfirmLabel = dialog
+    ? dialog.kind === "branch"
+      ? "Create Branch"
+      : dialog.kind === "tag"
+        ? "Create Tag"
+        : dialog.kind === "worktree"
+          ? "Create Worktree"
+          : dialog.kind === "cherryPick"
+            ? "Cherry-pick Commit"
+            : "Revert Commit"
+    : "Confirm";
+  const dialogLoadingLabel = dialog
+    ? dialog.kind === "branch"
+      ? "Creating..."
+      : dialog.kind === "tag"
+        ? "Creating..."
+        : dialog.kind === "worktree"
+          ? "Creating..."
+          : dialog.kind === "cherryPick"
+            ? "Cherry-picking..."
+            : "Reverting..."
+    : "Working...";
+  const dialogConfirmDisabled =
+    !dialog ||
+    (dialog.kind === "branch" && !branchName.trim()) ||
+    (dialog.kind === "tag" && !tagName.trim()) ||
+    (dialog.kind === "worktree" &&
+      (!worktreeBranch.trim() || !worktreePath.trim()));
 
   return (
     <div className="h-full w-full flex flex-col p-4">
@@ -613,11 +1047,174 @@ export default function CommitList() {
           rowHeight={COMMIT_ROW_HEIGHT}
           loading={loading}
           onRowClick={handleRowClick}
+          onRowContextMenu={handleRowContextMenu}
           selectedRowIndex={selectedRowIndex}
           keyboardNavigation={keyboardNavigation}
           setKeyboardNavigation={setKeyboardNavigation}
         />
       </div>
+      {contextMenu && menuPos ? (
+        <CommitContextMenu
+          commit={contextMenu.row.commit}
+          x={menuPos.x}
+          y={menuPos.y}
+          menuRef={menuRef}
+          remoteCommitUrl={
+            remoteUrl
+              ? buildRemoteCommitUrl(remoteUrl, contextMenu.row.commit.sha)
+              : null
+          }
+          currentBranch={selectedBranch}
+          onAction={handleCommitMenuAction}
+        />
+      ) : null}
+      {commitCompare && repoPath ? (
+        <CommitCompareModal
+          repoPath={repoPath}
+          commit={commitCompare.commit}
+          mode={commitCompare.mode}
+          onClose={() => setCommitCompare(null)}
+        />
+      ) : null}
+      <ConfirmModal
+        open={dialog !== null}
+        title={dialogTitle}
+        description={
+          dialog ? (
+            <span>
+              {dialog.kind === "cherryPick" || dialog.kind === "revert"
+                ? `${dialogConfirmLabel} on ${selectedBranch ?? "current branch"}`
+                : dialogConfirmLabel}{" "}
+              <span className="font-mono text-blue-200">{dialogCommitLabel}</span>
+            </span>
+          ) : null
+        }
+        details={
+          dialog ? (
+            <div className="space-y-3">
+              {dialog.kind === "branch" ? (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-zinc-300">
+                    Branch name
+                  </span>
+                  <input
+                    type="text"
+                    className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
+                    value={branchName}
+                    disabled={dialogLoading}
+                    onChange={(event) => setBranchName(event.target.value)}
+                    autoFocus
+                  />
+                </label>
+              ) : null}
+              {dialog.kind === "tag" ? (
+                <>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-zinc-300">
+                      Tag name
+                    </span>
+                    <input
+                      type="text"
+                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
+                      value={tagName}
+                      disabled={dialogLoading}
+                      onChange={(event) => setTagName(event.target.value)}
+                      autoFocus
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-zinc-300">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border bg-background"
+                      checked={tagAnnotated}
+                      disabled={dialogLoading}
+                      onChange={(event) => setTagAnnotated(event.target.checked)}
+                    />
+                    Annotated tag
+                  </label>
+                  {tagAnnotated ? (
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-zinc-300">
+                        Description
+                      </span>
+                      <textarea
+                        className="min-h-20 w-full resize-none rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-500/60"
+                        value={tagDescription}
+                        disabled={dialogLoading}
+                        onChange={(event) => setTagDescription(event.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+              {dialog.kind === "worktree" ? (
+                <>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-zinc-300">
+                      Branch
+                    </span>
+                    <input
+                      type="text"
+                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
+                      value={worktreeBranch}
+                      disabled={dialogLoading}
+                      onChange={(event) => {
+                        const nextBranch = event.target.value;
+                        setWorktreeBranch(nextBranch);
+                        if (repoPath) {
+                          setWorktreePath(
+                            buildDefaultWorktreeFolder(repoPath, nextBranch),
+                          );
+                        }
+                      }}
+                      autoFocus
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-zinc-300">
+                      Path
+                    </span>
+                    <input
+                      type="text"
+                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
+                      value={worktreePath}
+                      disabled={dialogLoading}
+                      onChange={(event) => setWorktreePath(event.target.value)}
+                    />
+                  </label>
+                </>
+              ) : null}
+              {dialog.kind === "cherryPick" || dialog.kind === "revert" ? (
+                <span>
+                  This runs{" "}
+                  <span className="font-mono">
+                    git {dialog.kind === "cherryPick" ? "cherry-pick" : "revert"}
+                  </span>{" "}
+                  against the current branch. Git may stop for conflicts.
+                </span>
+              ) : null}
+              {dialogError ? (
+                <div className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
+                  {dialogError}
+                </div>
+              ) : null}
+            </div>
+          ) : null
+        }
+        confirmLabel={dialogConfirmLabel}
+        loadingLabel={dialogLoadingLabel}
+        variant={
+          dialog?.kind === "cherryPick" || dialog?.kind === "revert"
+            ? "danger"
+            : "default"
+        }
+        loading={dialogLoading}
+        confirmDisabled={dialogConfirmDisabled}
+        onCancel={closeDialog}
+        onConfirm={() => {
+          void handleConfirmDialog();
+        }}
+      />
     </div>
   );
 }

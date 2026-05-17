@@ -16,6 +16,10 @@ import {
 import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import { groupBranches } from "@/shared/lib/tree/branch-tree";
 import {
+  writeClipboardText,
+  writeClipboardTextFromPromise,
+} from "@/shared/platform/clipboard";
+import {
   buildDefaultWorktreeFolder,
   generateRandomWorkbranchName,
 } from "@/features/worktrees/utils/worktree-defaults";
@@ -393,7 +397,7 @@ export function useBranchListBehavior() {
   const copyText = useCallback(
     async (text: string, successTitle: string, successDetails: string) => {
       try {
-        await navigator.clipboard.writeText(text);
+        await writeClipboardText(text);
         setGitActionNotice({
           kind: "success",
           title: successTitle,
@@ -412,17 +416,20 @@ export function useBranchListBehavior() {
       if (!repoPath) return;
 
       try {
-        const sha = await getBranchTipSha(repoPath, branchName);
-        await copyText(
-          sha,
-          "Copied commit SHA",
-          `Copied ${branchName} tip ${sha.slice(0, 12)}.`,
-        );
+        const shaPromise = getBranchTipSha(repoPath, branchName);
+        await writeClipboardTextFromPromise(shaPromise);
+        const sha = await shaPromise;
+        setGitActionNotice({
+          kind: "success",
+          title: "Copied commit SHA",
+          details: `Copied ${branchName} tip ${sha.slice(0, 12)}.`,
+          expanded: false,
+        });
       } catch (copyError) {
         notifyError("Copy commit SHA failed", copyError);
       }
     },
-    [copyText, notifyError, repoPath],
+    [notifyError, repoPath, setGitActionNotice],
   );
 
   const renameBranch = useCallback(async () => {
