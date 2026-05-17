@@ -1,4 +1,4 @@
-export { BranchList } from "./BranchList";
+export { BranchList } from "./branch-list";
 export type {
   BranchContextMenuState,
   BranchContextRequest,

@@ -6,7 +6,7 @@ import {
   setupPersistedWindowState,
 } from "@/app/bootstrap";
 import { AppProviders } from "@/app/providers";
-import App from "./App";
+import App from "./app";
 import "./index.css";
 
 async function bootstrap() {

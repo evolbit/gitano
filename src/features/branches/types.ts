@@ -1,4 +1,4 @@
-import type { BranchTreeNode } from "@/shared/lib/tree/branchTree";
+import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 
 export type BranchType = "local" | "remote";
 

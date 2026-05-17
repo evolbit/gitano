@@ -1,1 +1,1 @@
-export * from "./stagedSelectionSync";
+export * from "./staged-selection-sync";

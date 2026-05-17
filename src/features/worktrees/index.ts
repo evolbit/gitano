@@ -1,2 +1,2 @@
-export { WorkspacesPanel } from "./WorkspacesPanel";
+export { WorkspacesPanel } from "./workspaces-panel";
 

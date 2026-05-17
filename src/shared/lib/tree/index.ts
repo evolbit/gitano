@@ -1,2 +1,2 @@
-export * from "./branchTree";
-export * from "./changesExplorerTree";
+export * from "./branch-tree";
+export * from "./changes-explorer-tree";

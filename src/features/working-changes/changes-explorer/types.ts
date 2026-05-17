@@ -1,4 +1,4 @@
-import type { ChangesExplorerFile } from "@/shared/lib/tree/changesExplorerTree";
+import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 
 export type ChangesExplorerViewMode = "flat" | "tree";
 

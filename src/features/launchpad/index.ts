@@ -1,2 +1,2 @@
-export { Launchpad, default } from "./components/Launchpad";
+export { Launchpad, default } from "./components/launchpad";
 export type { RepoInfo, SectionProps } from "./types";

@@ -1,2 +1,2 @@
-export { default as ChangesPanel } from "./changes-panel/ChangesPanel";
-export { default as CommitList } from "./commit-list/CommitList";
+export { default as ChangesPanel } from "./changes-panel/changes-panel";
+export { default as CommitList } from "./commit-list/commit-list";

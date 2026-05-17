@@ -2,11 +2,11 @@ import ReactDOM from "react-dom";
 import { memo, type RefObject } from "react";
 import { ChangesExplorerViewMode, ContextMenuScope } from "./types";
 import { ChangesExplorerCheckboxState } from "./utils";
-import type { ChangesExplorerFile } from "@/shared/lib/tree/changesExplorerTree";
-import { ChangesExplorerMenuButton } from "./ChangesExplorerMenuButton";
-import { ChangesExplorerFileMenuItems } from "./ChangesExplorerMenuFileItems";
-import { ChangesExplorerFolderMenuItems } from "./ChangesExplorerMenuFolderItems";
-import { ChangesExplorerModalMenuItems } from "./ChangesExplorerMenuModalItems";
+import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import { ChangesExplorerMenuButton } from "./changes-explorer-menu-button";
+import { ChangesExplorerFileMenuItems } from "./changes-explorer-menu-file-items";
+import { ChangesExplorerFolderMenuItems } from "./changes-explorer-menu-folder-items";
+import { ChangesExplorerModalMenuItems } from "./changes-explorer-menu-modal-items";
 
 type MenuProps = {
   activeContextMenu: ContextMenuScope | null;

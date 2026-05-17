@@ -1,2 +1,2 @@
-export { TagsPanel } from "./TagsPanel";
+export { TagsPanel } from "./tags-panel";
 

@@ -1,4 +1,4 @@
-import { type StagedLinesState } from "@/features/working-changes/stores/stagingStore";
+import { type StagedLinesState } from "@/features/working-changes/stores/staging-store";
 
 export type ChangesExplorerCheckboxState =
   | "checked"

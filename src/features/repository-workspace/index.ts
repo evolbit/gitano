@@ -1,5 +1,5 @@
-export { default as RepoTabLayout } from "./components/repo-tab-layout/RepoTabLayout";
-export { default as TabBar } from "./components/tab-bar/TabBar";
+export { default as RepoTabLayout } from "./components/repo-tab-layout/repo-tab-layout";
+export { default as TabBar } from "./components/tab-bar/tab-bar";
 export type {
   RepoTabType,
   TabBarProps,

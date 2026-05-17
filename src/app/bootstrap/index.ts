@@ -1,1 +1,1 @@
-export * from "./windowPersistence";
+export * from "./window-persistence";
