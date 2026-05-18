@@ -465,18 +465,18 @@ function ChangesExplorer({
         </div>
       ) : null}
 
-      <div className="border-b border-border bg-background-emphasis p-2">
+      <div className="border-b border-border bg-background-emphasis px-2 py-1.5">
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <input
               ref={searchInputRef}
               type="text"
-              className="w-full rounded border border-border bg-background px-3 py-1.5 pl-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              className="h-8 w-full rounded border border-border bg-background px-3 pl-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
               placeholder="Search files..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <IconSearch className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
           </div>
           {surface === "main" ? (
             <div className="flex items-center overflow-hidden rounded border border-border bg-background">

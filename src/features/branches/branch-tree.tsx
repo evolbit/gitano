@@ -13,6 +13,10 @@ import {
 import { BranchIcon } from "./branch-icon";
 import type { BranchType } from "./types";
 
+const BRANCH_TREE_INDENT_STEP = 18;
+const BRANCH_GROUP_BASE_INDENT = 10;
+const BRANCH_ROW_BASE_INDENT = 28;
+
 type BranchTreeProps = {
   nodes: BranchTreeNode[];
   branchTreeExpanded: Record<string, boolean>;
@@ -50,13 +54,13 @@ export function BranchTree({
           const isPriorityGroup = isPriorityBranchName(node.name);
 
           return (
-            <li key={node.full} className="mb-0.5 w-full">
+            <li key={node.full} className="w-full">
               <div
-                className="flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
+                className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
                 style={{
                   fontSize: "var(--ui-font-size-sm)",
                   fontWeight: 500,
-                  paddingLeft: `${12 + level * 22}px`,
+                  paddingLeft: `${BRANCH_GROUP_BASE_INDENT + level * BRANCH_TREE_INDENT_STEP}px`,
                 }}
                 onMouseEnter={() => onHoverRow(node.full)}
                 onMouseLeave={() => onHoverRow(null)}
@@ -66,16 +70,16 @@ export function BranchTree({
                   onOpenContextMenu(node, event.clientX, event.clientY);
                 }}
               >
-                <span className="inline-flex h-5 w-5 items-center justify-center">
+                <span className="inline-flex h-4 w-4 items-center justify-center text-zinc-500">
                   {isOpen ? (
-                    <IconChevronDown size={18} className="align-middle" />
+                    <IconChevronDown size={13} className="align-middle" />
                   ) : (
-                    <IconChevronRight size={18} className="align-middle" />
+                    <IconChevronRight size={13} className="align-middle" />
                   )}
                 </span>
-                <span className="inline-flex h-5 w-5 items-center justify-center">
+                <span className="inline-flex h-4 w-4 items-center justify-center">
                   <IconFolder
-                    size={18}
+                    size={15}
                     className={
                       isPriorityGroup
                         ? PRIORITY_BRANCH_COLOR
@@ -85,7 +89,7 @@ export function BranchTree({
                 </span>
                 <span className="w-0 min-w-0 flex-1 truncate">{node.name}</span>
                 <button
-                  className={`ml-auto rounded p-1 transition-colors hover:bg-zinc-700 ${
+                  className={`ml-auto flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
                     isRowActionsVisible(node.full) ? "visible" : "invisible"
                   }`}
                   title="More actions"
@@ -97,7 +101,7 @@ export function BranchTree({
                     onOpenContextMenu(node, rect.right, rect.bottom);
                   }}
                 >
-                  <IconDotsVertical size={16} />
+                  <IconDotsVertical size={14} />
                 </button>
               </div>
               {isOpen ? (
@@ -125,14 +129,14 @@ export function BranchTree({
         return (
           <li
             key={node.full}
-            className={`group flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-1.5 text-sm transition-colors ${
+            className={`group flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 px-2 text-sm transition-colors ${
               selected
                 ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
                 : "text-foreground hover:bg-background-emphasis"
             }`}
             style={{
               fontSize: "var(--ui-font-size-sm)",
-              paddingLeft: `${28 + level * 22}px`,
+              paddingLeft: `${BRANCH_ROW_BASE_INDENT + level * BRANCH_TREE_INDENT_STEP}px`,
             }}
             tabIndex={0}
             onMouseEnter={() => onHoverRow(node.full)}
@@ -147,12 +151,12 @@ export function BranchTree({
               onOpenContextMenu(node, event.clientX, event.clientY);
             }}
           >
-            <span className="inline-flex h-5 w-5 items-center justify-center">
+            <span className="inline-flex h-4 w-4 items-center justify-center">
               <BranchIcon name={node.name} />
             </span>
             <span className="w-0 min-w-0 flex-1 truncate">{node.name}</span>
             <button
-              className={`ml-auto rounded p-1 transition-colors hover:bg-zinc-700 ${
+              className={`ml-auto flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
                 isRowActionsVisible(node.full) ? "visible" : "invisible"
               }`}
               title="More actions"
@@ -164,7 +168,7 @@ export function BranchTree({
                 onOpenContextMenu(node, rect.right, rect.bottom);
               }}
             >
-              <IconDotsVertical size={16} />
+              <IconDotsVertical size={14} />
             </button>
           </li>
         );

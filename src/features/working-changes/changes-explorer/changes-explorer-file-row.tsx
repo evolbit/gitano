@@ -37,7 +37,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
     <button
       type="button"
       data-file-path={file.path}
-      className={`flex w-full items-center gap-2 overflow-hidden border-b border-transparent px-3 py-2 text-left text-sm transition-colors ${
+      className={`flex h-7 w-full items-center gap-1.5 overflow-hidden border-b border-transparent px-2 text-left text-sm transition-colors ${
         isSelected
           ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
           : "text-zinc-400 hover:bg-background-emphasis"
@@ -60,7 +60,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
         </div>
       </div>
       {!isUntrackedFile(file) ? (
-        <div className="ml-3 flex w-16 flex-shrink-0 items-center justify-end gap-2 text-xs">
+        <div className="ml-2 flex w-14 flex-shrink-0 items-center justify-end gap-1.5 text-xs">
           <span className="min-w-0 text-right text-lime-400">
             +{file.insertions}
           </span>

@@ -77,6 +77,9 @@ const EMPTY_CREATE_FORM: CreateFormState = {
 
 const WORKTREE_CREATE_MENU_ITEM_CLASS =
   "px-4 py-3 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
+const WORKTREE_TREE_INDENT_STEP = 18;
+const WORKTREE_GROUP_BASE_INDENT = 10;
+const WORKTREE_ROW_BASE_INDENT = 28;
 
 export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -458,13 +461,13 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
             const isOpen = worktreeTreeExpanded[node.full] ?? true;
 
             return (
-              <li key={node.full} className="mb-0.5 w-full">
+              <li key={node.full} className="w-full">
                 <div
-                  className="flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
+                  className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:bg-background-emphasis"
                   style={{
                     fontSize: "var(--ui-font-size-sm)",
                     fontWeight: 500,
-                    paddingLeft: `${12 + level * 22}px`,
+                    paddingLeft: `${WORKTREE_GROUP_BASE_INDENT + level * WORKTREE_TREE_INDENT_STEP}px`,
                   }}
                   onClick={() => {
                     setWorktreeTreeExpanded(repoPath, {
@@ -472,11 +475,15 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                       [node.full]: !isOpen,
                     });
                   }}>
-                  <span className="inline-flex h-5 w-5 items-center justify-center">
-                    {isOpen ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
+                  <span className="inline-flex h-4 w-4 items-center justify-center text-zinc-500">
+                    {isOpen ? (
+                      <IconChevronDown size={13} />
+                    ) : (
+                      <IconChevronRight size={13} />
+                    )}
                   </span>
-                  <span className="inline-flex h-5 w-5 items-center justify-center">
-                    <IconFolder size={18} className="text-slate-300" />
+                  <span className="inline-flex h-4 w-4 items-center justify-center">
+                    <IconFolder size={15} className="text-slate-300" />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{node.name}</span>
                 </div>
@@ -491,37 +498,37 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
           return (
             <li
               key={worktree.path}
-              className={`group flex w-full min-w-0 cursor-pointer items-center gap-1 px-3 py-2 text-sm transition-colors ${
+              className={`group flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1 px-2 py-0.5 text-sm transition-colors ${
                 worktree.isCurrent
                   ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
                   : "text-foreground hover:bg-background-emphasis"
               }`}
               style={{
                 fontSize: "var(--ui-font-size-sm)",
-                paddingLeft: `${28 + level * 22}px`,
+                paddingLeft: `${WORKTREE_ROW_BASE_INDENT + level * WORKTREE_TREE_INDENT_STEP}px`,
               }}
               tabIndex={0}
               onMouseEnter={() => setHoveredRowKey(worktree.path)}
               onMouseLeave={() => setHoveredRowKey(null)}
               onClick={() => selectWorktree(worktree)}>
-              <span className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center">
+              <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
                 {worktree.isMain ? null : (
                   <IconArrowFork
-                    size={17}
+                    size={15}
                     className={worktree.isCurrent ? "text-blue-300" : "text-slate-300"}
                   />
                 )}
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="min-w-0 truncate font-medium">
+                <span className="min-w-0 truncate font-medium leading-5">
                   {getWorktreeDisplayName(worktree)}
                 </span>
-                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                <span className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground">
                   {worktree.branch ?? "Detached HEAD"} - {worktree.path}
                 </span>
               </span>
               <button
-                className={`ml-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
+                className={`ml-auto flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
                   isRowActionsVisible(worktree.path) ? "visible" : "invisible"
                 }`}
                 title="More actions"
@@ -532,7 +539,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                   const rect = event.currentTarget.getBoundingClientRect();
                   openContextMenu(worktree, rect.right, rect.bottom);
                 }}>
-                <IconDotsVertical size={16} />
+                <IconDotsVertical size={14} />
               </button>
             </li>
           );

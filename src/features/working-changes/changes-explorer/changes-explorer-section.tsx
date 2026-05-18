@@ -13,9 +13,9 @@ export const ChangesExplorerSection = memo(function ChangesExplorerSection({
   children,
 }: ChangesExplorerSectionProps) {
   return (
-    <section className="pb-0">
+    <section>
       {sectionMode === "tracked-untracked" ? (
-        <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-zinc-500/90">
+        <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-zinc-500/90">
           {name}
         </div>
       ) : null}

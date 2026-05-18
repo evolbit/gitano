@@ -6,6 +6,7 @@ export type CommitContextMenuAction =
   | "copySha"
   | "copyMessage"
   | "copyPatch"
+  | "analyzeWithAi"
   | "compareWithParent"
   | "compareWithWorkingTree"
   | "createBranch"
@@ -93,6 +94,9 @@ export function CommitContextMenu({
         Copy commit message
       </MenuItem>
       <MenuItem onClick={() => onAction("copyPatch")}>Copy patch</MenuItem>
+      <MenuItem onClick={() => onAction("analyzeWithAi")}>
+        Analyze with local AI...
+      </MenuItem>
 
       <Separator />
       <SectionTitle>Compare</SectionTitle>

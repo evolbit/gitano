@@ -61,6 +61,7 @@ describe("CommitContextMenu", () => {
     expect(screen.getByText("Copy commit SHA")).toBeInTheDocument();
     expect(screen.getByText("Copy commit message")).toBeInTheDocument();
     expect(screen.getByText("Copy patch")).toBeInTheDocument();
+    expect(screen.getByText("Analyze with local AI...")).toBeInTheDocument();
 
     expect(screen.getByText("Compare")).toBeInTheDocument();
     expect(screen.queryByText("Show commit changes")).not.toBeInTheDocument();
@@ -107,7 +108,9 @@ describe("CommitContextMenu", () => {
     const { onAction } = renderMenu();
 
     fireEvent.click(screen.getByText("Copy patch"));
+    fireEvent.click(screen.getByText("Analyze with local AI..."));
 
     expect(onAction).toHaveBeenCalledWith("copyPatch");
+    expect(onAction).toHaveBeenCalledWith("analyzeWithAi");
   });
 });

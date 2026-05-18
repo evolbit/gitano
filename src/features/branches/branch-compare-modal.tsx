@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconPlus, IconX } from "@/components/icons";
+import { IconPlus, IconSparkles, IconX } from "@/components/icons";
 import {
   DiffInteractionProvider,
   DiffViewerBase,
@@ -21,7 +21,12 @@ import {
   getBranchComparisonFileDiff,
   getBranchComparisonFiles,
 } from "@/shared/api/git/diffs";
+import {
+  runLocalAiAction,
+  type LocalAiRunResult,
+} from "@/shared/api/local-ai";
 import type { FileChange } from "@/shared/types/git";
+import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
 import {
   addReviewThreadReply,
   deleteReviewThreadComment,
@@ -80,6 +85,10 @@ export function BranchCompareModal({
   const [reviewThreads, setReviewThreads] = useState<ReviewThread[]>([]);
   const [activeReviewAnchor, setActiveReviewAnchor] =
     useState<DiffLineAnchor | null>(null);
+  const [aiResult, setAiResult] = useState<LocalAiRunResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [showAiSetup, setShowAiSetup] = useState(false);
   const filesRequestId = useRef(0);
   const hunksRequestId = useRef(0);
 
@@ -202,6 +211,51 @@ export function BranchCompareModal({
   const selectedFile = useMemo(
     () => files.find((file) => file.path === selectedPath) ?? null,
     [files, selectedPath],
+  );
+
+  const shouldOpenAiSetup = (analysisError: unknown) => {
+    const message =
+      analysisError instanceof Error
+        ? analysisError.message
+        : String(analysisError || "");
+    return (
+      message.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
+      message.toLowerCase().includes("ollama") ||
+      message.toLowerCase().includes("local ai")
+    );
+  };
+
+  const runBranchAiAnalysis = useCallback(
+    async (forceRefresh = false) => {
+      if (!baseBranch) return;
+
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const result = await runLocalAiAction({
+          repoPath,
+          actionKind: "branchAnalysis",
+          baseRef: baseBranch,
+          headRef: sourceBranch,
+          comparisonMode: BRANCH_COMPARE_MODE,
+          forceRefresh,
+        });
+        setAiResult(result);
+      } catch (analysisError) {
+        if (shouldOpenAiSetup(analysisError)) {
+          setShowAiSetup(true);
+        } else {
+          setAiError(
+            analysisError instanceof Error
+              ? analysisError.message
+              : String(analysisError || "Local AI analysis failed"),
+          );
+        }
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [baseBranch, repoPath, sourceBranch],
   );
 
   const beginReviewThread = useCallback((anchor: DiffLineAnchor) => {
@@ -342,14 +396,27 @@ export function BranchCompareModal({
               onSelectBranch={setBaseBranch}
             />
           </div>
-          <button
-            type="button"
-            className="ml-4 rounded p-2 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <IconX size={22} />
-          </button>
+          <div className="ml-4 flex items-center gap-2">
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!baseBranch || aiLoading}
+              onClick={() => {
+                void runBranchAiAnalysis();
+              }}
+            >
+              <IconSparkles size={14} />
+              {aiLoading ? "Analyzing" : "Analyze"}
+            </button>
+            <button
+              type="button"
+              className="rounded p-2 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              <IconX size={22} />
+            </button>
+          </div>
         </div>
 
         {filesError ? (
@@ -396,6 +463,34 @@ export function BranchCompareModal({
             )}
           </Split.Pane>
         </Split>
+        {aiError ? (
+          <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+            {aiError}
+          </div>
+        ) : null}
+        <LocalAiResultModal
+          open={Boolean(aiResult) || aiLoading}
+          title={`Analyze ${sourceBranch}`}
+          result={aiResult}
+          loading={aiLoading}
+          error={aiError}
+          onRefresh={() => {
+            void runBranchAiAnalysis(true);
+          }}
+          onClose={() => {
+            setAiResult(null);
+            setAiError(null);
+          }}
+        />
+        <LocalAiSetupModal
+          open={showAiSetup}
+          actionKind="branchAnalysis"
+          onClose={() => setShowAiSetup(false)}
+          onReady={() => {
+            setShowAiSetup(false);
+            void runBranchAiAnalysis();
+          }}
+        />
       </div>
     </div>
   );

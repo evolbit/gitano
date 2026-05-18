@@ -14,10 +14,10 @@ export const FileSelectionCheckbox = memo(function FileSelectionCheckbox({
   return (
     <button
       type="button"
-      className={`ml-3 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-colors ${
+      className={`ml-2 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border bg-background-emphasis transition-colors ${
         checkboxState === "checked" || checkboxState === "indeterminate"
-          ? "border-blue-500 bg-blue-600 text-white"
-          : "border-zinc-600 bg-transparent text-transparent"
+          ? "border-zinc-600 text-blue-400"
+          : "border-zinc-700 text-transparent hover:border-zinc-500"
       }`}
       onClick={(e) => {
         e.stopPropagation();
@@ -31,9 +31,9 @@ export const FileSelectionCheckbox = memo(function FileSelectionCheckbox({
       aria-label="Toggle file selection"
     >
       {checkboxState === "checked" ? (
-        <IconCheck size={12} className="text-white" />
+        <IconCheck size={11} className="text-blue-400" />
       ) : checkboxState === "indeterminate" ? (
-        <span className="block h-0.5 w-2 rounded bg-white" />
+        <span className="block h-0.5 w-1.5 rounded bg-blue-400" />
       ) : null}
     </button>
   );

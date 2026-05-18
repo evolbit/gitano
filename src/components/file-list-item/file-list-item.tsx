@@ -20,8 +20,8 @@ const FileListItem = ({ file }: FileListItemProps) => {
     ) {
       return (
         <IconQuestionMark
-          size={16}
-          className="text-yellow-500 w-4 h-4 flex-shrink-0"
+          size={14}
+          className="h-3.5 w-3.5 flex-shrink-0 text-yellow-500"
         />
       );
     }
@@ -30,60 +30,59 @@ const FileListItem = ({ file }: FileListItemProps) => {
       case "added":
         return (
           <IconPlus
-            size={16}
-            className="text-lime-400 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-lime-400"
           />
         );
       case "deleted":
         return (
           <IconMinus
-            size={16}
-            className="text-red-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-red-500"
           />
         );
       case "modified":
         return (
           <IconPoint
-            size={16}
-            className="text-yellow-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-yellow-500"
           />
         );
       case "renamed":
         return (
           <IconPencil
-            size={16}
-            className="text-blue-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-blue-500"
           />
         );
       case "copied":
         return (
           <IconCopy
-            size={16}
-            className="text-purple-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-purple-500"
           />
         );
       case "typeChanged":
         return (
           <IconExchange
-            size={16}
-            className="text-orange-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-orange-500"
           />
         );
       default:
         return (
           <IconQuestionMark
-            size={16}
-            className="text-gray-500 w-4 h-4 flex-shrink-0"
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-gray-500"
           />
         );
     }
   };
 
   return (
-    <div
-      className="flex items-center p-1 rounded min-w-0 flex-1">
+    <div className="flex min-w-0 flex-1 items-center rounded p-0.5">
       {getStatusIcon()}
-      <span className="ml-2 flex-1 min-w-0 truncate text-zinc-100 whitespace-nowrap">
+      <span className="ml-1.5 min-w-0 flex-1 truncate whitespace-nowrap text-zinc-100">
         {(() => {
           const dir = getParentPath(file.path);
           const name = getFileName(file.path);
@@ -106,11 +105,11 @@ const FileListItem = ({ file }: FileListItemProps) => {
         file.insertions === 0 &&
         file.deletions === 0
       ) && (
-        <span className="flex items-end gap-2 justify-between w-14 ml-3 text-xs text-zinc-400">
-          <span className="text-lime-400 w-1/2 text-right block">
+        <span className="ml-2 flex w-12 items-end justify-between gap-1.5 text-xs text-zinc-400">
+          <span className="block w-1/2 text-right text-lime-400">
             +{file.insertions}
           </span>
-          <span className="text-red-500 w-1/2 text-right block">
+          <span className="block w-1/2 text-right text-red-500">
             -{file.deletions}
           </span>
         </span>

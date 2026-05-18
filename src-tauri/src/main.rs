@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
 mod git;
 
 fn main() {
@@ -71,6 +72,15 @@ fn main() {
             git::git_stash_edit_message,
             git::get_stash_file_diff,
             git::sync_repo_watchers,
+            ai::ai_get_entitlement_status,
+            ai::ai_get_model_catalog,
+            ai::ai_get_model_preferences,
+            ai::ai_set_model_preference,
+            ai::ai_get_machine_profile,
+            ai::ai_get_model_status,
+            ai::ai_get_model_compatibility,
+            ai::ai_prepare_model,
+            ai::ai_run_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

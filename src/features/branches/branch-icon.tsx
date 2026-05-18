@@ -9,9 +9,9 @@ export function BranchIcon({ name }: { name: string }) {
   const priority = isPriorityBranchName(name);
 
   return (
-    <span className="inline-flex h-5 w-5 items-center justify-center">
+    <span className="inline-flex h-4 w-4 items-center justify-center">
       <IconGitBranch
-        size={18}
+        size={15}
         className={priority ? PRIORITY_BRANCH_COLOR : DEFAULT_BRANCH_ICON_COLOR}
       />
     </span>

@@ -20,6 +20,10 @@ import {
   revertCommit,
 } from "@/shared/api/git/commits";
 import { createTag } from "@/shared/api/git/tags";
+import {
+  runLocalAiAction,
+  type LocalAiRunResult,
+} from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { buildRemoteCommitUrl } from "@/shared/lib/git/remote-url";
@@ -34,6 +38,7 @@ import TableVirtualResizable, {
   type TableColumn,
 } from "@/components/tables/table-virtual-resizable";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
+import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { buildDefaultWorktreeFolder } from "@/features/worktrees/utils/worktree-defaults";
 import type { CommitListItem } from "@/shared/types/git";
@@ -91,6 +96,14 @@ type CommitDialogState = {
 type CommitCompareState = {
   mode: CommitCompareMode;
   commit: CommitListItem;
+};
+
+type CommitAiAnalysisState = {
+  commit: CommitListItem;
+  result: LocalAiRunResult | null;
+  loading: boolean;
+  error: string | null;
+  setupOpen: boolean;
 };
 
 function formatCommitDate(value: number): string {
@@ -191,6 +204,8 @@ export default function CommitList() {
   const [dialogLoading, setDialogLoading] = useState(false);
   const [commitCompare, setCommitCompare] =
     useState<CommitCompareState | null>(null);
+  const [commitAiAnalysis, setCommitAiAnalysis] =
+    useState<CommitAiAnalysisState | null>(null);
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
 
@@ -697,6 +712,61 @@ export default function CommitList() {
     [repoPath],
   );
 
+  const shouldOpenAiSetup = (analysisError: unknown) => {
+    const message =
+      analysisError instanceof Error
+        ? analysisError.message
+        : String(analysisError || "");
+    return (
+      message.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
+      message.toLowerCase().includes("ollama") ||
+      message.toLowerCase().includes("local ai")
+    );
+  };
+
+  const runCommitAiAnalysis = useCallback(
+    async (commit: CommitListItem, forceRefresh = false) => {
+      if (!repoPath) return;
+
+      setCommitAiAnalysis({
+        commit,
+        result: null,
+        loading: true,
+        error: null,
+        setupOpen: false,
+      });
+
+      try {
+        const result = await runLocalAiAction({
+          repoPath,
+          actionKind: "commitAnalysis",
+          commitSha: commit.sha,
+          forceRefresh,
+        });
+        setCommitAiAnalysis({
+          commit,
+          result,
+          loading: false,
+          error: null,
+          setupOpen: false,
+        });
+      } catch (analysisError) {
+        setCommitAiAnalysis({
+          commit,
+          result: null,
+          loading: false,
+          error: shouldOpenAiSetup(analysisError)
+            ? null
+            : analysisError instanceof Error
+              ? analysisError.message
+              : String(analysisError || "Local AI analysis failed"),
+          setupOpen: shouldOpenAiSetup(analysisError),
+        });
+      }
+    },
+    [repoPath],
+  );
+
   const handleRowContextMenu = useCallback(
     (row: CommitTableRow, _index: number, event: React.MouseEvent) => {
       event.preventDefault();
@@ -743,6 +813,9 @@ export default function CommitList() {
               ),
             )
             .catch((patchError) => notifyError("Copy patch failed", patchError));
+          return;
+        case "analyzeWithAi":
+          void runCommitAiAnalysis(commit);
           return;
         case "compareWithParent":
           setCommitCompare({ mode: "parent", commit });
@@ -792,6 +865,7 @@ export default function CommitList() {
       openCommitDialog,
       remoteUrl,
       repoPath,
+      runCommitAiAnalysis,
       selectedBranch,
     ],
   );
@@ -1114,6 +1188,35 @@ export default function CommitList() {
           commit={commitCompare.commit}
           mode={commitCompare.mode}
           onClose={() => setCommitCompare(null)}
+        />
+      ) : null}
+      {commitAiAnalysis ? (
+        <LocalAiResultModal
+          open
+          title={`Analyze ${commitAiAnalysis.commit.sha.slice(0, 7)}`}
+          result={commitAiAnalysis.result}
+          loading={commitAiAnalysis.loading}
+          error={commitAiAnalysis.error}
+          onRefresh={() => {
+            void runCommitAiAnalysis(commitAiAnalysis.commit, true);
+          }}
+          onClose={() => setCommitAiAnalysis(null)}
+        />
+      ) : null}
+      {commitAiAnalysis?.setupOpen ? (
+        <LocalAiSetupModal
+          open
+          actionKind="commitAnalysis"
+          onClose={() =>
+            setCommitAiAnalysis((current) =>
+              current ? { ...current, setupOpen: false } : current,
+            )
+          }
+          onReady={() => {
+            if (commitAiAnalysis) {
+              void runCommitAiAnalysis(commitAiAnalysis.commit);
+            }
+          }}
         />
       ) : null}
       <ConfirmModal

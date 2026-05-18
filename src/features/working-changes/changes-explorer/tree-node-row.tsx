@@ -16,6 +16,10 @@ import {
 import { memo } from "react";
 import { getFolderExpansionKey } from "./utils/folder-expansion-key";
 
+const TREE_INDENT_STEP = 18;
+const TREE_FOLDER_BASE_INDENT = 10;
+const TREE_FILE_BASE_INDENT = 30;
+
 type TreeNodeRowProps = {
   sectionName: string;
   node: ChangesExplorerTreeNode;
@@ -79,8 +83,8 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       <div key={node.path}>
         <button
           type="button"
-          className="flex w-full items-center gap-1 overflow-hidden px-3 py-1.5 text-left text-sm text-zinc-400 transition-colors hover:bg-background-emphasis"
-          style={{ paddingLeft: `${12 + depth * 22}px` }}
+          className="flex h-7 w-full items-center gap-1 overflow-hidden px-2 text-left text-sm text-zinc-400 transition-colors hover:bg-background-emphasis"
+          style={{ paddingLeft: `${TREE_FOLDER_BASE_INDENT + depth * TREE_INDENT_STEP}px` }}
           onClick={() => onToggleFolder(expansionKey)}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -94,15 +98,15 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             );
           }}
         >
-          <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
+          <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
             {isOpen ? (
-              <IconChevronDown size={14} />
+              <IconChevronDown size={13} />
             ) : (
-              <IconChevronRight size={14} />
+              <IconChevronRight size={13} />
             )}
           </span>
           <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
-            <IconFolder size={16} className="h-4 w-4 flex-shrink-0 text-slate-300" />
+            <IconFolder size={15} className="h-4 w-4 flex-shrink-0 text-slate-300" />
           </span>
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
           {showFileCheckboxes && folderFiles.length > 0 ? (
@@ -145,12 +149,12 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       key={node.file.path}
       type="button"
       data-file-path={node.file.path}
-      className={`flex w-full items-center gap-2 overflow-hidden px-3 py-1.5 text-left text-sm transition-colors ${
+      className={`flex h-7 w-full items-center gap-1.5 overflow-hidden px-2 text-left text-sm transition-colors ${
         isSelected
           ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
           : "text-zinc-400 hover:bg-background-emphasis"
       }`}
-      style={{ paddingLeft: `${40 + depth * 22}px` }}
+      style={{ paddingLeft: `${TREE_FILE_BASE_INDENT + depth * TREE_INDENT_STEP}px` }}
       onClick={() => onSelectFile(node.file)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -162,7 +166,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       <ChangesExplorerStatusIcon file={node.file} />
       <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
       {!isUntrackedFile(node.file) ? (
-        <div className="ml-3 flex w-16 flex-shrink-0 items-center justify-end gap-2 text-xs">
+        <div className="ml-2 flex w-14 flex-shrink-0 items-center justify-end gap-1.5 text-xs">
           <span className="min-w-0 text-right text-lime-400">
             +{node.file.insertions}
           </span>

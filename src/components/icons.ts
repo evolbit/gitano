@@ -40,6 +40,7 @@ export {
   IconPoint,
   IconQuestionMark,
   IconSearch,
+  IconSparkles,
   IconStack2,
   IconStar,
   IconTag,

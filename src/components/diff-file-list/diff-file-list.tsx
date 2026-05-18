@@ -24,7 +24,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
       rowTextColor = "text-foreground",
       highlightSelected = true,
       rowDividerColor = "divide-border",
-      rowPadding = "px-4 py-1",
+      rowPadding = "px-2 py-0.5",
       showFileCheckboxes = false,
     },
     ref
@@ -143,17 +143,17 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
         className={`flex flex-col h-full min-h-0 border-r border-border flex-1 ${rowBgColor}`}>
         {/* Search box inside the column */}
         {showSearch && (
-          <div className="w-full p-2 border-b border-border bg-background-emphasis sticky top-0 z-10">
-            <div className="relative w-full h-12">
+          <div className="sticky top-0 z-10 w-full border-b border-border bg-background-emphasis px-2 py-1.5">
+            <div className="relative h-8 w-full">
               <input
                 ref={searchInputRef}
                 type="text"
-                className="w-full bg-background border border-border rounded px-3 py-1.5 pl-9 text-foreground placeholder:text-muted-foreground focus:outline-none"
+                className="h-8 w-full rounded border border-border bg-background px-3 pl-8 text-foreground placeholder:text-muted-foreground focus:outline-none"
                 placeholder="Buscar archivo..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <IconSearch className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+              <IconSearch className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
             </div>
           </div>
         )}
@@ -224,14 +224,14 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                 <li
                   key={file.path}
                   data-file-index={idx}
-                  className={`${rowPadding} cursor-pointer transition-colors select-none text-sm focus:outline-none ${rowClass}`}
+                  className={`${rowPadding} cursor-pointer select-none text-sm transition-colors focus:outline-none ${rowClass}`}
                   onClick={() => {
                     setInternalSelectedIndex(idx);
                     if (onAction) {
                       onAction(file, idx);
                     }
                   }}>
-                  <div className="flex items-center min-w-0 gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     {/* Per-file checkbox, only when showFileCheckboxes is enabled */}
                     {showFileCheckboxes &&
                       (() => {
@@ -278,11 +278,11 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                         return (
                           <button
                             type="button"
-                            className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${
+                            className={`flex h-4 w-4 items-center justify-center rounded-sm border bg-background-emphasis transition-colors ${
                               checkboxState === "checked" ||
                               checkboxState === "indeterminate"
-                                ? "border-blue-500 bg-blue-600 text-white"
-                                : "border-zinc-500 bg-transparent text-transparent"
+                                ? "border-zinc-600 text-blue-400"
+                                : "border-zinc-700 text-transparent hover:border-zinc-500"
                             }`}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -295,9 +295,9 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                             }
                             aria-label={`Toggle file selection for ${file.path}`}>
                             {checkboxState === "checked" ? (
-                              <IconCheck size={12} className="text-white" />
+                              <IconCheck size={11} className="text-blue-400" />
                             ) : checkboxState === "indeterminate" ? (
-                              <span className="block h-0.5 w-2 rounded bg-white" />
+                              <span className="block h-0.5 w-1.5 rounded bg-blue-400" />
                             ) : null}
                           </button>
                         );
