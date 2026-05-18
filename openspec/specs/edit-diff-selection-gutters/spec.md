@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define hierarchical staging controls for editable diff file, block, and line selection.
+
+## Requirements
 
 ### Requirement: Editable diff uses hierarchical staging selection
 The system SHALL present editable diff staging controls as a three-level hierarchy across file, block, and line selection.
