@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteLocalAiModel,
+  getLocalAiModelPreferences,
   getLocalAiRuntimeStatus,
   getLocalAiModelStatus,
   prepareLocalAiModel,
@@ -22,6 +23,7 @@ vi.mock("@/shared/platform/tauri/events", () => ({
 describe("local AI API", () => {
   beforeEach(() => {
     invokeCommandMock.mockReset();
+    globalThis.localStorage.clear();
   });
 
   it("requests model status with the expected payload", async () => {
@@ -60,15 +62,76 @@ describe("local AI API", () => {
     });
 
     await setLocalAiModelPreference({
-      modelId: null,
+      modelId: "",
       actionKind: "branchAnalysis",
     });
 
     expect(invokeCommandMock).toHaveBeenCalledWith("ai_set_model_preference", {
       request: {
-        modelId: null,
+        modelId: "",
         actionKind: "branchAnalysis",
       },
+    });
+  });
+
+  it("clears action preferences locally when an older backend rejects the empty model", async () => {
+    invokeCommandMock
+      .mockRejectedValueOnce(new Error("Unsupported local AI model:"))
+      .mockResolvedValueOnce({
+        globalModelId: "qwen2.5-coder:7b",
+        actionModelIds: {
+          branchAnalysis: "qwen2.5-coder:1.5b",
+        },
+      });
+
+    const preferences = await setLocalAiModelPreference({
+      modelId: "",
+      actionKind: "branchAnalysis",
+    });
+
+    expect(preferences.actionModelIds).not.toHaveProperty("branchAnalysis");
+    expect(invokeCommandMock).toHaveBeenNthCalledWith(
+      1,
+      "ai_set_model_preference",
+      {
+        request: {
+          modelId: "",
+          actionKind: "branchAnalysis",
+        },
+      },
+    );
+    expect(invokeCommandMock).toHaveBeenNthCalledWith(
+      2,
+      "ai_get_model_preferences",
+    );
+  });
+
+  it("applies locally cleared action preferences when preferences are loaded", async () => {
+    invokeCommandMock
+      .mockRejectedValueOnce(new Error("Unsupported local AI model:"))
+      .mockResolvedValueOnce({
+        globalModelId: "qwen2.5-coder:7b",
+        actionModelIds: {
+          branchAnalysis: "qwen2.5-coder:1.5b",
+        },
+      })
+      .mockResolvedValueOnce({
+        globalModelId: "qwen2.5-coder:7b",
+        actionModelIds: {
+          branchAnalysis: "qwen2.5-coder:1.5b",
+          commitMessage: "phi4-mini",
+        },
+      });
+
+    await setLocalAiModelPreference({
+      modelId: "",
+      actionKind: "branchAnalysis",
+    });
+
+    const preferences = await getLocalAiModelPreferences();
+
+    expect(preferences.actionModelIds).toEqual({
+      commitMessage: "phi4-mini",
     });
   });
 

@@ -85,6 +85,10 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : String(error || fallback);
 }
 
+function isUnsupportedEmptyModelError(error: unknown) {
+  return errorMessage(error, "").trim() === "Unsupported local AI model:";
+}
+
 function SettingsRow({
   title,
   description,
@@ -396,14 +400,35 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     actionKind?: LocalAiActionKind | null,
   ) => {
     setSettingsError(null);
+    const normalizedModelId = modelId.trim();
+    if (
+      actionKind &&
+      !normalizedModelId &&
+      !preferences?.actionModelIds[actionKind]
+    ) {
+      return;
+    }
+
     try {
-      const normalizedModelId = modelId.trim();
       const nextPreferences = await setLocalAiModelPreference({
-        modelId: normalizedModelId ? normalizedModelId : null,
+        modelId: normalizedModelId,
         actionKind: actionKind ?? null,
       });
       setPreferences(nextPreferences);
     } catch (preferenceError) {
+      if (actionKind && !normalizedModelId && isUnsupportedEmptyModelError(preferenceError)) {
+        setPreferences((current) => {
+          if (!current) return current;
+          const actionModelIds = { ...current.actionModelIds };
+          delete actionModelIds[actionKind];
+          return {
+            ...current,
+            actionModelIds,
+          };
+        });
+        return;
+      }
+
       showSettingsError("Model preference failed", preferenceError);
     }
   };

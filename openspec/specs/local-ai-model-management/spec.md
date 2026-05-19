@@ -148,8 +148,14 @@ The system SHALL let users choose a global default model and per-action model pr
 
 #### Scenario: User clears an action-specific model
 - **WHEN** the user selects the unset placeholder for a specific AI action
-- **THEN** the frontend MUST send a clear preference request for that action
+- **THEN** the frontend MUST send a string-compatible clear preference request for that action
 - **AND** the backend MUST remove the persisted action-specific preference
+
+#### Scenario: Older backend rejects an action-specific clear
+- **WHEN** the user clears an action-specific model and the running backend rejects the empty model id as unsupported
+- **THEN** the frontend MUST keep the action selector cleared
+- **AND** future loaded preferences in that frontend session MUST preserve the cleared action state
+- **AND** the settings modal MUST NOT show the raw unsupported-model error for the unset placeholder
 
 #### Scenario: Selected model is not ready
 - **WHEN** the user starts an AI action whose selected model is not installed

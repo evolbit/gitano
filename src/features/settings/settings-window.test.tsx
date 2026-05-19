@@ -199,7 +199,7 @@ describe("SettingsWindow", () => {
     await user.selectOptions(screen.getByLabelText("Commit model"), "");
 
     expect(apiMocks.setLocalAiModelPreference).toHaveBeenCalledWith({
-      modelId: null,
+      modelId: "",
       actionKind: "commitMessage",
     });
   });
@@ -228,5 +228,33 @@ describe("SettingsWindow", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Unsupported local AI model:",
     );
+  });
+
+  it("clears the UI state when an older backend rejects the empty model", async () => {
+    const user = userEvent.setup();
+    apiMocks.setLocalAiModelPreference.mockRejectedValueOnce(
+      new Error("Unsupported local AI model:"),
+    );
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    await user.selectOptions(screen.getByLabelText("Commit model"), "");
+
+    expect(apiMocks.setLocalAiModelPreference).toHaveBeenCalledWith({
+      modelId: "",
+      actionKind: "commitMessage",
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Commit model")).toHaveValue("");
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
