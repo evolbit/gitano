@@ -37,6 +37,15 @@ impl LocalAiActionKind {
             Self::MergeConflictSuggestions => "mergeConflictSuggestions",
         }
     }
+
+    pub fn display_label(self) -> &'static str {
+        match self {
+            Self::CommitMessage => "Commit",
+            Self::CommitAnalysis => "Commit review",
+            Self::BranchAnalysis => "PR / branch review",
+            Self::MergeConflictSuggestions => "Merge conflicts",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -122,6 +131,18 @@ pub struct LocalAiRuntimeStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalAiRuntimeSetupStatus {
+    pub runtime: LocalAiRuntimeStatus,
+    pub managed: bool,
+    pub installed: bool,
+    pub installed_version: Option<String>,
+    pub latest_compatible_version: String,
+    pub model_storage_path: String,
+    pub can_install: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalAiModelStatus {
     pub runtime: LocalAiRuntimeStatus,
     pub model_id: String,
@@ -173,8 +194,23 @@ pub struct LocalAiPrepareModelResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalAiPrepareRuntimeRequest {
+    #[serde(default)]
+    pub force_reinstall: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiPrepareRuntimeResponse {
+    pub operation_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalAiSetModelPreferenceRequest {
-    pub model_id: String,
+    #[serde(default)]
+    pub model_id: Option<String>,
+    #[serde(default)]
     pub action_kind: Option<LocalAiActionKind>,
 }
 
@@ -309,5 +345,17 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn deserializes_null_model_preference_as_clear_request() {
+        let request: LocalAiSetModelPreferenceRequest = serde_json::from_value(serde_json::json!({
+            "modelId": null,
+            "actionKind": "commitMessage"
+        }))
+        .expect("deserialize request");
+
+        assert_eq!(request.model_id, None);
+        assert_eq!(request.action_kind, Some(LocalAiActionKind::CommitMessage));
     }
 }

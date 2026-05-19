@@ -1,6 +1,13 @@
-import { ActionIcon, Tabs } from "@mantine/core";
+import { ActionIcon, Menu, Tabs } from "@mantine/core";
+import { useState } from "react";
 import { classNames } from "@/shared/ui";
-import { IconGitBranch, IconHome, IconPlus, IconX } from "@/components/icons";
+import {
+  IconDotsVertical,
+  IconGitBranch,
+  IconHome,
+  IconPlus,
+  IconX,
+} from "@/components/icons";
 import type { TabBarProps } from "./types";
 
 const branchIcon = (
@@ -15,7 +22,20 @@ const TabBar = ({
   activeTab,
   onTabClose,
   onAddTab,
+  onOpenSettings,
 }: TabBarProps) => {
+  const [menuOpened, setMenuOpened] = useState(false);
+
+  const handleAddTab = () => {
+    setMenuOpened(false);
+    onAddTab();
+  };
+
+  const handleOpenSettings = () => {
+    setMenuOpened(false);
+    onOpenSettings();
+  };
+
   return (
     <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-11 border-b border-border">
       {tabs.map((tab) => (
@@ -64,14 +84,44 @@ const TabBar = ({
         </Tabs.Tab>
       ))}
       <div className="flex-1" />
-      <ActionIcon
-        onClick={onAddTab}
-        variant="subtle"
-        color="gray"
-        ml="xs"
-        size="lg">
-        <IconPlus size={18} />
-      </ActionIcon>
+      <Menu
+        shadow="md"
+        width={220}
+        position="bottom-end"
+        offset={4}
+        opened={menuOpened}
+        onOpen={() => setMenuOpened(true)}
+        onClose={() => setMenuOpened(false)}
+        withinPortal>
+        <Menu.Target>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            ml="xs"
+            size="lg"
+            aria-label="Open application menu">
+            <IconDotsVertical size={18} />
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown className="min-w-[220px] select-none rounded border border-border bg-background-emphasis py-1 text-xs text-zinc-200 shadow-lg">
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-zinc-200 transition-colors hover:bg-zinc-700"
+            onClick={handleAddTab}>
+            <IconPlus
+              size={15}
+              className="shrink-0"
+            />
+            New tab
+          </button>
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center px-4 py-2 text-left text-zinc-200 transition-colors hover:bg-zinc-700"
+            onClick={handleOpenSettings}>
+            Settings
+          </button>
+        </Menu.Dropdown>
+      </Menu>
     </Tabs.List>
   );
 };

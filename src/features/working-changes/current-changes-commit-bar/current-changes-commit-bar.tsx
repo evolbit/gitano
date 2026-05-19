@@ -5,7 +5,13 @@ import { useRepoStore } from "@/features/repository-workspace/stores/repo-store"
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
 import { pushRepository } from "@/shared/api/git/staging";
 import { stashSelectedFiles } from "@/shared/api/git/stashes";
-import { runLocalAiAction, type LocalAiRunResult } from "@/shared/api/local-ai";
+import {
+  getLocalAiModelPreferences,
+  getLocalAiModelStatus,
+  runLocalAiAction,
+  type LocalAiActionKind,
+  type LocalAiRunResult,
+} from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { useEffect, useState } from "react";
@@ -26,7 +32,6 @@ export default function CurrentChangesCommitBar({
   const [showCommitMenu, setShowCommitMenu] = useState(false);
   const [stashLoading, setStashLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
   const [showAiSetup, setShowAiSetup] = useState(false);
   const [conflictAiResult, setConflictAiResult] =
     useState<LocalAiRunResult | null>(null);
@@ -229,11 +234,68 @@ export default function CurrentChangesCommitBar({
     );
   };
 
+  const getAiErrorMessage = (actionError: unknown, fallback: string) =>
+    actionError instanceof Error
+      ? actionError.message
+      : String(actionError || fallback);
+
+  const notifyAiError = (title: string, actionError: unknown) => {
+    setGitActionNotice({
+      kind: "error",
+      title,
+      details: getAiErrorMessage(actionError, title),
+      expanded: false,
+    });
+  };
+
+  const actionLabel = (actionKind: LocalAiActionKind) => {
+    switch (actionKind) {
+      case "commitMessage":
+        return "Commit";
+      case "mergeConflictSuggestions":
+        return "Merge conflicts";
+      case "commitAnalysis":
+        return "Commit review";
+      case "branchAnalysis":
+        return "PR / branch review";
+    }
+  };
+
+  const ensureActionModelReady = async (actionKind: LocalAiActionKind) => {
+    try {
+      const preferences = await getLocalAiModelPreferences();
+      const actionModelId = preferences?.actionModelIds?.[actionKind];
+
+      if (!actionModelId) {
+        notifyAiError(
+          `No AI model selected for ${actionLabel(actionKind)}`,
+          `No AI model selected for ${actionLabel(actionKind)}`,
+        );
+        return false;
+      }
+
+      const status = await getLocalAiModelStatus(actionModelId);
+
+      if (status?.runtime.available && !status.ready) {
+        notifyAiError(
+          `No AI model selected for ${actionLabel(actionKind)}`,
+          `No AI model selected for ${actionLabel(actionKind)}`,
+        );
+        return false;
+      }
+    } catch (modelError) {
+      notifyAiError("Local AI configuration failed", modelError);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleGenerateCommitMessage = async () => {
     if (isBusy || !hasStagedChanges) return;
+    if (!(await ensureActionModelReady("commitMessage"))) return;
 
     setAiLoading(true);
-    setAiError(null);
     try {
       const result = await runLocalAiAction({
         repoPath,
@@ -246,11 +308,7 @@ export default function CurrentChangesCommitBar({
       if (shouldOpenAiSetup(generateError)) {
         setShowAiSetup(true);
       } else {
-        setAiError(
-          generateError instanceof Error
-            ? generateError.message
-            : String(generateError || "AI commit message generation failed"),
-        );
+        notifyAiError("AI commit message generation failed", generateError);
       }
     } finally {
       setAiLoading(false);
@@ -259,6 +317,7 @@ export default function CurrentChangesCommitBar({
 
   const handleSuggestConflictResolution = async (forceRefresh = false) => {
     if (isBusy) return;
+    if (!(await ensureActionModelReady("mergeConflictSuggestions"))) return;
 
     setConflictAiLoading(true);
     setConflictAiError(null);
@@ -273,11 +332,7 @@ export default function CurrentChangesCommitBar({
       if (shouldOpenAiSetup(suggestionError)) {
         setShowConflictAiSetup(true);
       } else {
-        setConflictAiError(
-          suggestionError instanceof Error
-            ? suggestionError.message
-            : String(suggestionError || "AI conflict suggestion failed"),
-        );
+        notifyAiError("AI conflict suggestion failed", suggestionError);
         setConflictAiResult(null);
       }
     } finally {
@@ -426,9 +481,6 @@ export default function CurrentChangesCommitBar({
         </div>
       </div>
       {error ? <div className="mt-1 text-xs text-red-400">{error}</div> : null}
-      {aiError ? (
-        <div className="mt-1 text-xs text-red-400">{aiError}</div>
-      ) : null}
       <LocalAiSetupModal
         open={showAiSetup}
         actionKind="commitMessage"

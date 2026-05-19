@@ -1,17 +1,26 @@
-use super::cache::{build_cache_key, get_cached_result, put_cached_result};
+// Temporarily disabled while measuring warm local AI request latency.
+// use super::cache::{build_cache_key, get_cached_result, put_cached_result};
 use super::entitlement::{ensure_entitled, entitlement_status};
 use super::git_context::build_git_context;
 use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
-    find_model, load_preferences, model_catalog, resolve_model_id, set_model_preference,
+    find_model, load_preferences, model_catalog, reconcile_preferences_after_model_delete,
+    reconcile_preferences_with_available_models, resolve_model_id,
+    set_first_downloaded_model_as_global_default, set_model_preference,
+    NO_AI_MODELS_AVAILABLE_MESSAGE,
 };
 use super::ollama::{emit_failed_progress, OllamaClient};
 use super::prompts::{build_prompt, parse_structured_result, PROMPT_VERSION};
-use super::runtime::{ensure_runtime_ready, start_managed_runtime_if_installed};
+use super::runtime::{
+    ensure_runtime_ready, latest_compatible_runtime_version, managed_runtime_supported,
+    managed_runtime_version, prepare_managed_runtime, start_managed_runtime_if_installed,
+    using_external_ollama,
+};
 use super::types::{
     LocalAiCompatibility, LocalAiCompatibilityLevel, LocalAiEntitlementStatus,
     LocalAiMachineProfile, LocalAiModelEntry, LocalAiModelStatus, LocalAiPreferences,
-    LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiRunRequest, LocalAiRunResult,
+    LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
+    LocalAiPrepareRuntimeResponse, LocalAiRunRequest, LocalAiRunResult, LocalAiRuntimeSetupStatus,
     LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -28,8 +37,16 @@ pub fn ai_get_model_catalog() -> Vec<LocalAiModelEntry> {
 }
 
 #[tauri::command]
-pub fn ai_get_model_preferences() -> LocalAiPreferences {
-    load_preferences()
+pub async fn ai_get_model_preferences() -> LocalAiPreferences {
+    let preferences = load_preferences();
+    let Ok(available_model_ids) = OllamaClient::from_env()
+        .installed_supported_model_ids()
+        .await
+    else {
+        return preferences;
+    };
+
+    reconcile_preferences_with_available_models(&available_model_ids).unwrap_or(preferences)
 }
 
 #[tauri::command]
@@ -37,7 +54,10 @@ pub fn ai_set_model_preference(
     request: LocalAiSetModelPreferenceRequest,
 ) -> Result<LocalAiPreferences, String> {
     ensure_entitled()?;
-    set_model_preference(&request.model_id, request.action_kind)
+    set_model_preference(
+        request.model_id.as_deref().unwrap_or(""),
+        request.action_kind,
+    )
 }
 
 #[tauri::command]
@@ -47,9 +67,45 @@ pub fn ai_get_machine_profile() -> LocalAiMachineProfile {
 
 #[tauri::command]
 pub async fn ai_get_model_status(model_id: Option<String>) -> Result<LocalAiModelStatus, String> {
-    let model_id = model_id.unwrap_or_else(|| load_preferences().global_model_id);
+    let model_id = model_id
+        .filter(|model_id| !model_id.trim().is_empty())
+        .or_else(|| {
+            let global_model_id = load_preferences().global_model_id;
+            if global_model_id.trim().is_empty() {
+                None
+            } else {
+                Some(global_model_id)
+            }
+        })
+        .ok_or_else(|| NO_AI_MODELS_AVAILABLE_MESSAGE.to_string())?;
     ensure_supported_model(&model_id)?;
     Ok(OllamaClient::from_env().model_status(&model_id).await)
+}
+
+#[tauri::command]
+pub async fn ai_get_runtime_status() -> Result<LocalAiRuntimeSetupStatus, String> {
+    let client = OllamaClient::from_env();
+    let runtime = client.runtime_status().await;
+    let managed = !using_external_ollama();
+    let installed = if managed {
+        super::runtime::managed_runtime_binary_path().is_some()
+    } else {
+        runtime.available
+    };
+
+    Ok(LocalAiRuntimeSetupStatus {
+        runtime,
+        managed,
+        installed,
+        installed_version: if managed {
+            managed_runtime_version()
+        } else {
+            None
+        },
+        latest_compatible_version: latest_compatible_runtime_version(),
+        model_storage_path: machine_profile().model_storage_path,
+        can_install: managed && managed_runtime_supported(),
+    })
 }
 
 #[tauri::command]
@@ -108,13 +164,20 @@ pub async fn ai_prepare_model(
     tauri::async_runtime::spawn(async move {
         if let Err(error) = async {
             ensure_runtime_ready(&pull_app, &pull_operation_id, &model_id).await?;
+            let had_downloaded_models = pull_client
+                .installed_supported_model_ids()
+                .await
+                .map(|model_ids| !model_ids.is_empty())
+                .unwrap_or(false);
             pull_client
                 .pull_model(
                     pull_app.clone(),
                     pull_operation_id.clone(),
                     model_id.clone(),
                 )
-                .await
+                .await?;
+            set_first_downloaded_model_as_global_default(&model_id, had_downloaded_models)?;
+            Ok(())
         }
         .await
         {
@@ -126,12 +189,77 @@ pub async fn ai_prepare_model(
 }
 
 #[tauri::command]
-pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResult, String> {
+pub async fn ai_prepare_runtime(
+    app: AppHandle,
+    request: LocalAiPrepareRuntimeRequest,
+) -> Result<LocalAiPrepareRuntimeResponse, String> {
     ensure_entitled()?;
-    let model_id = resolve_model_id(request.action_kind, request.model_id.as_deref());
-    let model = ensure_supported_model(&model_id)?;
+    let operation_id = operation_id("runtime");
+    let runtime_app = app.clone();
+    let runtime_operation_id = operation_id.clone();
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) =
+            prepare_managed_runtime(&runtime_app, &runtime_operation_id, request.force_reinstall)
+                .await
+        {
+            emit_failed_progress(
+                &runtime_app,
+                runtime_operation_id,
+                "runtime".to_string(),
+                error,
+            );
+        }
+    });
+
+    Ok(LocalAiPrepareRuntimeResponse { operation_id })
+}
+
+#[tauri::command]
+pub async fn ai_delete_model(model_id: String) -> Result<(), String> {
+    ensure_entitled()?;
+    ensure_supported_model(&model_id)?;
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
+    let status = client.model_status(&model_id).await;
+
+    if !status.runtime.available {
+        return Err(status
+            .runtime
+            .error
+            .unwrap_or_else(|| "Local AI runtime is unavailable.".to_string()));
+    }
+
+    client.delete_model(&model_id).await?;
+    let remaining_model_ids = client
+        .installed_supported_model_ids()
+        .await
+        .unwrap_or_default();
+    reconcile_preferences_after_model_delete(&model_id, &remaining_model_ids)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResult, String> {
+    ensure_entitled()?;
+    start_managed_runtime_if_installed().await?;
+    let client = OllamaClient::from_env();
+    let runtime = client.runtime_status().await;
+
+    if !runtime.available {
+        return Err(runtime
+            .error
+            .unwrap_or_else(|| "Ollama runtime is unavailable.".to_string()));
+    }
+
+    let available_model_ids = client.installed_supported_model_ids().await?;
+    if available_model_ids.is_empty() {
+        return Err(NO_AI_MODELS_AVAILABLE_MESSAGE.to_string());
+    }
+    reconcile_preferences_with_available_models(&available_model_ids)?;
+
+    let model_id = resolve_model_id(request.action_kind, request.model_id.as_deref())?;
+    let model = ensure_supported_model(&model_id)?;
     let status = client.model_status(&model_id).await;
 
     if !status.runtime.available {
@@ -153,19 +281,20 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
         .clone()
         .unwrap_or_else(|| format!("{}:unknown-digest", model_id));
     let git_context = build_git_context(&request, model.context_window)?;
-    let cache_key = build_cache_key(
-        request.action_kind,
-        PROMPT_VERSION,
-        &model_digest,
-        &request.repo_path,
-        &git_context.input_digest,
-    );
-
-    if !request.force_refresh {
-        if let Some(cached) = get_cached_result(&cache_key) {
-            return Ok(cached);
-        }
-    }
+    // Temporarily bypass cache reads while measuring warm local AI request latency.
+    // let cache_key = build_cache_key(
+    //     request.action_kind,
+    //     PROMPT_VERSION,
+    //     &model_digest,
+    //     &request.repo_path,
+    //     &git_context.input_digest,
+    // );
+    //
+    // if !request.force_refresh {
+    //     if let Some(cached) = get_cached_result(&cache_key) {
+    //         return Ok(cached);
+    //     }
+    // }
 
     let prompt = build_prompt(&git_context);
     let raw_response = client
@@ -188,7 +317,8 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
         result: structured,
     };
 
-    put_cached_result(cache_key, &result)?;
+    // Temporarily bypass cache writes while measuring warm local AI request latency.
+    // put_cached_result(cache_key, &result)?;
     Ok(result)
 }
 

@@ -1,8 +1,9 @@
 import { Tabs } from "@mantine/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import HomePage from "@/components/home-page/home-page";
 import { useRepoRealtimeEvents } from "@/app/hooks/use-repo-realtime-events";
+import { SettingsWindow } from "@/features/settings";
 import { RepoTabLayout, TabBar } from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 
@@ -14,6 +15,7 @@ const HOME_TAB = {
 export function AppShell() {
   useRepoRealtimeEvents();
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const tabs = useRepoStore((s) => s.tabs);
   const activeTab = useRepoStore((s) => s.activeTabId);
   const addTab = useRepoStore((s) => s.addTab);
@@ -111,6 +113,7 @@ export function AppShell() {
           activeTab={activeTab || ""}
           onTabClose={handleCloseTab}
           onAddTab={handleAddTab}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         {tabs.map((tab) => (
           <Tabs.Panel
@@ -125,6 +128,10 @@ export function AppShell() {
           </Tabs.Panel>
         ))}
       </Tabs>
+      <SettingsWindow
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocalAiStore } from "@/features/local-ai/store";
+import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
 import CurrentChangesCommitBar from "./current-changes-commit-bar";
@@ -13,12 +14,15 @@ const pushRepositoryMock = vi.hoisted(() => vi.fn());
 const stashSelectedFilesMock = vi.hoisted(() => vi.fn());
 const localAiMocks = vi.hoisted(() => ({
   runLocalAiAction: vi.fn(),
+  deleteLocalAiModel: vi.fn(),
   getLocalAiModelCatalog: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
+  getLocalAiRuntimeStatus: vi.fn(),
   getLocalAiModelCompatibility: vi.fn(),
   prepareLocalAiModel: vi.fn(),
+  prepareLocalAiRuntime: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
 }));
@@ -78,6 +82,26 @@ describe("CurrentChangesCommitBar", () => {
     stashSelectedFilesMock.mockReset();
     Object.values(localAiMocks).forEach((mock) => mock.mockReset());
     localAiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
+    localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {
+        commitMessage: "qwen2.5-coder:7b",
+        mergeConflictSuggestions: "qwen2.5-coder:7b",
+      },
+    });
+    localAiMocks.getLocalAiModelStatus.mockResolvedValue({
+      runtime: {
+        available: true,
+        endpoint: "http://127.0.0.1:11435",
+        error: null,
+      },
+      modelId: "qwen2.5-coder:7b",
+      installed: true,
+      digest: "digest",
+      sizeBytes: 4_700_000_000,
+      running: false,
+      ready: true,
+    });
     getRepositoryStateMock.mockResolvedValue({
       path: "/repo",
       isValid: true,
@@ -104,6 +128,10 @@ describe("CurrentChangesCommitBar", () => {
       recentRepos: [],
       favoriteRepos: [],
     });
+    useGitActionsStore.setState({
+      pendingAction: null,
+      notice: null,
+    });
   });
 
   afterEach(() => {
@@ -121,6 +149,10 @@ describe("CurrentChangesCommitBar", () => {
       setupRequest: null,
       loading: false,
       error: null,
+    });
+    useGitActionsStore.setState({
+      pendingAction: null,
+      notice: null,
     });
   });
 
@@ -208,7 +240,9 @@ describe("CurrentChangesCommitBar", () => {
     });
     localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
       globalModelId: "qwen2.5-coder:7b",
-      actionModelIds: {},
+      actionModelIds: {
+        commitMessage: "qwen2.5-coder:7b",
+      },
     });
     localAiMocks.getLocalAiModelStatus.mockResolvedValue({
       runtime: {
@@ -288,6 +322,52 @@ describe("CurrentChangesCommitBar", () => {
     expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
       "Add generated commit message",
     );
+  });
+
+  it("blocks commit AI when the action-specific model was deleted", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {
+        commitMessage: "qwen2.5-coder:1.5b",
+      },
+    });
+    localAiMocks.getLocalAiModelStatus.mockResolvedValue({
+      runtime: {
+        available: true,
+        endpoint: "http://127.0.0.1:11435",
+        error: null,
+      },
+      modelId: "qwen2.5-coder:1.5b",
+      installed: false,
+      digest: null,
+      sizeBytes: null,
+      running: false,
+      ready: false,
+    });
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    await user.click(
+      screen.getByRole("button", { name: /generate commit message/i }),
+    );
+
+    await waitFor(() => {
+      expect(useGitActionsStore.getState().notice).toMatchObject({
+        kind: "error",
+        title: "No AI model selected for Commit",
+      });
+    });
+    expect(localAiMocks.runLocalAiAction).not.toHaveBeenCalled();
   });
 
   it("runs local AI merge conflict suggestions from commit options", async () => {

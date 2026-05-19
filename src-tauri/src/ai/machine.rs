@@ -334,7 +334,7 @@ mod tests {
         assert!(!result.blocking);
         assert_eq!(
             result.recommended_model_id,
-            Some("qwen2.5-coder:3b".to_string())
+            Some("qwen2.5-coder:1.5b".to_string())
         );
     }
 }

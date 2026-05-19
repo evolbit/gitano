@@ -8,8 +8,11 @@ Set `OLLAMA_HOST` only when developing against an external Ollama service.
 
 The recommended default is `qwen2.5-coder:7b`. The curated registry also includes faster and larger choices:
 
+- `qwen2.5-coder:1.5b`
 - `qwen2.5-coder:3b`
+- `deepseek-coder:1.3b`
 - `qwen2.5-coder:7b`
+- `phi4-mini`
 - `qwen2.5-coder:14b`
 - `qwen2.5-coder:32b`
 - `qwen3-coder:30b`

@@ -78,6 +78,16 @@ export type LocalAiRuntimeStatus = {
   error: string | null;
 };
 
+export type LocalAiRuntimeSetupStatus = {
+  runtime: LocalAiRuntimeStatus;
+  managed: boolean;
+  installed: boolean;
+  installedVersion: string | null;
+  latestCompatibleVersion: string;
+  modelStoragePath: string;
+  canInstall: boolean;
+};
+
 export type LocalAiModelStatus = {
   runtime: LocalAiRuntimeStatus;
   modelId: string;
@@ -117,8 +127,16 @@ export type LocalAiPrepareModelResponse = {
   operationId: string;
 };
 
+export type LocalAiPrepareRuntimeRequest = {
+  forceReinstall?: boolean;
+};
+
+export type LocalAiPrepareRuntimeResponse = {
+  operationId: string;
+};
+
 export type LocalAiSetModelPreferenceRequest = {
-  modelId: string;
+  modelId: string | null;
   actionKind?: LocalAiActionKind | null;
 };
 
@@ -220,6 +238,10 @@ export function getLocalAiModelStatus(modelId?: string | null) {
   });
 }
 
+export function getLocalAiRuntimeStatus() {
+  return invokeCommand<LocalAiRuntimeSetupStatus>("ai_get_runtime_status");
+}
+
 export function getLocalAiModelCompatibility(modelId: string) {
   return invokeCommand<LocalAiCompatibility>(
     "ai_get_model_compatibility",
@@ -231,6 +253,16 @@ export function prepareLocalAiModel(request: LocalAiPrepareModelRequest) {
   return invokeCommand<LocalAiPrepareModelResponse>("ai_prepare_model", {
     request,
   });
+}
+
+export function prepareLocalAiRuntime(request: LocalAiPrepareRuntimeRequest) {
+  return invokeCommand<LocalAiPrepareRuntimeResponse>("ai_prepare_runtime", {
+    request,
+  });
+}
+
+export function deleteLocalAiModel(modelId: string) {
+  return invokeCommand<void>("ai_delete_model", { modelId });
 }
 
 export function runLocalAiAction(request: LocalAiRunRequest) {

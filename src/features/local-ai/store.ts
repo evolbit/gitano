@@ -114,11 +114,14 @@ export const useLocalAiStore = create<LocalAiStore>((set, get) => ({
         getLocalAiEntitlementStatus(),
         getLocalAiModelPreferences(),
       ]);
-      const selectedModelId = modelId ?? preferences.globalModelId;
-      const [modelStatus, compatibility] = await Promise.all([
-        getLocalAiModelStatus(selectedModelId),
-        getLocalAiModelCompatibility(selectedModelId),
-      ]);
+      const selectedModelId =
+        modelId || preferences.globalModelId || catalog[0]?.id || "";
+      const [modelStatus, compatibility] = selectedModelId
+        ? await Promise.all([
+            getLocalAiModelStatus(selectedModelId),
+            getLocalAiModelCompatibility(selectedModelId),
+          ])
+        : [null, null];
       set({
         catalog,
         entitlement,

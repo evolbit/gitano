@@ -78,8 +78,11 @@ fn main() {
             ai::ai_set_model_preference,
             ai::ai_get_machine_profile,
             ai::ai_get_model_status,
+            ai::ai_get_runtime_status,
             ai::ai_get_model_compatibility,
+            ai::ai_prepare_runtime,
             ai::ai_prepare_model,
+            ai::ai_delete_model,
             ai::ai_run_action,
         ])
         .run(tauri::generate_context!())

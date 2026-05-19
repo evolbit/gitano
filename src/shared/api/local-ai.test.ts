@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteLocalAiModel,
+  getLocalAiRuntimeStatus,
   getLocalAiModelStatus,
   prepareLocalAiModel,
+  prepareLocalAiRuntime,
   runLocalAiAction,
   setLocalAiModelPreference,
 } from "./local-ai";
@@ -50,6 +53,25 @@ describe("local AI API", () => {
     });
   });
 
+  it("clears action model preferences through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+    });
+
+    await setLocalAiModelPreference({
+      modelId: null,
+      actionKind: "branchAnalysis",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("ai_set_model_preference", {
+      request: {
+        modelId: null,
+        actionKind: "branchAnalysis",
+      },
+    });
+  });
+
   it("prepares models with the expected payload", async () => {
     invokeCommandMock.mockResolvedValueOnce({ operationId: "op-1" });
 
@@ -63,6 +85,36 @@ describe("local AI API", () => {
         modelId: "qwen2.5-coder:7b",
         allowLimited: true,
       },
+    });
+  });
+
+  it("requests runtime status", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ installed: false });
+
+    await getLocalAiRuntimeStatus();
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("ai_get_runtime_status");
+  });
+
+  it("prepares the runtime with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ operationId: "runtime-op" });
+
+    await prepareLocalAiRuntime({ forceReinstall: true });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("ai_prepare_runtime", {
+      request: {
+        forceReinstall: true,
+      },
+    });
+  });
+
+  it("deletes models through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await deleteLocalAiModel("qwen2.5-coder:1.5b");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("ai_delete_model", {
+      modelId: "qwen2.5-coder:1.5b",
     });
   });
 

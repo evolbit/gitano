@@ -58,11 +58,12 @@ export function LocalAiSetupModal({
 
   useEffect(() => {
     if (!open || !preferences) return;
-    const nextModelId =
+    const preferredModelId =
       (actionKind ? preferences.actionModelIds[actionKind] : null) ??
       preferences.globalModelId;
+    const nextModelId = preferredModelId || catalog[0]?.id || "";
     setSelectedModelId(nextModelId);
-  }, [actionKind, open, preferences]);
+  }, [actionKind, catalog, open, preferences]);
 
   useEffect(() => {
     if (!open || !selectedModelId) return;

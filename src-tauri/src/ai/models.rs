@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RECOMMENDED_MODEL_ID: &str = "qwen2.5-coder:7b";
+pub const NO_AI_MODELS_AVAILABLE_MESSAGE: &str = "No AI models available";
 
 fn requirements(
     min_memory_gb: f64,
@@ -35,6 +36,20 @@ fn all_actions() -> Vec<LocalAiActionKind> {
 pub fn model_catalog() -> Vec<LocalAiModelEntry> {
     vec![
         LocalAiModelEntry {
+            id: "qwen2.5-coder:1.5b".to_string(),
+            display_name: "Qwen2.5 Coder 1.5B".to_string(),
+            provider: "Ollama".to_string(),
+            quality_tier: LocalAiModelQualityTier::Fast,
+            download_size_gb: 1.0,
+            context_window: 32_768,
+            action_suitability: vec![
+                LocalAiActionKind::CommitMessage,
+                LocalAiActionKind::CommitAnalysis,
+            ],
+            min_requirements: requirements(4.0, 8.0, 2.0, 4.0),
+            recommended_requirements: requirements(8.0, 8.0, 2.0, 4.0),
+        },
+        LocalAiModelEntry {
             id: "qwen2.5-coder:3b".to_string(),
             display_name: "Qwen2.5 Coder 3B".to_string(),
             provider: "Ollama".to_string(),
@@ -49,6 +64,20 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             recommended_requirements: requirements(8.0, 12.0, 4.0, 6.0),
         },
         LocalAiModelEntry {
+            id: "deepseek-coder:1.3b".to_string(),
+            display_name: "DeepSeek Coder 1.3B".to_string(),
+            provider: "Ollama".to_string(),
+            quality_tier: LocalAiModelQualityTier::Fast,
+            download_size_gb: 0.8,
+            context_window: 16_384,
+            action_suitability: vec![
+                LocalAiActionKind::CommitMessage,
+                LocalAiActionKind::CommitAnalysis,
+            ],
+            min_requirements: requirements(4.0, 8.0, 2.0, 4.0),
+            recommended_requirements: requirements(8.0, 8.0, 2.0, 4.0),
+        },
+        LocalAiModelEntry {
             id: RECOMMENDED_MODEL_ID.to_string(),
             display_name: "Qwen2.5 Coder 7B".to_string(),
             provider: "Ollama".to_string(),
@@ -58,6 +87,17 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             action_suitability: all_actions(),
             min_requirements: requirements(12.0, 16.0, 8.0, 10.0),
             recommended_requirements: requirements(16.0, 16.0, 8.0, 10.0),
+        },
+        LocalAiModelEntry {
+            id: "phi4-mini".to_string(),
+            display_name: "Phi-4 Mini".to_string(),
+            provider: "Ollama".to_string(),
+            quality_tier: LocalAiModelQualityTier::Better,
+            download_size_gb: 2.5,
+            context_window: 131_072,
+            action_suitability: all_actions(),
+            min_requirements: requirements(8.0, 12.0, 4.0, 6.0),
+            recommended_requirements: requirements(12.0, 16.0, 4.0, 6.0),
         },
         LocalAiModelEntry {
             id: "qwen2.5-coder:14b".to_string(),
@@ -103,7 +143,7 @@ pub fn find_model(model_id: &str) -> Option<LocalAiModelEntry> {
 
 pub fn default_preferences() -> LocalAiPreferences {
     LocalAiPreferences {
-        global_model_id: RECOMMENDED_MODEL_ID.to_string(),
+        global_model_id: String::new(),
         action_model_ids: HashMap::new(),
     }
 }
@@ -159,35 +199,101 @@ pub fn set_model_preference(
     model_id: &str,
     action_kind: Option<LocalAiActionKind>,
 ) -> Result<LocalAiPreferences, String> {
-    if find_model(model_id).is_none() {
-        return Err(format!("Unsupported local AI model: {}", model_id));
-    }
-
     let mut preferences = load_preferences();
-
-    if let Some(action_kind) = action_kind {
-        preferences
-            .action_model_ids
-            .insert(action_kind.as_key().to_string(), model_id.to_string());
+    let model_id = model_id.trim();
+    let model_id = if model_id.is_empty() {
+        None
     } else {
-        preferences.global_model_id = model_id.to_string();
+        Some(model_id)
+    };
+
+    match (action_kind, model_id) {
+        (Some(action_kind), Some(model_id)) => {
+            if find_model(model_id).is_none() {
+                return Err(format!("Unsupported local AI model: {}", model_id));
+            }
+            preferences
+                .action_model_ids
+                .insert(action_kind.as_key().to_string(), model_id.to_string());
+        }
+        (Some(action_kind), None) => {
+            preferences.action_model_ids.remove(action_kind.as_key());
+        }
+        (None, Some(model_id)) => {
+            if find_model(model_id).is_none() {
+                return Err(format!("Unsupported local AI model: {}", model_id));
+            }
+            preferences.global_model_id = model_id.to_string();
+        }
+        (None, None) => {
+            return Err("Global default model must be selected.".to_string());
+        }
     }
 
     save_preferences(&preferences)?;
     Ok(preferences)
 }
 
-pub fn resolve_model_id(action_kind: LocalAiActionKind, explicit_model_id: Option<&str>) -> String {
-    if let Some(model_id) = explicit_model_id {
-        return model_id.to_string();
+pub fn set_first_downloaded_model_as_global_default(
+    model_id: &str,
+    had_downloaded_models: bool,
+) -> Result<Option<LocalAiPreferences>, String> {
+    if had_downloaded_models {
+        return Ok(None);
+    }
+
+    set_model_preference(model_id, None).map(Some)
+}
+
+pub fn reconcile_preferences_with_available_models(
+    available_model_ids: &[String],
+) -> Result<LocalAiPreferences, String> {
+    let mut preferences = load_preferences();
+
+    preferences
+        .action_model_ids
+        .retain(|_, model_id| available_model_ids.iter().any(|id| id == model_id));
+
+    if available_model_ids.is_empty() {
+        preferences.global_model_id.clear();
+        preferences.action_model_ids.clear();
+    } else if preferences.global_model_id.trim().is_empty()
+        || !available_model_ids
+            .iter()
+            .any(|model_id| model_id == &preferences.global_model_id)
+    {
+        preferences.global_model_id = available_model_ids[0].clone();
+    }
+
+    save_preferences(&preferences)?;
+    Ok(preferences)
+}
+
+pub fn reconcile_preferences_after_model_delete(
+    _deleted_model_id: &str,
+    remaining_model_ids: &[String],
+) -> Result<LocalAiPreferences, String> {
+    reconcile_preferences_with_available_models(remaining_model_ids)
+}
+
+pub fn resolve_model_id(
+    action_kind: LocalAiActionKind,
+    explicit_model_id: Option<&str>,
+) -> Result<String, String> {
+    if let Some(model_id) = explicit_model_id
+        .map(str::trim)
+        .filter(|model_id| !model_id.is_empty())
+    {
+        return Ok(model_id.to_string());
     }
 
     let preferences = load_preferences();
     preferences
         .action_model_ids
         .get(action_kind.as_key())
+        .filter(|model_id| !model_id.trim().is_empty())
         .cloned()
-        .unwrap_or(preferences.global_model_id)
+        .ok_or_else(|| format!("No AI model selected for {}", action_kind.display_label()))
 }
 
 #[cfg(test)]
@@ -208,8 +314,15 @@ mod tests {
     }
 
     #[test]
-    fn default_preferences_use_recommended_model() {
-        assert_eq!(default_preferences().global_model_id, RECOMMENDED_MODEL_ID);
+    fn requested_small_models_are_in_catalog() {
+        assert!(find_model("qwen2.5-coder:1.5b").is_some());
+        assert!(find_model("deepseek-coder:1.3b").is_some());
+        assert!(find_model("phi4-mini").is_some());
+    }
+
+    #[test]
+    fn default_preferences_start_without_global_model() {
+        assert!(default_preferences().global_model_id.is_empty());
     }
 
     #[test]
@@ -217,5 +330,183 @@ mod tests {
         let error = set_model_preference("unknown:model", None).expect_err("unsupported model");
 
         assert!(error.contains("Unsupported local AI model"));
+    }
+
+    #[test]
+    fn empty_action_model_preference_clears_action_override() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.action_model_ids.insert(
+            LocalAiActionKind::BranchAnalysis.as_key().to_string(),
+            "qwen2.5-coder:1.5b".to_string(),
+        );
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated = set_model_preference("", Some(LocalAiActionKind::BranchAnalysis))
+            .expect("clear action preference");
+
+        assert!(!updated
+            .action_model_ids
+            .contains_key(LocalAiActionKind::BranchAnalysis.as_key()));
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn first_downloaded_model_becomes_global_default() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let updated = set_first_downloaded_model_as_global_default("phi4-mini", false)
+            .expect("set first global model")
+            .expect("preferences updated");
+
+        assert_eq!(updated.global_model_id, "phi4-mini");
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn existing_downloaded_model_keeps_global_default() {
+        let updated =
+            set_first_downloaded_model_as_global_default("phi4-mini", true).expect("no update");
+
+        assert!(updated.is_none());
+    }
+
+    #[test]
+    fn resolving_unset_action_model_returns_action_error() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let error = resolve_model_id(LocalAiActionKind::CommitMessage, None)
+            .expect_err("action model must be selected");
+
+        assert_eq!(error, "No AI model selected for Commit");
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn deleted_global_model_reconciles_to_remaining_model() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.global_model_id = "phi4-mini".to_string();
+        preferences.action_model_ids.insert(
+            LocalAiActionKind::CommitMessage.as_key().to_string(),
+            "phi4-mini".to_string(),
+        );
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated = reconcile_preferences_after_model_delete(
+            "phi4-mini",
+            &["qwen2.5-coder:1.5b".to_string()],
+        )
+        .expect("reconcile preferences");
+
+        assert_eq!(updated.global_model_id, "qwen2.5-coder:1.5b");
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn available_models_reconcile_empty_global_and_stale_actions() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.action_model_ids.insert(
+            LocalAiActionKind::CommitMessage.as_key().to_string(),
+            "phi4-mini".to_string(),
+        );
+        preferences.action_model_ids.insert(
+            LocalAiActionKind::BranchAnalysis.as_key().to_string(),
+            "qwen2.5-coder:1.5b".to_string(),
+        );
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated = reconcile_preferences_with_available_models(&["phi4-mini".to_string()])
+            .expect("reconcile preferences");
+
+        assert_eq!(updated.global_model_id, "phi4-mini");
+        assert_eq!(
+            updated
+                .action_model_ids
+                .get(LocalAiActionKind::CommitMessage.as_key()),
+            Some(&"phi4-mini".to_string())
+        );
+        assert!(!updated
+            .action_model_ids
+            .contains_key(LocalAiActionKind::BranchAnalysis.as_key()));
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn available_models_reconcile_clears_preferences_when_empty() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.global_model_id = "phi4-mini".to_string();
+        preferences.action_model_ids.insert(
+            LocalAiActionKind::CommitMessage.as_key().to_string(),
+            "phi4-mini".to_string(),
+        );
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated =
+            reconcile_preferences_with_available_models(&[]).expect("reconcile preferences");
+
+        assert!(updated.global_model_id.is_empty());
+        assert!(updated.action_model_ids.is_empty());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
     }
 }

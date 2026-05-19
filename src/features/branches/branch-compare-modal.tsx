@@ -27,6 +27,7 @@ import {
 } from "@/shared/api/local-ai";
 import type { FileChange } from "@/shared/types/git";
 import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
+import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import {
   addReviewThreadReply,
   deleteReviewThreadComment,
@@ -67,6 +68,7 @@ export function BranchCompareModal({
   currentBranch,
   onClose,
 }: BranchCompareModalProps) {
+  const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
   const [localBranches, setLocalBranches] = useState<string[]>([]);
   const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
   const [branchLoading, setBranchLoading] = useState(false);
@@ -225,6 +227,21 @@ export function BranchCompareModal({
     );
   };
 
+  const notifyAiError = useCallback(
+    (title: string, analysisError: unknown) => {
+      setGitActionNotice({
+        kind: "error",
+        title,
+        details:
+          analysisError instanceof Error
+            ? analysisError.message
+            : String(analysisError || title),
+        expanded: false,
+      });
+    },
+    [setGitActionNotice],
+  );
+
   const runBranchAiAnalysis = useCallback(
     async (forceRefresh = false) => {
       if (!baseBranch) return;
@@ -245,17 +262,13 @@ export function BranchCompareModal({
         if (shouldOpenAiSetup(analysisError)) {
           setShowAiSetup(true);
         } else {
-          setAiError(
-            analysisError instanceof Error
-              ? analysisError.message
-              : String(analysisError || "Local AI analysis failed"),
-          );
+          notifyAiError("Local AI analysis failed", analysisError);
         }
       } finally {
         setAiLoading(false);
       }
     },
-    [baseBranch, repoPath, sourceBranch],
+    [baseBranch, notifyAiError, repoPath, sourceBranch],
   );
 
   const beginReviewThread = useCallback((anchor: DiffLineAnchor) => {
@@ -463,11 +476,6 @@ export function BranchCompareModal({
             )}
           </Split.Pane>
         </Split>
-        {aiError ? (
-          <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200">
-            {aiError}
-          </div>
-        ) : null}
         <LocalAiResultModal
           open={Boolean(aiResult) || aiLoading}
           title={`Analyze ${sourceBranch}`}

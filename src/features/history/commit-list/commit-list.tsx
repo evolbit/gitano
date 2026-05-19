@@ -751,20 +751,20 @@ export default function CommitList() {
           setupOpen: false,
         });
       } catch (analysisError) {
+        const openSetup = shouldOpenAiSetup(analysisError);
+        if (!openSetup) {
+          notifyError("Local AI analysis failed", analysisError);
+        }
         setCommitAiAnalysis({
           commit,
           result: null,
           loading: false,
-          error: shouldOpenAiSetup(analysisError)
-            ? null
-            : analysisError instanceof Error
-              ? analysisError.message
-              : String(analysisError || "Local AI analysis failed"),
-          setupOpen: shouldOpenAiSetup(analysisError),
+          error: null,
+          setupOpen: openSetup,
         });
       }
     },
-    [repoPath],
+    [notifyError, repoPath],
   );
 
   const handleRowContextMenu = useCallback(

@@ -168,6 +168,19 @@ impl OllamaClient {
         Ok(response.models)
     }
 
+    pub async fn installed_supported_model_ids(&self) -> Result<Vec<String>, String> {
+        let installed = self.installed_models().await?;
+        Ok(super::models::model_catalog()
+            .into_iter()
+            .filter(|model| {
+                installed
+                    .iter()
+                    .any(|installed| installed.matches(&model.id))
+            })
+            .map(|model| model.id)
+            .collect())
+    }
+
     async fn running_models(&self) -> Result<Vec<OllamaModel>, String> {
         let response = self
             .client
@@ -264,6 +277,28 @@ impl OllamaClient {
         Ok(())
     }
 
+    pub async fn delete_model(&self, model_id: &str) -> Result<(), String> {
+        let response = self
+            .client
+            .delete(self.url("/api/delete"))
+            .json(&json!({ "model": model_id }))
+            .send()
+            .await
+            .map_err(|e| format!("Model {} deletion failed: {}", model_id, e))?
+            .error_for_status()
+            .map_err(|e| format!("Model {} deletion failed: {}", model_id, e))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Model {} deletion failed with HTTP {}.",
+                model_id,
+                response.status()
+            ))
+        }
+    }
+
     pub async fn generate_json(
         &self,
         model_id: &str,
@@ -329,7 +364,16 @@ fn generation_options(action_kind: LocalAiActionKind, context_window: usize) -> 
 
 impl OllamaModel {
     fn matches(&self, model_id: &str) -> bool {
-        self.name == model_id || self.model == model_id
+        if self.name == model_id || self.model == model_id {
+            return true;
+        }
+
+        if model_id.contains(':') {
+            return false;
+        }
+
+        let latest_tag = format!("{}:latest", model_id);
+        self.name == latest_tag || self.model == latest_tag
     }
 }
 
@@ -516,6 +560,11 @@ mod tests {
 
     #[test]
     fn reports_missing_managed_runtime_without_network_probe() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let previous_ollama_host = std::env::var_os("OLLAMA_HOST");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
         std::env::remove_var("OLLAMA_HOST");
         let temp_dir = tempfile::tempdir().unwrap();
         std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
@@ -525,6 +574,13 @@ mod tests {
         assert!(!status.available);
         assert_eq!(status.error.as_deref(), Some("Local AI setup is required."));
 
-        std::env::remove_var("GITANO_LOCAL_AI_HOME");
+        match previous_ollama_host {
+            Some(value) => std::env::set_var("OLLAMA_HOST", value),
+            None => std::env::remove_var("OLLAMA_HOST"),
+        }
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
     }
 }

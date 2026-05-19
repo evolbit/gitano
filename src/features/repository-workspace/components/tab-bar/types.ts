@@ -13,4 +13,5 @@ export type TabBarProps = {
   activeTab: string;
   onTabClose: (id: string, event: MouseEvent) => void;
   onAddTab: () => void;
+  onOpenSettings: () => void;
 };

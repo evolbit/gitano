@@ -102,6 +102,98 @@ pub async fn start_managed_runtime_if_installed() -> Result<(), String> {
     Ok(())
 }
 
+pub async fn prepare_managed_runtime(
+    app: &AppHandle,
+    operation_id: &str,
+    force_reinstall: bool,
+) -> Result<(), String> {
+    if using_external_ollama() {
+        return Err("Runtime is controlled by the configured OLLAMA_HOST.".to_string());
+    }
+
+    runtime_package()?;
+
+    if force_reinstall {
+        stop_managed_runtime_process()?;
+        let runtime_dir = managed_ollama_runtime_dir();
+        if runtime_dir.exists() {
+            fs::remove_dir_all(&runtime_dir).map_err(|e| {
+                format!(
+                    "Local AI runtime upgrade could not remove old runtime: {}",
+                    e
+                )
+            })?;
+        }
+    }
+
+    if managed_runtime_binary_path().is_none() {
+        install_managed_runtime(app, operation_id, "runtime").await?;
+    } else {
+        emit_runtime_progress(
+            app,
+            operation_id,
+            "runtime",
+            LocalAiProgressState::InstallingRuntime,
+            "Runtime already installed...",
+            None,
+            None,
+            None,
+        );
+    }
+
+    if !endpoint_available(&ollama_endpoint()).await {
+        emit_runtime_progress(
+            app,
+            operation_id,
+            "runtime",
+            LocalAiProgressState::StartingRuntime,
+            "Starting runtime...",
+            None,
+            None,
+            None,
+        );
+        start_managed_runtime_process()?;
+        wait_for_runtime_ready(&ollama_endpoint(), Duration::from_secs(60)).await?;
+    }
+
+    emit_runtime_progress(
+        app,
+        operation_id,
+        "runtime",
+        LocalAiProgressState::Completed,
+        "Runtime ready",
+        None,
+        None,
+        Some(100.0),
+    );
+
+    Ok(())
+}
+
+pub fn managed_runtime_supported() -> bool {
+    runtime_package().is_ok()
+}
+
+pub fn latest_compatible_runtime_version() -> String {
+    "Latest compatible".to_string()
+}
+
+pub fn managed_runtime_version() -> Option<String> {
+    let binary_path = managed_runtime_binary_path()?;
+    let output = Command::new(binary_path).arg("--version").output().ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        None
+    } else {
+        Some(stdout)
+    }
+}
+
 async fn install_managed_runtime(
     app: &AppHandle,
     operation_id: &str,
@@ -267,6 +359,21 @@ fn start_managed_runtime_process() -> Result<(), String> {
 
     *child_guard = Some(child);
 
+    Ok(())
+}
+
+fn stop_managed_runtime_process() -> Result<(), String> {
+    let child_lock = MANAGED_OLLAMA_CHILD.get_or_init(|| Mutex::new(None));
+    let mut child_guard = child_lock.lock().map_err(|e| e.to_string())?;
+
+    if let Some(child) = child_guard.as_mut() {
+        if child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            child.kill().map_err(|e| e.to_string())?;
+            let _ = child.wait();
+        }
+    }
+
+    *child_guard = None;
     Ok(())
 }
 
