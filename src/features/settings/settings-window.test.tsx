@@ -7,6 +7,7 @@ import { SettingsWindow } from "./settings-window";
 const apiMocks = vi.hoisted(() => ({
   deleteLocalAiModel: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
+  getLocalAiMachineProfile: vi.fn(),
   getLocalAiModelCatalog: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
@@ -15,6 +16,8 @@ const apiMocks = vi.hoisted(() => ({
   prepareLocalAiModel: vi.fn(),
   prepareLocalAiRuntime: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
+  setLocalAiModelWarmPreference: vi.fn(),
+  warmConfiguredLocalAiModels: vi.fn(),
 }));
 
 vi.mock("@/shared/api/local-ai", () => apiMocks);
@@ -28,6 +31,8 @@ const models = [
     downloadSizeGb: 1,
     contextWindow: 32768,
     actionSuitability: ["commitMessage"],
+    warmMemoryEstimateGb: 2,
+    warmMemoryClass: "small",
     minRequirements: {
       minMemoryGb: 4,
       recommendedMemoryGb: 8,
@@ -49,6 +54,8 @@ const models = [
     downloadSizeGb: 4.7,
     contextWindow: 32768,
     actionSuitability: ["commitMessage", "branchAnalysis"],
+    warmMemoryEstimateGb: 7,
+    warmMemoryClass: "medium",
     minRequirements: {
       minMemoryGb: 12,
       recommendedMemoryGb: 16,
@@ -64,6 +71,11 @@ const models = [
   },
 ];
 
+const legacyModels = models.map(
+  ({ warmMemoryEstimateGb: _warmMemoryEstimateGb, warmMemoryClass: _warmMemoryClass, ...model }) =>
+    model,
+);
+
 describe("SettingsWindow", () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
@@ -73,6 +85,8 @@ describe("SettingsWindow", () => {
       actionModelIds: {
         commitMessage: "qwen2.5-coder:1.5b",
       },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
     });
     apiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
@@ -92,6 +106,15 @@ describe("SettingsWindow", () => {
       modelStoragePath: "/models",
       canInstall: true,
     });
+    apiMocks.getLocalAiMachineProfile.mockResolvedValue({
+      os: "macos",
+      arch: "aarch64",
+      cpuCount: 10,
+      totalMemoryGb: 16,
+      availableMemoryGb: null,
+      modelStoragePath: "/models",
+      modelStorageFreeDiskGb: 100,
+    });
     apiMocks.getLocalAiModelStatus.mockImplementation(async (modelId: string) => ({
       runtime: {
         available: true,
@@ -106,6 +129,10 @@ describe("SettingsWindow", () => {
       ready: modelId === "qwen2.5-coder:7b",
     }));
     apiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
+    apiMocks.warmConfiguredLocalAiModels.mockResolvedValue({
+      warmedModelIds: [],
+      failures: [],
+    });
   });
 
   afterEach(() => {
@@ -139,8 +166,68 @@ describe("SettingsWindow", () => {
     await user.click(await screen.findByRole("button", { name: "Models" }));
 
     expect(screen.getByText("Qwen2.5 Coder 1.5B")).toBeInTheDocument();
+    expect(screen.getByText(/Medium warm, about 7GB/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /download/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /delete/i })).toBeEnabled();
+  });
+
+  it("renders legacy model catalog entries without warm metadata", async () => {
+    const user = userEvent.setup();
+    apiMocks.getLocalAiModelCatalog.mockResolvedValueOnce(legacyModels);
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Models" }));
+
+    expect(screen.getAllByText(/Warm memory unavailable/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Restart Gitano to enable warmup for this model.").length,
+    ).toBeGreaterThan(0);
+    const warmCheckboxes = screen.getAllByLabelText("Keep this model warm");
+    expect(warmCheckboxes[1]).toBeDisabled();
+  });
+
+  it("confirms before enabling warmup when memory crosses the threshold", async () => {
+    const user = userEvent.setup();
+    apiMocks.setLocalAiModelWarmPreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {
+        commitMessage: "qwen2.5-coder:1.5b",
+      },
+      warmModelIds: ["qwen2.5-coder:7b"],
+      keepAliveMinutes: 30,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Models" }));
+    const warmCheckboxes = await screen.findAllByLabelText(
+      "Keep this model warm",
+    );
+    await user.click(warmCheckboxes[1]);
+
+    expect(await screen.findByText("Keep model warm?")).toBeInTheDocument();
+    expect(screen.getByText(/Estimated warm memory: 7GB/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(apiMocks.setLocalAiModelWarmPreference).toHaveBeenCalledWith({
+      modelId: "qwen2.5-coder:7b",
+      warm: true,
+    });
+    await waitFor(() => {
+      expect(apiMocks.warmConfiguredLocalAiModels).toHaveBeenCalled();
+    });
   });
 
   it("warns when an action-specific selected model is not downloaded", async () => {

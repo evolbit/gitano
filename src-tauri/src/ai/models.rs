@@ -1,6 +1,6 @@
 use super::types::{
     LocalAiActionKind, LocalAiModelEntry, LocalAiModelQualityTier, LocalAiModelRequirements,
-    LocalAiPreferences,
+    LocalAiModelWarmMemoryClass, LocalAiPreferences, DEFAULT_KEEP_ALIVE_MINUTES,
 };
 use serde_json;
 use std::collections::HashMap;
@@ -24,6 +24,25 @@ fn requirements(
     }
 }
 
+fn warm_memory_class(warm_memory_estimate_gb: f64) -> LocalAiModelWarmMemoryClass {
+    if warm_memory_estimate_gb <= 5.0 {
+        LocalAiModelWarmMemoryClass::Small
+    } else if warm_memory_estimate_gb <= 16.0 {
+        LocalAiModelWarmMemoryClass::Medium
+    } else if warm_memory_estimate_gb <= 32.0 {
+        LocalAiModelWarmMemoryClass::Large
+    } else {
+        LocalAiModelWarmMemoryClass::VeryLarge
+    }
+}
+
+fn warm_memory_estimate_gb(warm_memory_estimate_gb: f64) -> (f64, LocalAiModelWarmMemoryClass) {
+    (
+        warm_memory_estimate_gb,
+        warm_memory_class(warm_memory_estimate_gb),
+    )
+}
+
 fn all_actions() -> Vec<LocalAiActionKind> {
     vec![
         LocalAiActionKind::CommitMessage,
@@ -34,6 +53,15 @@ fn all_actions() -> Vec<LocalAiActionKind> {
 }
 
 pub fn model_catalog() -> Vec<LocalAiModelEntry> {
+    let (qwen_1_5_warm_gb, qwen_1_5_warm_class) = warm_memory_estimate_gb(2.0);
+    let (qwen_3_warm_gb, qwen_3_warm_class) = warm_memory_estimate_gb(4.0);
+    let (deepseek_1_3_warm_gb, deepseek_1_3_warm_class) = warm_memory_estimate_gb(2.0);
+    let (qwen_7_warm_gb, qwen_7_warm_class) = warm_memory_estimate_gb(7.0);
+    let (phi_4_mini_warm_gb, phi_4_mini_warm_class) = warm_memory_estimate_gb(4.0);
+    let (qwen_14_warm_gb, qwen_14_warm_class) = warm_memory_estimate_gb(16.0);
+    let (qwen_32_warm_gb, qwen_32_warm_class) = warm_memory_estimate_gb(34.0);
+    let (qwen_3_coder_warm_gb, qwen_3_coder_warm_class) = warm_memory_estimate_gb(32.0);
+
     vec![
         LocalAiModelEntry {
             id: "qwen2.5-coder:1.5b".to_string(),
@@ -46,6 +74,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
                 LocalAiActionKind::CommitMessage,
                 LocalAiActionKind::CommitAnalysis,
             ],
+            warm_memory_estimate_gb: qwen_1_5_warm_gb,
+            warm_memory_class: qwen_1_5_warm_class,
             min_requirements: requirements(4.0, 8.0, 2.0, 4.0),
             recommended_requirements: requirements(8.0, 8.0, 2.0, 4.0),
         },
@@ -60,6 +90,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
                 LocalAiActionKind::CommitMessage,
                 LocalAiActionKind::CommitAnalysis,
             ],
+            warm_memory_estimate_gb: qwen_3_warm_gb,
+            warm_memory_class: qwen_3_warm_class,
             min_requirements: requirements(8.0, 8.0, 4.0, 6.0),
             recommended_requirements: requirements(8.0, 12.0, 4.0, 6.0),
         },
@@ -74,6 +106,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
                 LocalAiActionKind::CommitMessage,
                 LocalAiActionKind::CommitAnalysis,
             ],
+            warm_memory_estimate_gb: deepseek_1_3_warm_gb,
+            warm_memory_class: deepseek_1_3_warm_class,
             min_requirements: requirements(4.0, 8.0, 2.0, 4.0),
             recommended_requirements: requirements(8.0, 8.0, 2.0, 4.0),
         },
@@ -85,6 +119,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             download_size_gb: 4.7,
             context_window: 32_768,
             action_suitability: all_actions(),
+            warm_memory_estimate_gb: qwen_7_warm_gb,
+            warm_memory_class: qwen_7_warm_class,
             min_requirements: requirements(12.0, 16.0, 8.0, 10.0),
             recommended_requirements: requirements(16.0, 16.0, 8.0, 10.0),
         },
@@ -96,6 +132,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             download_size_gb: 2.5,
             context_window: 131_072,
             action_suitability: all_actions(),
+            warm_memory_estimate_gb: phi_4_mini_warm_gb,
+            warm_memory_class: phi_4_mini_warm_class,
             min_requirements: requirements(8.0, 12.0, 4.0, 6.0),
             recommended_requirements: requirements(12.0, 16.0, 4.0, 6.0),
         },
@@ -107,6 +145,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             download_size_gb: 9.0,
             context_window: 32_768,
             action_suitability: all_actions(),
+            warm_memory_estimate_gb: qwen_14_warm_gb,
+            warm_memory_class: qwen_14_warm_class,
             min_requirements: requirements(24.0, 32.0, 14.0, 18.0),
             recommended_requirements: requirements(32.0, 32.0, 14.0, 18.0),
         },
@@ -118,6 +158,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             download_size_gb: 19.0,
             context_window: 32_768,
             action_suitability: all_actions(),
+            warm_memory_estimate_gb: qwen_32_warm_gb,
+            warm_memory_class: qwen_32_warm_class,
             min_requirements: requirements(48.0, 64.0, 28.0, 34.0),
             recommended_requirements: requirements(64.0, 64.0, 28.0, 34.0),
         },
@@ -129,6 +171,8 @@ pub fn model_catalog() -> Vec<LocalAiModelEntry> {
             download_size_gb: 19.0,
             context_window: 262_144,
             action_suitability: all_actions(),
+            warm_memory_estimate_gb: qwen_3_coder_warm_gb,
+            warm_memory_class: qwen_3_coder_warm_class,
             min_requirements: requirements(48.0, 64.0, 25.0, 32.0),
             recommended_requirements: requirements(64.0, 64.0, 25.0, 32.0),
         },
@@ -145,6 +189,8 @@ pub fn default_preferences() -> LocalAiPreferences {
     LocalAiPreferences {
         global_model_id: String::new(),
         action_model_ids: HashMap::new(),
+        warm_model_ids: Vec::new(),
+        keep_alive_minutes: DEFAULT_KEEP_ALIVE_MINUTES,
     }
 }
 
@@ -234,6 +280,31 @@ pub fn set_model_preference(
     Ok(preferences)
 }
 
+pub fn set_warm_model_preference(model_id: &str, warm: bool) -> Result<LocalAiPreferences, String> {
+    let mut preferences = load_preferences();
+    let model_id = model_id.trim();
+    if find_model(model_id).is_none() {
+        return Err(format!("Unsupported local AI model: {}", model_id));
+    }
+
+    if warm {
+        if !preferences
+            .warm_model_ids
+            .iter()
+            .any(|warm_model_id| warm_model_id == model_id)
+        {
+            preferences.warm_model_ids.push(model_id.to_string());
+        }
+    } else {
+        preferences
+            .warm_model_ids
+            .retain(|warm_model_id| warm_model_id != model_id);
+    }
+
+    save_preferences(&preferences)?;
+    Ok(preferences)
+}
+
 pub fn set_first_downloaded_model_as_global_default(
     model_id: &str,
     had_downloaded_models: bool,
@@ -253,10 +324,14 @@ pub fn reconcile_preferences_with_available_models(
     preferences
         .action_model_ids
         .retain(|_, model_id| available_model_ids.iter().any(|id| id == model_id));
+    preferences
+        .warm_model_ids
+        .retain(|model_id| available_model_ids.iter().any(|id| id == model_id));
 
     if available_model_ids.is_empty() {
         preferences.global_model_id.clear();
         preferences.action_model_ids.clear();
+        preferences.warm_model_ids.clear();
     } else if preferences.global_model_id.trim().is_empty()
         || !available_model_ids
             .iter()
@@ -321,8 +396,26 @@ mod tests {
     }
 
     #[test]
+    fn catalog_includes_warm_memory_metadata() {
+        let small = find_model("qwen2.5-coder:1.5b").expect("small model exists");
+        let large = find_model("qwen2.5-coder:32b").expect("large model exists");
+
+        assert_eq!(small.warm_memory_estimate_gb, 2.0);
+        assert_eq!(small.warm_memory_class, LocalAiModelWarmMemoryClass::Small);
+        assert_eq!(
+            large.warm_memory_class,
+            LocalAiModelWarmMemoryClass::VeryLarge
+        );
+    }
+
+    #[test]
     fn default_preferences_start_without_global_model() {
         assert!(default_preferences().global_model_id.is_empty());
+        assert!(default_preferences().warm_model_ids.is_empty());
+        assert_eq!(
+            default_preferences().keep_alive_minutes,
+            DEFAULT_KEEP_ALIVE_MINUTES
+        );
     }
 
     #[test]
@@ -354,6 +447,29 @@ mod tests {
         assert!(!updated
             .action_model_ids
             .contains_key(LocalAiActionKind::BranchAnalysis.as_key()));
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn warm_model_preference_toggles_supported_model() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let warmed = set_warm_model_preference("phi4-mini", true).expect("warm model");
+
+        assert_eq!(warmed.warm_model_ids, vec!["phi4-mini"]);
+
+        let cleared = set_warm_model_preference("phi4-mini", false).expect("clear warm model");
+
+        assert!(cleared.warm_model_ids.is_empty());
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
@@ -425,6 +541,7 @@ mod tests {
             LocalAiActionKind::CommitMessage.as_key().to_string(),
             "phi4-mini".to_string(),
         );
+        preferences.warm_model_ids.push("phi4-mini".to_string());
         save_preferences(&preferences).expect("save preferences");
 
         let updated = reconcile_preferences_after_model_delete(
@@ -434,6 +551,7 @@ mod tests {
         .expect("reconcile preferences");
 
         assert_eq!(updated.global_model_id, "qwen2.5-coder:1.5b");
+        assert!(updated.warm_model_ids.is_empty());
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
@@ -496,6 +614,7 @@ mod tests {
             LocalAiActionKind::CommitMessage.as_key().to_string(),
             "phi4-mini".to_string(),
         );
+        preferences.warm_model_ids.push("phi4-mini".to_string());
         save_preferences(&preferences).expect("save preferences");
 
         let updated =
@@ -503,6 +622,7 @@ mod tests {
 
         assert!(updated.global_model_id.is_empty());
         assert!(updated.action_model_ids.is_empty());
+        assert!(updated.warm_model_ids.is_empty());
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),

@@ -8,6 +8,8 @@ import {
   prepareLocalAiRuntime,
   runLocalAiAction,
   setLocalAiModelPreference,
+  setLocalAiModelWarmPreference,
+  warmConfiguredLocalAiModels,
 } from "./local-ai";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
@@ -40,6 +42,8 @@ describe("local AI API", () => {
     invokeCommandMock.mockResolvedValueOnce({
       globalModelId: "qwen2.5-coder:7b",
       actionModelIds: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
     });
 
     await setLocalAiModelPreference({
@@ -59,6 +63,8 @@ describe("local AI API", () => {
     invokeCommandMock.mockResolvedValueOnce({
       globalModelId: "qwen2.5-coder:7b",
       actionModelIds: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
     });
 
     await setLocalAiModelPreference({
@@ -82,6 +88,8 @@ describe("local AI API", () => {
         actionModelIds: {
           branchAnalysis: "qwen2.5-coder:1.5b",
         },
+        warmModelIds: [],
+        keepAliveMinutes: 30,
       });
 
     const preferences = await setLocalAiModelPreference({
@@ -114,6 +122,8 @@ describe("local AI API", () => {
         actionModelIds: {
           branchAnalysis: "qwen2.5-coder:1.5b",
         },
+        warmModelIds: [],
+        keepAliveMinutes: 30,
       })
       .mockResolvedValueOnce({
         globalModelId: "qwen2.5-coder:7b",
@@ -121,6 +131,8 @@ describe("local AI API", () => {
           branchAnalysis: "qwen2.5-coder:1.5b",
           commitMessage: "phi4-mini",
         },
+        warmModelIds: [],
+        keepAliveMinutes: 30,
       });
 
     await setLocalAiModelPreference({
@@ -151,6 +163,30 @@ describe("local AI API", () => {
     });
   });
 
+  it("sets warm model preferences through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      warmModelIds: ["phi4-mini"],
+      keepAliveMinutes: 30,
+    });
+
+    await setLocalAiModelWarmPreference({
+      modelId: " phi4-mini ",
+      warm: true,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_set_model_warm_preference",
+      {
+        request: {
+          modelId: "phi4-mini",
+          warm: true,
+        },
+      },
+    );
+  });
+
   it("requests runtime status", async () => {
     invokeCommandMock.mockResolvedValueOnce({ installed: false });
 
@@ -179,6 +215,19 @@ describe("local AI API", () => {
     expect(invokeCommandMock).toHaveBeenCalledWith("ai_delete_model", {
       modelId: "qwen2.5-coder:1.5b",
     });
+  });
+
+  it("requests configured model warmup", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      warmedModelIds: ["phi4-mini"],
+      failures: [],
+    });
+
+    await warmConfiguredLocalAiModels();
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_warm_configured_models",
+    );
   });
 
   it("runs local AI actions with stable request shape", async () => {

@@ -52,8 +52,11 @@ struct OllamaGenerateRequest<'a> {
     model: &'a str,
     prompt: &'a str,
     stream: bool,
-    format: &'a str,
-    options: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<serde_json::Value>,
+    keep_alive: &'a str,
 }
 
 #[derive(Clone)]
@@ -305,13 +308,15 @@ impl OllamaClient {
         prompt: &str,
         action_kind: LocalAiActionKind,
         context_window: usize,
+        keep_alive: &str,
     ) -> Result<String, String> {
         let request = OllamaGenerateRequest {
             model: model_id,
             prompt,
             stream: false,
-            format: "json",
-            options: generation_options(action_kind, context_window),
+            format: Some("json"),
+            options: Some(generation_options(action_kind, context_window)),
+            keep_alive,
         };
 
         let response = self
@@ -328,6 +333,31 @@ impl OllamaClient {
             .map_err(|e| format!("Local AI response could not be parsed: {}", e))?;
 
         Ok(response.response)
+    }
+
+    pub async fn warm_model(&self, model_id: &str, keep_alive: &str) -> Result<(), String> {
+        let request = OllamaGenerateRequest {
+            model: model_id,
+            prompt: "",
+            stream: false,
+            format: None,
+            options: Some(json!({
+                "num_predict": 1,
+                "temperature": 0.0
+            })),
+            keep_alive,
+        };
+
+        self.client
+            .post(self.url("/api/generate"))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Local AI warmup failed for {}: {}", model_id, e))?
+            .error_for_status()
+            .map_err(|e| format!("Local AI warmup failed for {}: {}", model_id, e))?;
+
+        Ok(())
     }
 
     fn url(&self, path: &str) -> String {
@@ -488,6 +518,41 @@ fn runtime_unreachable_message(endpoint: &str, error: &reqwest::Error) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generate_request_serializes_keep_alive_at_top_level() {
+        let request = OllamaGenerateRequest {
+            model: "phi4-mini",
+            prompt: "{}",
+            stream: false,
+            format: Some("json"),
+            options: Some(json!({ "num_predict": 1 })),
+            keep_alive: "30m",
+        };
+
+        let value = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(value["keep_alive"], "30m");
+        assert_eq!(value["format"], "json");
+        assert!(value["options"].is_object());
+    }
+
+    #[test]
+    fn warmup_request_omits_json_format() {
+        let request = OllamaGenerateRequest {
+            model: "phi4-mini",
+            prompt: "",
+            stream: false,
+            format: None,
+            options: Some(json!({ "num_predict": 1 })),
+            keep_alive: "30m",
+        };
+
+        let value = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(value["keep_alive"], "30m");
+        assert!(value.get("format").is_none());
+    }
 
     #[test]
     fn converts_pull_progress_to_percentage_event() {

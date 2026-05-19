@@ -22,6 +22,12 @@ export type LocalAiModelQualityTier =
   | "max"
   | "experimental";
 
+export type LocalAiModelWarmMemoryClass =
+  | "small"
+  | "medium"
+  | "large"
+  | "veryLarge";
+
 export type LocalAiModelRequirements = {
   minMemoryGb: number;
   recommendedMemoryGb: number;
@@ -37,6 +43,8 @@ export type LocalAiModelEntry = {
   downloadSizeGb: number;
   contextWindow: number;
   actionSuitability: LocalAiActionKind[];
+  warmMemoryEstimateGb?: number;
+  warmMemoryClass?: LocalAiModelWarmMemoryClass;
   minRequirements: LocalAiModelRequirements;
   recommendedRequirements: LocalAiModelRequirements;
 };
@@ -44,6 +52,8 @@ export type LocalAiModelEntry = {
 export type LocalAiPreferences = {
   globalModelId: string;
   actionModelIds: Record<string, string>;
+  warmModelIds?: string[];
+  keepAliveMinutes?: number;
 };
 
 export type LocalAiMachineProfile = {
@@ -138,6 +148,21 @@ export type LocalAiPrepareRuntimeResponse = {
 export type LocalAiSetModelPreferenceRequest = {
   modelId: string;
   actionKind?: LocalAiActionKind | null;
+};
+
+export type LocalAiSetModelWarmPreferenceRequest = {
+  modelId: string;
+  warm: boolean;
+};
+
+export type LocalAiWarmModelFailure = {
+  modelId: string;
+  error: string;
+};
+
+export type LocalAiWarmModelsResponse = {
+  warmedModelIds: string[];
+  failures: LocalAiWarmModelFailure[];
 };
 
 export type LocalAiRunRequest = {
@@ -276,20 +301,25 @@ function unmarkActionModelCleared(actionKind: LocalAiActionKind) {
 function applyPreferenceOverrides(
   preferences: LocalAiPreferences,
 ): LocalAiPreferences {
+  const normalizedPreferences = {
+    ...preferences,
+    warmModelIds: preferences.warmModelIds ?? [],
+    keepAliveMinutes: preferences.keepAliveMinutes ?? 30,
+  };
   const overrides = readPreferenceOverrides();
   const clearedActionModelIds = overrides.clearedActionModelIds ?? [];
   if (clearedActionModelIds.length === 0) {
-    lastKnownLocalAiPreferences = preferences;
-    return preferences;
+    lastKnownLocalAiPreferences = normalizedPreferences;
+    return normalizedPreferences;
   }
 
-  const actionModelIds = { ...preferences.actionModelIds };
+  const actionModelIds = { ...normalizedPreferences.actionModelIds };
   clearedActionModelIds.forEach((actionKind) => {
     delete actionModelIds[actionKind];
   });
 
   const nextPreferences = {
-    ...preferences,
+    ...normalizedPreferences,
     actionModelIds,
   };
   lastKnownLocalAiPreferences = nextPreferences;
@@ -364,6 +394,22 @@ export async function setLocalAiModelPreference(
   }
 }
 
+export async function setLocalAiModelWarmPreference(
+  request: LocalAiSetModelWarmPreferenceRequest,
+) {
+  const preferences = await invokeCommand<LocalAiPreferences>(
+    "ai_set_model_warm_preference",
+    {
+      request: {
+        modelId: request.modelId.trim(),
+        warm: request.warm,
+      },
+    },
+  );
+
+  return applyPreferenceOverrides(preferences);
+}
+
 export function getLocalAiMachineProfile() {
   return invokeCommand<LocalAiMachineProfile>("ai_get_machine_profile");
 }
@@ -399,6 +445,12 @@ export function prepareLocalAiRuntime(request: LocalAiPrepareRuntimeRequest) {
 
 export function deleteLocalAiModel(modelId: string) {
   return invokeCommand<void>("ai_delete_model", { modelId });
+}
+
+export function warmConfiguredLocalAiModels() {
+  return invokeCommand<LocalAiWarmModelsResponse>(
+    "ai_warm_configured_models",
+  );
 }
 
 export function runLocalAiAction(request: LocalAiRunRequest) {

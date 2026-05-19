@@ -1,5 +1,5 @@
 import ReactDOM from "react-dom";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconCheck,
   IconCloudDownload,
@@ -8,6 +8,7 @@ import {
 import {
   deleteLocalAiModel,
   getLocalAiEntitlementStatus,
+  getLocalAiMachineProfile,
   getLocalAiModelCatalog,
   getLocalAiModelPreferences,
   getLocalAiModelStatus,
@@ -16,10 +17,14 @@ import {
   prepareLocalAiModel,
   prepareLocalAiRuntime,
   setLocalAiModelPreference,
+  setLocalAiModelWarmPreference,
+  warmConfiguredLocalAiModels,
   type LocalAiActionKind,
   type LocalAiDownloadProgress,
   type LocalAiEntitlementStatus,
+  type LocalAiMachineProfile,
   type LocalAiModelEntry,
+  type LocalAiModelWarmMemoryClass,
   type LocalAiModelStatus,
   type LocalAiPreferences,
   type LocalAiRuntimeSetupStatus,
@@ -31,6 +36,13 @@ type SettingsPane = "runtime" | "models" | "configuration";
 type SettingsWindowProps = {
   open: boolean;
   onClose: () => void;
+};
+
+type WarmConfirmation = {
+  modelId: string;
+  title: string;
+  description: string;
+  details: string;
 };
 
 const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
@@ -66,8 +78,64 @@ const ACTIONS: ReadonlyArray<{
   },
 ];
 
+const WARM_MEMORY_WARNING_BASELINE_GB = 5;
+const WARM_MEMORY_HIGH_SHARE = 0.25;
+const WARM_MEMORY_VERY_HIGH_SHARE = 0.5;
+
 function formatContext(tokens: number) {
   return tokens >= 1024 ? `${Math.round(tokens / 1024)}K` : `${tokens}`;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatGigabytes(value: number | null | undefined) {
+  if (!isFiniteNumber(value)) {
+    return "Unknown";
+  }
+
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}GB`;
+}
+
+function getWarmMemoryEstimateGb(model: LocalAiModelEntry | null | undefined) {
+  return isFiniteNumber(model?.warmMemoryEstimateGb)
+    ? model.warmMemoryEstimateGb
+    : null;
+}
+
+function getWarmMemoryClass(model: LocalAiModelEntry | null | undefined) {
+  return model?.warmMemoryClass ?? null;
+}
+
+function hasWarmMetadata(model: LocalAiModelEntry | null | undefined) {
+  return getWarmMemoryEstimateGb(model) !== null && getWarmMemoryClass(model) !== null;
+}
+
+function formatWarmMemoryClass(
+  memoryClass: LocalAiModelWarmMemoryClass | null | undefined,
+) {
+  switch (memoryClass) {
+    case "small":
+      return "Small";
+    case "medium":
+      return "Medium";
+    case "large":
+      return "Large";
+    case "veryLarge":
+      return "Very large";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatWarmMemoryDetails(model: LocalAiModelEntry) {
+  const estimate = getWarmMemoryEstimateGb(model);
+  if (estimate === null) {
+    return "Warm memory unavailable";
+  }
+
+  return `${formatWarmMemoryClass(getWarmMemoryClass(model))} warm, about ${formatGigabytes(estimate)}`;
 }
 
 function formatActionLabel(kind: string) {
@@ -87,6 +155,26 @@ function errorMessage(error: unknown, fallback: string) {
 
 function isUnsupportedEmptyModelError(error: unknown) {
   return errorMessage(error, "").trim() === "Unsupported local AI model:";
+}
+
+function describeWarmupFailures(
+  failures: ReadonlyArray<{ modelId: string; error: string }>,
+) {
+  return failures
+    .map((failure) => `${failure.modelId}: ${failure.error}`)
+    .join("\n");
+}
+
+function warmModelIdsWithToggle(
+  currentModelIds: readonly string[],
+  modelId: string,
+  warm: boolean,
+) {
+  if (!warm) {
+    return currentModelIds.filter((warmModelId) => warmModelId !== modelId);
+  }
+
+  return Array.from(new Set([...currentModelIds, modelId]));
 }
 
 function SettingsRow({
@@ -221,6 +309,42 @@ function ProgressPanel({ progress }: { progress: LocalAiDownloadProgress | null 
   );
 }
 
+function WarmModelCheckbox({
+  checked,
+  disabled,
+  reason,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  reason?: string | null;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <label
+        className={`flex min-h-5 items-center gap-2 text-xs text-zinc-300 ${
+          disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+        }`}
+      >
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 accent-blue-500"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.currentTarget.checked)}
+        />
+        <span>Keep this model warm</span>
+      </label>
+      {disabled && reason ? (
+        <div className="max-w-[220px] text-right text-[11px] leading-4 text-zinc-500">
+          {reason}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
   const [pane, setPane] = useState<SettingsPane>("runtime");
   const [catalog, setCatalog] = useState<LocalAiModelEntry[]>([]);
@@ -229,6 +353,8 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     useState<LocalAiEntitlementStatus | null>(null);
   const [runtimeStatus, setRuntimeStatus] =
     useState<LocalAiRuntimeSetupStatus | null>(null);
+  const [machineProfile, setMachineProfile] =
+    useState<LocalAiMachineProfile | null>(null);
   const [modelStatuses, setModelStatuses] = useState<
     Record<string, LocalAiModelStatus | null>
   >({});
@@ -237,7 +363,13 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
   >({});
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [warmSavingModelIds, setWarmSavingModelIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [warmConfirmation, setWarmConfirmation] =
+    useState<WarmConfirmation | null>(null);
   const [loading, setLoading] = useState(false);
+  const lastWarmSignatureRef = useRef<string | null>(null);
   const showSettingsError = useCallback((fallback: string, error: unknown) => {
     setSettingsError(errorMessage(error, fallback));
   }, []);
@@ -254,12 +386,19 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     setLoading(true);
     setSettingsError(null);
     try {
-      const [nextCatalog, nextPreferences, nextEntitlement, nextRuntimeStatus] =
+      const [
+        nextCatalog,
+        nextPreferences,
+        nextEntitlement,
+        nextRuntimeStatus,
+        nextMachineProfile,
+      ] =
         await Promise.all([
           getLocalAiModelCatalog(),
           getLocalAiModelPreferences(),
           getLocalAiEntitlementStatus(),
           getLocalAiRuntimeStatus(),
+          getLocalAiMachineProfile(),
         ]);
       const statusEntries = await Promise.all(
         nextCatalog.map(async (model) => {
@@ -276,6 +415,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
       setPreferences(nextPreferences);
       setEntitlement(nextEntitlement);
       setRuntimeStatus(nextRuntimeStatus);
+      setMachineProfile(nextMachineProfile);
       setModelStatuses(Object.fromEntries(statusEntries));
     } catch (loadError) {
       showSettingsError("AI settings failed", loadError);
@@ -330,6 +470,74 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
 
     return usage;
   }, [preferences]);
+
+  const modelById = useMemo(
+    () => new Map(catalog.map((model) => [model.id, model])),
+    [catalog],
+  );
+
+  const warmModelIds = preferences?.warmModelIds ?? [];
+  const warmSignature = useMemo(
+    () => warmModelIds.slice().sort().join("|"),
+    [warmModelIds],
+  );
+
+  const warmMemoryTotal = useCallback(
+    (modelIds: readonly string[]) =>
+      modelIds.reduce((total, modelId) => {
+        return total + (getWarmMemoryEstimateGb(modelById.get(modelId)) ?? 0);
+      }, 0),
+    [modelById],
+  );
+
+  const buildWarmConfirmation = useCallback(
+    (
+      modelId: string,
+      nextWarmModelIds: readonly string[],
+    ): WarmConfirmation | null => {
+      const model = modelById.get(modelId);
+      if (!model) return null;
+
+      const warmMemoryClass = getWarmMemoryClass(model);
+      if (!hasWarmMetadata(model) || !warmMemoryClass) return null;
+
+      const totalWarmMemoryGb = warmMemoryTotal(nextWarmModelIds);
+      const totalMemoryGb = machineProfile?.totalMemoryGb ?? null;
+      const memoryShare =
+        totalMemoryGb && totalMemoryGb > 0
+          ? totalWarmMemoryGb / totalMemoryGb
+          : null;
+      const largeModel =
+        warmMemoryClass === "large" || warmMemoryClass === "veryLarge";
+      const exceedsBaseline =
+        totalWarmMemoryGb > WARM_MEMORY_WARNING_BASELINE_GB;
+      const exceedsShare =
+        memoryShare !== null && memoryShare >= WARM_MEMORY_HIGH_SHARE;
+
+      if (!largeModel && !exceedsBaseline && !exceedsShare) {
+        return null;
+      }
+
+      const severity =
+        warmMemoryClass === "veryLarge" ||
+        (memoryShare !== null && memoryShare >= WARM_MEMORY_VERY_HIGH_SHARE)
+          ? "This is a very large warmup selection."
+          : "This warmup selection may reserve noticeable memory.";
+
+      const machineMemory = totalMemoryGb
+        ? ` Machine memory: ${formatGigabytes(totalMemoryGb)}.`
+        : "";
+
+      return {
+        modelId,
+        title: "Keep model warm?",
+        description:
+          "Gitano will ask the local AI runtime to keep selected models loaded for faster first responses.",
+        details: `${severity} Estimated warm memory: ${formatGigabytes(totalWarmMemoryGb)}.${machineMemory}`,
+      };
+    },
+    [machineProfile?.totalMemoryGb, modelById, warmMemoryTotal],
+  );
 
   const selectedModelIdForAction = (actionKind: LocalAiActionKind) =>
     preferences?.actionModelIds[actionKind] ?? "";
@@ -395,6 +603,17 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     }
   };
 
+  const handleWarmConfiguredModels = useCallback(async () => {
+    try {
+      const response = await warmConfiguredLocalAiModels();
+      if (response.failures.length > 0) {
+        setSettingsError(describeWarmupFailures(response.failures));
+      }
+    } catch (warmError) {
+      showSettingsError("Model warmup failed", warmError);
+    }
+  }, [showSettingsError]);
+
   const handleSetPreference = async (
     modelId: string,
     actionKind?: LocalAiActionKind | null,
@@ -433,6 +652,61 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     }
   };
 
+  const handleSetWarmPreference = useCallback(
+    async (modelId: string, warm: boolean) => {
+      setSettingsError(null);
+      setWarmSavingModelIds((current) => ({
+        ...current,
+        [modelId]: true,
+      }));
+
+      try {
+        const nextPreferences = await setLocalAiModelWarmPreference({
+          modelId,
+          warm,
+        });
+        setPreferences(nextPreferences);
+      } catch (warmPreferenceError) {
+        showSettingsError("Model warmup preference failed", warmPreferenceError);
+      } finally {
+        setWarmSavingModelIds((current) => {
+          const next = { ...current };
+          delete next[modelId];
+          return next;
+        });
+      }
+    },
+    [showSettingsError],
+  );
+
+  const handleWarmToggle = useCallback(
+    (modelId: string, warm: boolean) => {
+      if (warm) {
+        const nextWarmModelIds = warmModelIdsWithToggle(
+          warmModelIds,
+          modelId,
+          true,
+        );
+        const confirmation = buildWarmConfirmation(modelId, nextWarmModelIds);
+        if (confirmation) {
+          setWarmConfirmation(confirmation);
+          return;
+        }
+      }
+
+      void handleSetWarmPreference(modelId, warm);
+    },
+    [buildWarmConfirmation, handleSetWarmPreference, warmModelIds],
+  );
+
+  useEffect(() => {
+    if (!open || !warmSignature) return;
+    if (lastWarmSignatureRef.current === warmSignature) return;
+
+    lastWarmSignatureRef.current = warmSignature;
+    void handleWarmConfiguredModels();
+  }, [handleWarmConfiguredModels, open, warmSignature]);
+
   if (!open) return null;
 
   const runtimeActionLabel = runtimeStatus?.installed
@@ -451,7 +725,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="flex h-[min(720px,88vh)] w-[min(980px,96vw)] overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+        className="relative flex h-[min(720px,88vh)] w-[min(980px,96vw)] overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
       >
         <aside className="flex w-56 flex-shrink-0 flex-col border-r border-border bg-background-emphasis">
           <div className="flex h-16 flex-shrink-0 flex-col justify-center border-b border-border px-4">
@@ -610,40 +884,62 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                 {catalog.map((model) => {
                   const status = modelStatuses[model.id];
                   const usage = modelUsageById[model.id] ?? [];
+                  const warmMetadataAvailable = hasWarmMetadata(model);
+                  const warmChecked = warmModelIds.includes(model.id);
+                  const warmDisabled =
+                    !warmMetadataAvailable ||
+                    !status?.ready ||
+                    setupInProgress ||
+                    Boolean(warmSavingModelIds[model.id]);
+                  const warmDisabledReason = !warmMetadataAvailable
+                    ? "Restart Gitano to enable warmup for this model."
+                    : !status?.ready
+                      ? "Download the model before keeping it warm."
+                      : null;
                   return (
                     <SettingsRow
                       key={model.id}
                       title={model.displayName}
-                      description={`${model.id} - ${model.downloadSizeGb.toFixed(1)}GB - ${formatContext(model.contextWindow)} context${
+                      description={`${model.id} - ${model.downloadSizeGb.toFixed(1)}GB download - ${formatContext(model.contextWindow)} context - ${formatWarmMemoryDetails(model)}${
                         usage.length > 0 ? ` - Used by: ${usage.join(", ")}` : ""
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <ValuePill>{getModelStatusLabel(status)}</ValuePill>
-                        {status?.ready ? (
-                          <ActionButton
-                            variant="danger"
-                            disabled={setupInProgress}
-                            onClick={() => {
-                              void handleDeleteModel(model.id);
-                            }}
-                          >
-                            Delete
-                          </ActionButton>
-                        ) : (
-                          <ActionButton
-                            disabled={
-                              setupInProgress ||
-                              entitlement?.entitled === false
-                            }
-                            onClick={() => {
-                              void handlePrepareModel(model.id);
-                            }}
-                          >
-                            <IconCloudDownload size={16} />
-                            Download
-                          </ActionButton>
-                        )}
+                      <div className="flex w-full flex-col items-end gap-2">
+                        <div className="flex items-center gap-2">
+                          <ValuePill>{getModelStatusLabel(status)}</ValuePill>
+                          {status?.ready ? (
+                            <ActionButton
+                              variant="danger"
+                              disabled={setupInProgress}
+                              onClick={() => {
+                                void handleDeleteModel(model.id);
+                              }}
+                            >
+                              Delete
+                            </ActionButton>
+                          ) : (
+                            <ActionButton
+                              disabled={
+                                setupInProgress ||
+                                entitlement?.entitled === false
+                              }
+                              onClick={() => {
+                                void handlePrepareModel(model.id);
+                              }}
+                            >
+                              <IconCloudDownload size={16} />
+                              Download
+                            </ActionButton>
+                          )}
+                        </div>
+                        <WarmModelCheckbox
+                          checked={warmChecked}
+                          disabled={warmDisabled}
+                          reason={warmDisabledReason}
+                          onChange={(checked) => {
+                            handleWarmToggle(model.id, checked);
+                          }}
+                        />
                       </div>
                     </SettingsRow>
                   );
@@ -691,6 +987,10 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                   const selectedModelStatus = selectedModelId
                     ? modelStatuses[selectedModelId]
                     : null;
+                  const selectedModel = selectedModelId
+                    ? modelById.get(selectedModelId)
+                    : null;
+                  const warmMetadataAvailable = hasWarmMetadata(selectedModel);
                   const selectedMissing =
                     !selectedModelId || selectedModelStatus?.ready === false;
                   return (
@@ -729,6 +1029,27 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                             </option>
                           ))}
                         </SelectControl>
+                        {selectedModel ? (
+                          <WarmModelCheckbox
+                            checked={warmModelIds.includes(selectedModel.id)}
+                            disabled={
+                              !warmMetadataAvailable ||
+                              !selectedModelStatus?.ready ||
+                              setupInProgress ||
+                              Boolean(warmSavingModelIds[selectedModel.id])
+                            }
+                            reason={
+                              !warmMetadataAvailable
+                                ? "Restart Gitano to enable warmup for this model."
+                                : !selectedModelStatus?.ready
+                                  ? "Download the model before keeping it warm."
+                                  : null
+                            }
+                            onChange={(checked) => {
+                              handleWarmToggle(selectedModel.id, checked);
+                            }}
+                          />
+                        ) : null}
                       </div>
                     </SettingsRow>
                   );
@@ -738,6 +1059,52 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
           </div>
           </div>
         </main>
+        {warmConfirmation ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 px-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={warmConfirmation.title}
+              className="w-full max-w-sm overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+            >
+              <div className="border-b border-border bg-background-emphasis px-4 py-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {warmConfirmation.title}
+                </h3>
+              </div>
+              <div className="px-4 py-4">
+                <p className="text-sm leading-5 text-zinc-200">
+                  {warmConfirmation.description}
+                </p>
+                <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+                  {warmConfirmation.details}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 border-t border-border bg-background-emphasis px-4 py-3">
+                <button
+                  type="button"
+                  className="h-8 rounded border border-border bg-background px-3 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+                  onClick={() => {
+                    setWarmConfirmation(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-8 rounded border border-blue-500/50 bg-blue-500/20 px-3 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30"
+                  onClick={() => {
+                    const modelId = warmConfirmation.modelId;
+                    setWarmConfirmation(null);
+                    void handleSetWarmPreference(modelId, true);
+                  }}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

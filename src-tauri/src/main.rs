@@ -4,11 +4,20 @@
 mod ai;
 mod git;
 
+use std::time::Duration;
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(|_app| {
+            std::thread::spawn(|| loop {
+                tauri::async_runtime::block_on(ai::warm_configured_models_background());
+                std::thread::sleep(Duration::from_secs(20 * 60));
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             git::open_local_repo,
             git::get_repository_state,
@@ -76,6 +85,7 @@ fn main() {
             ai::ai_get_model_catalog,
             ai::ai_get_model_preferences,
             ai::ai_set_model_preference,
+            ai::ai_set_model_warm_preference,
             ai::ai_get_machine_profile,
             ai::ai_get_model_status,
             ai::ai_get_runtime_status,
@@ -83,6 +93,7 @@ fn main() {
             ai::ai_prepare_runtime,
             ai::ai_prepare_model,
             ai::ai_delete_model,
+            ai::ai_warm_configured_models,
             ai::ai_run_action,
         ])
         .run(tauri::generate_context!())

@@ -58,6 +58,15 @@ pub enum LocalAiModelQualityTier {
     Experimental,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalAiModelWarmMemoryClass {
+    Small,
+    Medium,
+    Large,
+    VeryLarge,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAiModelRequirements {
@@ -77,8 +86,16 @@ pub struct LocalAiModelEntry {
     pub download_size_gb: f64,
     pub context_window: usize,
     pub action_suitability: Vec<LocalAiActionKind>,
+    pub warm_memory_estimate_gb: f64,
+    pub warm_memory_class: LocalAiModelWarmMemoryClass,
     pub min_requirements: LocalAiModelRequirements,
     pub recommended_requirements: LocalAiModelRequirements,
+}
+
+pub const DEFAULT_KEEP_ALIVE_MINUTES: u64 = 30;
+
+fn default_keep_alive_minutes() -> u64 {
+    DEFAULT_KEEP_ALIVE_MINUTES
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -86,6 +103,10 @@ pub struct LocalAiModelEntry {
 pub struct LocalAiPreferences {
     pub global_model_id: String,
     pub action_model_ids: HashMap<String, String>,
+    #[serde(default)]
+    pub warm_model_ids: Vec<String>,
+    #[serde(default = "default_keep_alive_minutes")]
+    pub keep_alive_minutes: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -212,6 +233,27 @@ pub struct LocalAiSetModelPreferenceRequest {
     pub model_id: Option<String>,
     #[serde(default)]
     pub action_kind: Option<LocalAiActionKind>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiSetModelWarmPreferenceRequest {
+    pub model_id: String,
+    pub warm: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiWarmModelFailure {
+    pub model_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiWarmModelsResponse {
+    pub warmed_model_ids: Vec<String>,
+    pub failures: Vec<LocalAiWarmModelFailure>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -357,5 +399,17 @@ mod tests {
 
         assert_eq!(request.model_id, None);
         assert_eq!(request.action_kind, Some(LocalAiActionKind::CommitMessage));
+    }
+
+    #[test]
+    fn deserializes_old_preferences_with_warm_defaults() {
+        let preferences: LocalAiPreferences = serde_json::from_value(serde_json::json!({
+            "globalModelId": "phi4-mini",
+            "actionModelIds": {}
+        }))
+        .expect("deserialize old preferences");
+
+        assert!(preferences.warm_model_ids.is_empty());
+        assert_eq!(preferences.keep_alive_minutes, DEFAULT_KEEP_ALIVE_MINUTES);
     }
 }
