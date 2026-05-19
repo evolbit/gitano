@@ -360,6 +360,28 @@ impl OllamaClient {
         Ok(())
     }
 
+    pub async fn unload_model(&self, model_id: &str) -> Result<(), String> {
+        let request = OllamaGenerateRequest {
+            model: model_id,
+            prompt: "",
+            stream: false,
+            format: None,
+            options: None,
+            keep_alive: "0",
+        };
+
+        self.client
+            .post(self.url("/api/generate"))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Local AI unload failed for {}: {}", model_id, e))?
+            .error_for_status()
+            .map_err(|e| format!("Local AI unload failed for {}: {}", model_id, e))?;
+
+        Ok(())
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.endpoint, path)
     }
@@ -552,6 +574,24 @@ mod tests {
 
         assert_eq!(value["keep_alive"], "30m");
         assert!(value.get("format").is_none());
+    }
+
+    #[test]
+    fn unload_request_uses_zero_keep_alive() {
+        let request = OllamaGenerateRequest {
+            model: "phi4-mini",
+            prompt: "",
+            stream: false,
+            format: None,
+            options: None,
+            keep_alive: "0",
+        };
+
+        let value = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(value["keep_alive"], "0");
+        assert!(value.get("format").is_none());
+        assert!(value.get("options").is_none());
     }
 
     #[test]

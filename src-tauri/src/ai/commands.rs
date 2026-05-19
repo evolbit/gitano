@@ -68,11 +68,10 @@ pub async fn ai_set_model_warm_preference(
     ensure_entitled()?;
     let model = ensure_supported_model(&request.model_id)?;
 
+    let client = OllamaClient::from_env();
     if request.warm {
         start_managed_runtime_if_installed().await?;
-        let status = OllamaClient::from_env()
-            .model_status(&request.model_id)
-            .await;
+        let status = client.model_status(&request.model_id).await;
         if !status.runtime.available {
             return Err(status
                 .runtime
@@ -87,7 +86,17 @@ pub async fn ai_set_model_warm_preference(
         }
     }
 
-    set_warm_model_preference(&request.model_id, request.warm)
+    let preferences = set_warm_model_preference(&request.model_id, request.warm)?;
+
+    if request.warm {
+        client
+            .warm_model(&request.model_id, &keep_alive_duration(&preferences))
+            .await?;
+    } else {
+        unload_model_if_runtime_available(&request.model_id).await?;
+    }
+
+    Ok(preferences)
 }
 
 #[tauri::command]
@@ -406,6 +415,18 @@ async fn warm_configured_models() -> Result<LocalAiWarmModelsResponse, String> {
         warmed_model_ids,
         failures,
     })
+}
+
+async fn unload_model_if_runtime_available(model_id: &str) -> Result<(), String> {
+    start_managed_runtime_if_installed().await?;
+    let client = OllamaClient::from_env();
+    let status = client.model_status(model_id).await;
+
+    if !status.runtime.available || !status.running {
+        return Ok(());
+    }
+
+    client.unload_model(model_id).await
 }
 
 fn keep_alive_duration(preferences: &LocalAiPreferences) -> String {

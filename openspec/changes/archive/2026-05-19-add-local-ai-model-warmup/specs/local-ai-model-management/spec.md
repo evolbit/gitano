@@ -20,11 +20,13 @@ The system SHALL persist which downloaded local AI models the user wants Gitano 
 - **WHEN** the user checks `Keep this model warm` for a downloaded supported model
 - **THEN** the backend MUST persist that model id in local AI warm preferences
 - **AND** future settings loads MUST show the checkbox as selected
+- **AND** the backend MUST immediately start the local runtime when needed and send a keep-alive warmup request for that model
 
 #### Scenario: User disables warmup for a model
 - **WHEN** the user clears `Keep this model warm` for a supported model
 - **THEN** the backend MUST remove that model id from local AI warm preferences
 - **AND** future warmup passes MUST NOT warm that model
+- **AND** the backend MUST ask the local runtime to unload the model when it is currently running
 
 #### Scenario: Warm model is deleted
 - **WHEN** a model that is selected for warmup is deleted
