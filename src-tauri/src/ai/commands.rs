@@ -6,7 +6,7 @@ use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
     find_model, load_preferences, model_catalog, reconcile_preferences_after_model_delete,
     reconcile_preferences_with_available_models, resolve_model_id,
-    set_first_downloaded_model_as_global_default, set_model_preference,
+    set_first_downloaded_model_as_global_default, set_model_preference, set_warm_model_preference,
     NO_AI_MODELS_AVAILABLE_MESSAGE,
 };
 use super::ollama::{emit_failed_progress, OllamaClient};
@@ -21,7 +21,8 @@ use super::types::{
     LocalAiMachineProfile, LocalAiModelEntry, LocalAiModelStatus, LocalAiPreferences,
     LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
     LocalAiPrepareRuntimeResponse, LocalAiRunRequest, LocalAiRunResult, LocalAiRuntimeSetupStatus,
-    LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest,
+    LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
+    LocalAiWarmModelFailure, LocalAiWarmModelsResponse,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -58,6 +59,35 @@ pub fn ai_set_model_preference(
         request.model_id.as_deref().unwrap_or(""),
         request.action_kind,
     )
+}
+
+#[tauri::command]
+pub async fn ai_set_model_warm_preference(
+    request: LocalAiSetModelWarmPreferenceRequest,
+) -> Result<LocalAiPreferences, String> {
+    ensure_entitled()?;
+    let model = ensure_supported_model(&request.model_id)?;
+
+    if request.warm {
+        start_managed_runtime_if_installed().await?;
+        let status = OllamaClient::from_env()
+            .model_status(&request.model_id)
+            .await;
+        if !status.runtime.available {
+            return Err(status
+                .runtime
+                .error
+                .unwrap_or_else(|| "Local AI runtime is unavailable.".to_string()));
+        }
+        if !status.ready {
+            return Err(format!(
+                "Download {} before keeping it warm.",
+                model.display_name
+            ));
+        }
+    }
+
+    set_warm_model_preference(&request.model_id, request.warm)
 }
 
 #[tauri::command]
@@ -240,6 +270,20 @@ pub async fn ai_delete_model(model_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn ai_warm_configured_models() -> Result<LocalAiWarmModelsResponse, String> {
+    ensure_entitled()?;
+    warm_configured_models().await
+}
+
+pub async fn warm_configured_models_background() {
+    if ensure_entitled().is_err() {
+        return;
+    }
+
+    let _ = warm_configured_models().await;
+}
+
+#[tauri::command]
 pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResult, String> {
     ensure_entitled()?;
     start_managed_runtime_if_installed().await?;
@@ -256,7 +300,7 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
     if available_model_ids.is_empty() {
         return Err(NO_AI_MODELS_AVAILABLE_MESSAGE.to_string());
     }
-    reconcile_preferences_with_available_models(&available_model_ids)?;
+    let preferences = reconcile_preferences_with_available_models(&available_model_ids)?;
 
     let model_id = resolve_model_id(request.action_kind, request.model_id.as_deref())?;
     let model = ensure_supported_model(&model_id)?;
@@ -303,6 +347,7 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
             &prompt,
             request.action_kind,
             model.context_window,
+            &keep_alive_duration(&preferences),
         )
         .await?;
     let structured = parse_structured_result(request.action_kind, &raw_response)?;
@@ -324,6 +369,48 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
 
 fn ensure_supported_model(model_id: &str) -> Result<LocalAiModelEntry, String> {
     find_model(model_id).ok_or_else(|| format!("Unsupported local AI model: {}", model_id))
+}
+
+async fn warm_configured_models() -> Result<LocalAiWarmModelsResponse, String> {
+    start_managed_runtime_if_installed().await?;
+    let client = OllamaClient::from_env();
+    let runtime = client.runtime_status().await;
+
+    if !runtime.available {
+        return Err(runtime
+            .error
+            .unwrap_or_else(|| "Local AI runtime is unavailable.".to_string()));
+    }
+
+    let available_model_ids = client.installed_supported_model_ids().await?;
+    let preferences = reconcile_preferences_with_available_models(&available_model_ids)?;
+    let keep_alive = keep_alive_duration(&preferences);
+    let mut warmed_model_ids = Vec::new();
+    let mut failures = Vec::new();
+
+    for model_id in preferences.warm_model_ids {
+        if !available_model_ids
+            .iter()
+            .any(|available| available == &model_id)
+        {
+            continue;
+        }
+
+        match client.warm_model(&model_id, &keep_alive).await {
+            Ok(()) => warmed_model_ids.push(model_id),
+            Err(error) => failures.push(LocalAiWarmModelFailure { model_id, error }),
+        }
+    }
+
+    Ok(LocalAiWarmModelsResponse {
+        warmed_model_ids,
+        failures,
+    })
+}
+
+fn keep_alive_duration(preferences: &LocalAiPreferences) -> String {
+    let minutes = preferences.keep_alive_minutes.clamp(1, 240);
+    format!("{}m", minutes)
 }
 
 fn operation_id(model_id: &str) -> String {
@@ -358,5 +445,15 @@ mod tests {
         let id = operation_id("qwen2.5-coder:7b");
 
         assert!(id.starts_with("local-ai-qwen2.5-coder-7b-"));
+    }
+
+    #[test]
+    fn keep_alive_duration_defaults_to_minutes() {
+        let mut preferences = super::super::models::default_preferences();
+
+        assert_eq!(keep_alive_duration(&preferences), "30m");
+
+        preferences.keep_alive_minutes = 0;
+        assert_eq!(keep_alive_duration(&preferences), "1m");
     }
 }
