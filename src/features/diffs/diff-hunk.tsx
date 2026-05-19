@@ -461,7 +461,7 @@ const UnifiedLineRow: React.FC<{
               {lineAccessory}
             </span>
           ) : null}
-          <span className="min-w-0 flex-1 whitespace-pre-wrap pt-1">
+          <span className="min-w-0 flex-1 whitespace-pre pt-1">
             {line.content}
           </span>
         </div>
@@ -617,12 +617,12 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
       gridTemplateColumns: "minmax(0,1fr) 2.5rem 1.5rem 1.5rem 2.5rem minmax(0,1fr)",
     }}
   >
-    <span className="px-4 pt-1 whitespace-pre-wrap">{line.content}</span>
+    <span className="px-4 pt-1 whitespace-pre">{line.content}</span>
     <span className="flex items-start justify-end pr-2 pt-1">{line.old_lineno ?? ""}</span>
     <span />
     <span />
     <span className="flex items-start justify-end pr-2 pt-1">{line.new_lineno ?? ""}</span>
-    <span className="px-4 pt-1 whitespace-pre-wrap">{line.content}</span>
+    <span className="px-4 pt-1 whitespace-pre">{line.content}</span>
   </div>
 );
 
@@ -636,7 +636,7 @@ const SplitSideCell: React.FC<{
   onMouseEnter?: () => void;
 }> = ({ cell, tone, lineAccessory, lineBelow, onMouseDown, onMouseEnter }) => (
   <div
-    className={`min-w-0 whitespace-pre-wrap px-4 pt-1 ${tone} ${
+    className={`min-w-0 whitespace-pre px-4 pt-1 ${tone} ${
       cell && onMouseDown ? "cursor-pointer" : ""
     }`}
     onMouseDown={cell ? onMouseDown : undefined}

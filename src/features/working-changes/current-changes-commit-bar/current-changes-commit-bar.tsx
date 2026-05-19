@@ -343,12 +343,16 @@ export default function CurrentChangesCommitBar({
   return (
     <div className="border-t border-border bg-background-emphasis px-2 pb-2 pt-1.5">
       <div className="flex flex-col gap-1.5">
-        <div className="relative">
+        <div
+          role="group"
+          aria-label="Commit message controls"
+          className="overflow-visible rounded border border-border bg-background"
+        >
           <textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             placeholder="Enter commit message"
-            className="h-20 w-full resize-none rounded border border-border bg-background px-2 py-1.5 pb-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            className="h-20 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             disabled={isBusy}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -361,122 +365,134 @@ export default function CurrentChangesCommitBar({
               }
             }}
           />
-          <button
-            type="button"
-            onClick={() => {
-              void handleGenerateCommitMessage();
-            }}
-            disabled={isBusy || !hasStagedChanges}
-            className="absolute bottom-4 left-2 inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-zinc-800 text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-            title={
-              aiLoading
-                ? "Generating commit message"
-                : "Generate commit message locally"
-            }
+          <div
+            role="group"
+            aria-label="Commit actions"
+            className="flex h-10 items-center justify-between gap-2 border-t border-border px-2 py-1"
           >
-            <IconSparkles size={14} />
-            <span className="sr-only">
-              {aiLoading
-                ? "Generating commit message"
-                : "Generate commit message"}
-            </span>
-          </button>
-        </div>
-        <div className="flex h-8 items-center justify-between gap-2">
-          <div className="flex h-8 items-center gap-3 text-xs text-zinc-300">
-            <label className="inline-flex h-8 items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={push}
-                onChange={(event) => setPush(event.target.checked)}
-                disabled={isBusy || requiresInitialCommit}
-                title={
-                  requiresInitialCommit
-                    ? "Create the initial commit before pushing"
-                    : undefined
+            <div className="flex min-w-0 items-center gap-3 text-xs text-zinc-300">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleGenerateCommitMessage();
+                }}
+                disabled={isBusy || !hasStagedChanges}
+                aria-label={
+                  aiLoading
+                    ? "Generating commit message"
+                    : "Generate commit message"
                 }
-              />
-              Push
-            </label>
-          </div>
-          <div className="relative inline-flex h-8 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                void handleCommit();
-              }}
-              disabled={isBusy || !message.trim() || !hasStagedChanges}
-              className="h-8 rounded-l border border-r-0 border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {amend ? "Amend" : "Commit"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCommitMenu((prev) => !prev)}
-              disabled={isBusy}
-              className="h-8 rounded-r border border-border bg-zinc-800 px-2 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Commit options"
-            >
-              <IconChevronDown size={14} />
-            </button>
-            {showCommitMenu ? (
-              <div className="absolute bottom-9 right-0 z-[10020] min-w-[120px] rounded border border-zinc-700 bg-zinc-900 text-xs text-zinc-100 shadow-lg">
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800"
-                  onClick={() => {
-                    setAmend(false);
-                    setShowCommitMenu(false);
-                  }}
-                >
-                  Commit
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
-                  onClick={() => {
-                    setAmend(true);
-                    setShowCommitMenu(false);
-                  }}
-                  disabled={requiresInitialCommit}
-                  title={
-                    requiresInitialCommit
-                      ? "Create the initial commit before amending"
-                      : undefined
-                  }
-                >
-                  Amend
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
-                  onClick={() => {
-                    void handleStashSelection();
-                  }}
-                  disabled={
-                    isBusy || !hasStagedChanges || requiresInitialCommit
-                  }
-                  title={
-                    requiresInitialCommit
-                      ? "Create the initial commit before stashing"
-                      : undefined
-                  }
-                >
-                  Stash
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
-                  onClick={() => {
-                    setShowCommitMenu(false);
-                    void handleSuggestConflictResolution();
-                  }}
+                aria-busy={aiLoading}
+                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-border bg-zinc-800 text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title={
+                  aiLoading
+                    ? "Generating commit message"
+                    : "Generate commit message locally"
+                }
+              >
+                {aiLoading ? (
+                  <span
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500/40 border-t-zinc-100"
+                  />
+                ) : (
+                  <IconSparkles size={14} aria-hidden="true" />
+                )}
+              </button>
+              <label className="inline-flex h-8 items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={push}
+                  onChange={(event) => setPush(event.target.checked)}
                   disabled={isBusy || requiresInitialCommit}
-                >
-                  Suggest conflicts
-                </button>
-              </div>
-            ) : null}
+                  title={
+                    requiresInitialCommit
+                      ? "Create the initial commit before pushing"
+                      : undefined
+                  }
+                />
+                Push
+              </label>
+            </div>
+            <div className="relative inline-flex h-8 flex-shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCommit();
+                }}
+                disabled={isBusy || !message.trim() || !hasStagedChanges}
+                className="h-8 rounded-l border border-r-0 border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {amend ? "Amend" : "Commit"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCommitMenu((prev) => !prev)}
+                disabled={isBusy}
+                className="h-8 rounded-r border border-border bg-zinc-800 px-2 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Commit options"
+              >
+                <IconChevronDown size={14} />
+              </button>
+              {showCommitMenu ? (
+                <div className="absolute bottom-9 right-0 z-[10020] min-w-[120px] rounded border border-zinc-700 bg-zinc-900 text-xs text-zinc-100 shadow-lg">
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left hover:bg-zinc-800"
+                    onClick={() => {
+                      setAmend(false);
+                      setShowCommitMenu(false);
+                    }}
+                  >
+                    Commit
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
+                    onClick={() => {
+                      setAmend(true);
+                      setShowCommitMenu(false);
+                    }}
+                    disabled={requiresInitialCommit}
+                    title={
+                      requiresInitialCommit
+                        ? "Create the initial commit before amending"
+                        : undefined
+                    }
+                  >
+                    Amend
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
+                    onClick={() => {
+                      void handleStashSelection();
+                    }}
+                    disabled={
+                      isBusy || !hasStagedChanges || requiresInitialCommit
+                    }
+                    title={
+                      requiresInitialCommit
+                        ? "Create the initial commit before stashing"
+                        : undefined
+                    }
+                  >
+                    Stash
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
+                    onClick={() => {
+                      setShowCommitMenu(false);
+                      void handleSuggestConflictResolution();
+                    }}
+                    disabled={isBusy || requiresInitialCommit}
+                  >
+                    Suggest conflicts
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

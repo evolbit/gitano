@@ -37,4 +37,5 @@ export type ChangesExplorerProps = {
   onImmediateStageChange?: () => Promise<void> | void;
   isLoading?: boolean;
   emptyStateMessage?: string;
+  alignCountColumnWithHeaderActions?: boolean;
 };

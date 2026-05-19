@@ -57,6 +57,7 @@ function ChangesExplorer({
   onImmediateStageChange,
   isLoading = false,
   emptyStateMessage = "No files found",
+  alignCountColumnWithHeaderActions = false,
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
   const deferredFiles = useDeferredValue(files);
@@ -544,6 +545,9 @@ function ChangesExplorer({
                   onSelectFile={handleSelectFile}
                   onOpenFileContextMenu={openFileContextMenu}
                   onToggleFileSelection={toggleFileSelection}
+                  alignCountColumnWithHeaderActions={
+                    alignCountColumnWithHeaderActions
+                  }
                 />
               ))}
             </ChangesExplorerSection>
@@ -571,6 +575,9 @@ function ChangesExplorer({
                 onToggleFileSelection={toggleFileSelection}
                 onToggleFolderSelection={toggleFolderSelection}
                 getFolderCheckboxState={getFolderCheckboxState}
+                alignCountColumnWithHeaderActions={
+                  alignCountColumnWithHeaderActions
+                }
               />
             </ChangesExplorerSection>
           ))

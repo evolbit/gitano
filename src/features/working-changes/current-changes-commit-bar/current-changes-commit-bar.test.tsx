@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocalAiStore } from "@/features/local-ai/store";
@@ -172,6 +179,27 @@ describe("CurrentChangesCommitBar", () => {
     expect(screen.getByRole("button", { name: "Stash" })).toBeDisabled();
   });
 
+  it("renders commit actions inside the commit message frame", () => {
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    const commitMessageFrame = screen.getByRole("group", {
+      name: "Commit message controls",
+    });
+    const frame = within(commitMessageFrame);
+
+    expect(
+      frame.getByPlaceholderText("Enter commit message"),
+    ).toBeInTheDocument();
+    expect(
+      frame.getByRole("group", { name: "Commit actions" }),
+    ).toBeInTheDocument();
+    expect(
+      frame.getByRole("button", { name: /generate commit message/i }),
+    ).toBeInTheDocument();
+    expect(frame.getByLabelText("Push")).toBeInTheDocument();
+    expect(frame.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+  });
+
   it("fills the commit message from local AI generation", async () => {
     const user = userEvent.setup();
     getRepositoryStateMock.mockResolvedValue({
@@ -206,6 +234,57 @@ describe("CurrentChangesCommitBar", () => {
     expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
       "Add local AI foundation",
     );
+  });
+
+  it("shows a loading affordance while generating a commit message", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+
+    let resolveGeneration: (value: unknown) => void = () => undefined;
+    localAiMocks.runLocalAiAction.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeneration = resolve;
+      }),
+    );
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    await user.click(
+      screen.getByRole("button", { name: /generate commit message/i }),
+    );
+
+    const loadingButton = await screen.findByRole("button", {
+      name: /generating commit message/i,
+    });
+    expect(loadingButton).toBeDisabled();
+    expect(loadingButton).toHaveAttribute("aria-busy", "true");
+    expect(loadingButton.querySelector(".animate-spin")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveGeneration({
+        result: {
+          kind: "commitMessage",
+          data: {
+            message: "Add generated commit message",
+            alternatives: [],
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
+        "Add generated commit message",
+      );
+    });
   });
 
   it("continues commit message generation after local AI setup completes", async () => {

@@ -51,6 +51,7 @@ type TreeNodeRowProps = {
   getFolderCheckboxState: (
     filesInFolder: ChangesExplorerFile[],
   ) => ChangesExplorerCheckboxState;
+  alignCountColumnWithHeaderActions?: boolean;
 };
 
 export const TreeNodeRow = memo(function TreeNodeRow({
@@ -69,6 +70,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   onToggleFileSelection,
   onToggleFolderSelection,
   getFolderCheckboxState,
+  alignCountColumnWithHeaderActions = false,
 }: TreeNodeRowProps) {
   if (node.kind === "folder") {
     const expansionKey = getFolderExpansionKey(sectionName, node.path);
@@ -135,6 +137,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             onToggleFileSelection={onToggleFileSelection}
             onToggleFolderSelection={onToggleFolderSelection}
             getFolderCheckboxState={getFolderCheckboxState}
+            alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
           />
         ) : null}
       </div>
@@ -166,7 +169,11 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       <ChangesExplorerStatusIcon file={node.file} />
       <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
       {!isUntrackedFile(node.file) ? (
-        <div className="ml-2 flex w-14 flex-shrink-0 items-center justify-end gap-1.5 text-xs">
+        <div
+          className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
+            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+          }`}
+        >
           <span className="min-w-0 text-right text-lime-400">
             +{node.file.insertions}
           </span>

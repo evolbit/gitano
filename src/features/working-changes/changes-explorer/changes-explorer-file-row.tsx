@@ -18,6 +18,7 @@ type FileRowProps = {
     y: number,
   ) => void;
   onToggleFileSelection: (file: ChangesExplorerFile) => void;
+  alignCountColumnWithHeaderActions?: boolean;
 };
 
 export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
@@ -28,6 +29,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
   onSelectFile,
   onOpenFileContextMenu,
   onToggleFileSelection,
+  alignCountColumnWithHeaderActions = false,
 }: FileRowProps) {
   const isSelected = selectedPath === file.path;
   const fileName = getFileName(file.path);
@@ -60,7 +62,11 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
         </div>
       </div>
       {!isUntrackedFile(file) ? (
-        <div className="ml-2 flex w-14 flex-shrink-0 items-center justify-end gap-1.5 text-xs">
+        <div
+          className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
+            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+          }`}
+        >
           <span className="min-w-0 text-right text-lime-400">
             +{file.insertions}
           </span>

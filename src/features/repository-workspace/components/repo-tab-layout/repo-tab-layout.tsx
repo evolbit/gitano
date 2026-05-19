@@ -303,6 +303,7 @@ const RepoTabLayout: React.FC = () => {
                         if (!repoPath) return;
                         setMainChangesExpanded(repoPath, expanded);
                       }}
+                      alignCountColumnWithHeaderActions
                       isLoading={loading && changes.length === 0}
                       emptyStateMessage={
                         hasLoadedOnce ? "There are no current changes" : ""
