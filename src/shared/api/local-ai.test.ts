@@ -4,6 +4,7 @@ import {
   getLocalAiModelPreferences,
   getLocalAiRuntimeStatus,
   getLocalAiModelStatus,
+  listenToLocalAiRunProgress,
   prepareLocalAiModel,
   prepareLocalAiRuntime,
   runLocalAiAction,
@@ -13,18 +14,20 @@ import {
 } from "./local-ai";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
+const listenToEventMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/shared/platform/tauri/command", () => ({
   invokeCommand: invokeCommandMock,
 }));
 
 vi.mock("@/shared/platform/tauri/events", () => ({
-  listenToEvent: vi.fn(),
+  listenToEvent: listenToEventMock,
 }));
 
 describe("local AI API", () => {
   beforeEach(() => {
     invokeCommandMock.mockReset();
+    listenToEventMock.mockReset();
     globalThis.localStorage.clear();
   });
 
@@ -248,5 +251,28 @@ describe("local AI API", () => {
         forceRefresh: true,
       },
     });
+  });
+
+  it("listens to local AI run progress events", () => {
+    const handler = vi.fn();
+    const progress = {
+      runId: "run-1",
+      actionKind: "commitAnalysis",
+      state: "runningModel",
+      message: "Running local model",
+      error: null,
+    } as const;
+
+    listenToLocalAiRunProgress(handler);
+
+    expect(listenToEventMock).toHaveBeenCalledWith(
+      "local-ai-run-progress",
+      expect.any(Function),
+    );
+
+    const listener = listenToEventMock.mock.calls[0][1];
+    listener({ payload: progress });
+
+    expect(handler).toHaveBeenCalledWith(progress);
   });
 });

@@ -1,7 +1,8 @@
-// Temporarily disabled while measuring warm local AI request latency.
-// use super::cache::{build_cache_key, get_cached_result, put_cached_result};
+use super::cache::{build_cache_key, get_cached_result, put_cached_result};
 use super::entitlement::{ensure_entitled, entitlement_status};
-use super::git_context::build_git_context;
+use super::git_context::{
+    build_commit_analysis_context, build_git_context, LocalAiCommitAnalysisContextStep,
+};
 use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
     find_model, load_preferences, model_catalog, reconcile_preferences_after_model_delete,
@@ -20,12 +21,13 @@ use super::types::{
     LocalAiCompatibility, LocalAiCompatibilityLevel, LocalAiEntitlementStatus,
     LocalAiMachineProfile, LocalAiModelEntry, LocalAiModelStatus, LocalAiPreferences,
     LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
-    LocalAiPrepareRuntimeResponse, LocalAiRunRequest, LocalAiRunResult, LocalAiRuntimeSetupStatus,
-    LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
-    LocalAiWarmModelFailure, LocalAiWarmModelsResponse,
+    LocalAiPrepareRuntimeResponse, LocalAiRunProgress, LocalAiRunProgressState, LocalAiRunRequest,
+    LocalAiRunResult, LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus,
+    LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
+    LocalAiWarmModelFailure, LocalAiWarmModelsResponse, LOCAL_AI_RUN_PROGRESS_EVENT,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 pub fn ai_get_entitlement_status() -> LocalAiEntitlementStatus {
@@ -293,8 +295,36 @@ pub async fn warm_configured_models_background() {
 }
 
 #[tauri::command]
-pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResult, String> {
+pub async fn ai_run_action(
+    app: AppHandle,
+    request: LocalAiRunRequest,
+) -> Result<LocalAiRunResult, String> {
+    let result = run_action_inner(&app, &request).await;
+    if let Err(error) = &result {
+        emit_run_progress(
+            &app,
+            &request,
+            LocalAiRunProgressState::Failed,
+            "Analysis failed",
+            Some(error.clone()),
+        );
+    }
+
+    result
+}
+
+async fn run_action_inner(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+) -> Result<LocalAiRunResult, String> {
     ensure_entitled()?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::ResolvingCommit,
+        "Resolving commit",
+        None,
+    );
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
     let runtime = client.runtime_status().await;
@@ -333,23 +363,64 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
         .digest
         .clone()
         .unwrap_or_else(|| format!("{}:unknown-digest", model_id));
-    let git_context = build_git_context(&request, model.context_window)?;
-    // Temporarily bypass cache reads while measuring warm local AI request latency.
-    // let cache_key = build_cache_key(
-    //     request.action_kind,
-    //     PROMPT_VERSION,
-    //     &model_digest,
-    //     &request.repo_path,
-    //     &git_context.input_digest,
-    // );
-    //
-    // if !request.force_refresh {
-    //     if let Some(cached) = get_cached_result(&cache_key) {
-    //         return Ok(cached);
-    //     }
-    // }
+    let git_context = if request.action_kind == super::types::LocalAiActionKind::CommitAnalysis {
+        let sha = request
+            .commit_sha
+            .as_deref()
+            .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
+        build_commit_analysis_context(&request.repo_path, sha, model.context_window, |step| {
+            emit_context_progress(app, request, step);
+        })?
+    } else {
+        build_git_context(request, model.context_window)?
+    };
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::CheckingCache,
+        if request.force_refresh {
+            "Bypassing cached analysis"
+        } else {
+            "Checking cache"
+        },
+        None,
+    );
+    let cache_key = build_cache_key(
+        request.action_kind,
+        PROMPT_VERSION,
+        &model_digest,
+        &request.repo_path,
+        &git_context.input_digest,
+    );
+
+    if !request.force_refresh {
+        if let Some(cached) = get_cached_result(&cache_key) {
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::CacheHit,
+                "Using cached analysis",
+                None,
+            );
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::Completed,
+                "Analysis complete",
+                None,
+            );
+            return Ok(cached);
+        }
+    }
 
     let prompt = build_prompt(&git_context);
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::RunningModel,
+        "Running local model",
+        None,
+    );
     let raw_response = client
         .generate_json(
             &model_id,
@@ -359,6 +430,13 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
             &keep_alive_duration(&preferences),
         )
         .await?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::FormattingResult,
+        "Formatting analysis",
+        None,
+    );
     let structured = parse_structured_result(request.action_kind, &raw_response)?;
     let result = LocalAiRunResult {
         action_kind: request.action_kind,
@@ -371,9 +449,65 @@ pub async fn ai_run_action(request: LocalAiRunRequest) -> Result<LocalAiRunResul
         result: structured,
     };
 
-    // Temporarily bypass cache writes while measuring warm local AI request latency.
-    // put_cached_result(cache_key, &result)?;
+    put_cached_result(cache_key, &result)?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::Completed,
+        "Analysis complete",
+        None,
+    );
     Ok(result)
+}
+
+fn emit_context_progress(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    step: LocalAiCommitAnalysisContextStep,
+) {
+    match step {
+        LocalAiCommitAnalysisContextStep::ResolvingCommit => emit_run_progress(
+            app,
+            request,
+            LocalAiRunProgressState::ResolvingCommit,
+            "Resolving commit",
+            None,
+        ),
+        LocalAiCommitAnalysisContextStep::ReadingCommitDiff => emit_run_progress(
+            app,
+            request,
+            LocalAiRunProgressState::ReadingCommitDiff,
+            "Reading commit diff",
+            None,
+        ),
+    }
+}
+
+fn emit_run_progress(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    state: LocalAiRunProgressState,
+    message: &str,
+    error: Option<String>,
+) {
+    if request.action_kind != super::types::LocalAiActionKind::CommitAnalysis {
+        return;
+    }
+
+    let Some(run_id) = request.run_id.as_ref().filter(|run_id| !run_id.is_empty()) else {
+        return;
+    };
+
+    let _ = app.emit(
+        LOCAL_AI_RUN_PROGRESS_EVENT,
+        LocalAiRunProgress {
+            run_id: run_id.clone(),
+            action_kind: request.action_kind,
+            state,
+            message: message.to_string(),
+            error,
+        },
+    );
 }
 
 fn ensure_supported_model(model_id: &str) -> Result<LocalAiModelEntry, String> {

@@ -120,9 +120,7 @@ describe("LocalAiSetupModal", () => {
 
     expect(await screen.findByText("This model may run slowly")).toBeInTheDocument();
     expect(screen.getByText("This model may run slowly.")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Model files are stored inside Gitano's local AI data folder/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Machine:/i)).toBeInTheDocument();
     expect(
       screen.getByText(/free in local AI model storage at \/models/i),
     ).toBeInTheDocument();

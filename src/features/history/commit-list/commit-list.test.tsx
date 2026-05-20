@@ -7,6 +7,8 @@ import CommitList from "./commit-list";
 const getCommitsListPaginatedMock = vi.hoisted(() => vi.fn());
 const getRemoteUrlMock = vi.hoisted(() => vi.fn());
 const getRepositoryStateMock = vi.hoisted(() => vi.fn());
+const listenToLocalAiRunProgressMock = vi.hoisted(() => vi.fn());
+const runLocalAiActionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/shared/api/git/commits", () => ({
   cherryPickCommit: vi.fn(),
@@ -27,6 +29,11 @@ vi.mock("@/shared/api/git/branches", () => ({
 
 vi.mock("@/shared/api/repositories", () => ({
   getRepositoryState: getRepositoryStateMock,
+}));
+
+vi.mock("@/shared/api/local-ai", () => ({
+  listenToLocalAiRunProgress: listenToLocalAiRunProgressMock,
+  runLocalAiAction: runLocalAiActionMock,
 }));
 
 vi.mock("@/shared/platform/clipboard", () => ({
@@ -59,6 +66,9 @@ describe("CommitList", () => {
     getCommitsListPaginatedMock.mockReset();
     getRemoteUrlMock.mockReset();
     getRepositoryStateMock.mockReset();
+    listenToLocalAiRunProgressMock.mockReset();
+    runLocalAiActionMock.mockReset();
+    listenToLocalAiRunProgressMock.mockResolvedValue(vi.fn());
     getCommitsListPaginatedMock.mockResolvedValue({
       commits: [],
       has_more: false,

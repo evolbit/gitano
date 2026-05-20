@@ -1,8 +1,10 @@
+import { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
-import { IconX } from "@/components/icons";
+import { IconCheck, IconCircleDot, IconX } from "@/components/icons";
 import type {
   LocalAiAnalysisResult,
   LocalAiConflictSuggestionsResult,
+  LocalAiRunProgress,
   LocalAiRunResult,
 } from "@/shared/api/local-ai";
 
@@ -12,9 +14,12 @@ type LocalAiResultModalProps = {
   result: LocalAiRunResult | null;
   loading?: boolean;
   error?: string | null;
+  progress?: LocalAiRunProgress[];
   onClose: () => void;
   onRefresh?: () => void;
 };
+
+const PROGRESS_STEP_DELAY_MS = 400;
 
 function severityClass(severity: string) {
   switch (severity) {
@@ -27,6 +32,132 @@ function severityClass(severity: string) {
     default:
       return "border-zinc-600 bg-zinc-800 text-zinc-200";
   }
+}
+
+function isTerminalProgress(state: LocalAiRunProgress["state"]) {
+  return state === "completed" || state === "failed";
+}
+
+function compactProgress(
+  progress: LocalAiRunProgress[],
+): LocalAiRunProgress[] {
+  return progress.reduce<LocalAiRunProgress[]>((items, item) => {
+    const previous = items[items.length - 1];
+    if (previous?.state === item.state) {
+      return items;
+    }
+
+    return [...items, item];
+  }, []);
+}
+
+function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
+  const steps = useMemo(() => compactProgress(progress), [progress]);
+  const [visibleCount, setVisibleCount] = useState(0);
+  const visibleSteps = steps.slice(0, visibleCount);
+  const latestVisibleStep = visibleSteps[visibleSteps.length - 1];
+  const modelRunning =
+    visibleSteps.some((step) => step.state === "runningModel") &&
+    !visibleSteps.some((step) => isTerminalProgress(step.state));
+  const [runningStartedAt, setRunningStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!steps.length) {
+      setVisibleCount(0);
+      return;
+    }
+
+    setVisibleCount((current) =>
+      current === 0 ? 1 : Math.min(current, steps.length),
+    );
+  }, [steps.length]);
+
+  useEffect(() => {
+    if (visibleCount >= steps.length) return;
+
+    const timeout = window.setTimeout(() => {
+      setVisibleCount((current) => Math.min(current + 1, steps.length));
+    }, PROGRESS_STEP_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [steps.length, visibleCount]);
+
+  useEffect(() => {
+    if (!modelRunning) {
+      setRunningStartedAt(null);
+      return;
+    }
+
+    setRunningStartedAt((current) => current ?? Date.now());
+  }, [modelRunning]);
+
+  useEffect(() => {
+    if (!modelRunning) return;
+
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [modelRunning]);
+
+  const elapsedSeconds =
+    modelRunning && runningStartedAt
+      ? Math.max(0, Math.floor((now - runningStartedAt) / 1000))
+      : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {visibleSteps.map((step, index) => {
+          const current = index === visibleSteps.length - 1;
+          const complete = !current || step.state === "completed";
+          const failed = step.state === "failed";
+          return (
+            <div
+              key={`${step.runId}-${step.state}-${index}`}
+              className="flex items-start gap-3 text-sm"
+            >
+              <span
+                className={`mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full border ${
+                  failed
+                    ? "border-red-500/50 text-red-200"
+                    : complete
+                      ? "border-emerald-500/50 text-emerald-200"
+                      : "border-blue-400/60 text-blue-200"
+                }`}
+              >
+                {complete ? <IconCheck size={13} /> : <IconCircleDot size={12} />}
+              </span>
+              <span
+                className={
+                  failed
+                    ? "text-red-100"
+                    : current
+                      ? "text-zinc-100"
+                      : "text-zinc-400"
+                }
+              >
+                {step.state === "runningModel" && modelRunning
+                  ? `${step.message} · ${elapsedSeconds}s`
+                  : step.message}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {modelRunning ? (
+        <div className="rounded border border-border bg-background-emphasis px-3 py-2 text-xs text-zinc-400">
+          Local models can take longer the first time they wake up.
+        </div>
+      ) : null}
+
+      {latestVisibleStep?.state === "failed" && latestVisibleStep.error ? (
+        <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+          {latestVisibleStep.error}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function AnalysisBody({ analysis }: { analysis: LocalAiAnalysisResult }) {
@@ -153,6 +284,7 @@ export function LocalAiResultModal({
   result,
   loading,
   error,
+  progress = [],
   onClose,
   onRefresh,
 }: LocalAiResultModalProps) {
@@ -186,9 +318,13 @@ export function LocalAiResultModal({
 
         <div className="min-h-[220px] overflow-y-auto p-5">
           {loading ? (
-            <div className="flex h-44 items-center justify-center text-sm text-zinc-400">
-              Running local analysis...
-            </div>
+            progress.length ? (
+              <ProgressTimeline progress={progress} />
+            ) : (
+              <div className="flex h-44 items-center justify-center text-sm text-zinc-400">
+                Running local analysis...
+              </div>
+            )
           ) : null}
           {error ? (
             <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">

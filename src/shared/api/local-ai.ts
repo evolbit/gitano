@@ -2,6 +2,7 @@ import { invokeCommand } from "@/shared/platform/tauri/command";
 import { listenToEvent } from "@/shared/platform/tauri/events";
 
 export const LOCAL_AI_PROGRESS_EVENT = "local-ai-progress";
+export const LOCAL_AI_RUN_PROGRESS_EVENT = "local-ai-run-progress";
 
 export type LocalAiActionKind =
   | "commitMessage"
@@ -128,6 +129,24 @@ export type LocalAiDownloadProgress = {
   error: string | null;
 };
 
+export type LocalAiRunProgressState =
+  | "resolvingCommit"
+  | "readingCommitDiff"
+  | "checkingCache"
+  | "cacheHit"
+  | "runningModel"
+  | "formattingResult"
+  | "completed"
+  | "failed";
+
+export type LocalAiRunProgress = {
+  runId: string;
+  actionKind: LocalAiActionKind;
+  state: LocalAiRunProgressState;
+  message: string;
+  error: string | null;
+};
+
 export type LocalAiPrepareModelRequest = {
   modelId: string;
   allowLimited?: boolean;
@@ -168,6 +187,7 @@ export type LocalAiWarmModelsResponse = {
 export type LocalAiRunRequest = {
   repoPath: string;
   actionKind: LocalAiActionKind;
+  runId?: string | null;
   modelId?: string | null;
   forceRefresh?: boolean;
   commitSha?: string | null;
@@ -462,6 +482,15 @@ export function listenToLocalAiProgress(
 ) {
   return listenToEvent<LocalAiDownloadProgress>(
     LOCAL_AI_PROGRESS_EVENT,
+    (event) => handler(event.payload),
+  );
+}
+
+export function listenToLocalAiRunProgress(
+  handler: (progress: LocalAiRunProgress) => void,
+) {
+  return listenToEvent<LocalAiRunProgress>(
+    LOCAL_AI_RUN_PROGRESS_EVENT,
     (event) => handler(event.payload),
   );
 }

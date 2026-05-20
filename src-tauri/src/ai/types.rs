@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const LOCAL_AI_PROGRESS_EVENT: &str = "local-ai-progress";
+pub const LOCAL_AI_RUN_PROGRESS_EVENT: &str = "local-ai-run-progress";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -201,6 +202,29 @@ pub struct LocalAiDownloadProgress {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum LocalAiRunProgressState {
+    ResolvingCommit,
+    ReadingCommitDiff,
+    CheckingCache,
+    CacheHit,
+    RunningModel,
+    FormattingResult,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiRunProgress {
+    pub run_id: String,
+    pub action_kind: LocalAiActionKind,
+    pub state: LocalAiRunProgressState,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalAiPrepareModelRequest {
     pub model_id: String,
     #[serde(default)]
@@ -261,6 +285,8 @@ pub struct LocalAiWarmModelsResponse {
 pub struct LocalAiRunRequest {
     pub repo_path: String,
     pub action_kind: LocalAiActionKind,
+    #[serde(default)]
+    pub run_id: Option<String>,
     pub model_id: Option<String>,
     #[serde(default)]
     pub force_refresh: bool,
@@ -366,6 +392,30 @@ mod tests {
         let value = serde_json::to_value(LocalAiActionKind::CommitMessage).unwrap();
 
         assert_eq!(value, serde_json::json!("commitMessage"));
+    }
+
+    #[test]
+    fn serializes_run_progress_as_camel_case() {
+        let progress = LocalAiRunProgress {
+            run_id: "run-1".to_string(),
+            action_kind: LocalAiActionKind::CommitAnalysis,
+            state: LocalAiRunProgressState::RunningModel,
+            message: "Running local model".to_string(),
+            error: None,
+        };
+
+        let value = serde_json::to_value(progress).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "runId": "run-1",
+                "actionKind": "commitAnalysis",
+                "state": "runningModel",
+                "message": "Running local model",
+                "error": null
+            })
+        );
     }
 
     #[test]

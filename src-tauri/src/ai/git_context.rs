@@ -16,6 +16,12 @@ pub struct LocalAiGitContext {
     pub metadata: LocalAiRunMetadata,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalAiCommitAnalysisContextStep {
+    ResolvingCommit,
+    ReadingCommitDiff,
+}
+
 pub fn build_git_context(
     request: &LocalAiRunRequest,
     context_window: usize,
@@ -51,6 +57,21 @@ pub fn build_git_context(
     Ok(apply_context_budget(
         raw,
         context_budget_chars(request.action_kind, context_window),
+    ))
+}
+
+pub fn build_commit_analysis_context<F>(
+    repo_path: &str,
+    sha: &str,
+    context_window: usize,
+    on_step: F,
+) -> Result<LocalAiGitContext, String>
+where
+    F: FnMut(LocalAiCommitAnalysisContextStep),
+{
+    Ok(apply_context_budget(
+        commit_context_with_progress(repo_path, sha, on_step)?,
+        context_budget_chars(LocalAiActionKind::CommitAnalysis, context_window),
     ))
 }
 
@@ -94,7 +115,20 @@ fn staged_context(repo_path: &str) -> Result<LocalAiGitContext, String> {
 }
 
 fn commit_context(repo_path: &str, sha: &str) -> Result<LocalAiGitContext, String> {
+    commit_context_with_progress(repo_path, sha, |_| {})
+}
+
+fn commit_context_with_progress<F>(
+    repo_path: &str,
+    sha: &str,
+    mut on_step: F,
+) -> Result<LocalAiGitContext, String>
+where
+    F: FnMut(LocalAiCommitAnalysisContextStep),
+{
+    on_step(LocalAiCommitAnalysisContextStep::ResolvingCommit);
     let resolved_sha = run_git(repo_path, &["rev-parse", sha])?;
+    on_step(LocalAiCommitAnalysisContextStep::ReadingCommitDiff);
     let stat = run_git(repo_path, &["show", "--stat", "--format=fuller", sha])?;
     let diff = run_git(
         repo_path,
@@ -339,5 +373,29 @@ mod tests {
         let budget = context_budget_chars(LocalAiActionKind::CommitMessage, 32_768);
 
         assert_eq!(budget, COMMIT_MESSAGE_MAX_CONTEXT_CHARS);
+    }
+
+    #[test]
+    fn commit_analysis_context_reports_real_steps() {
+        let repo = init_repo();
+        commit_file(repo.path(), "file.txt", "one\n", "initial");
+        write_file(repo.path(), "file.txt", "one\ntwo\n");
+        commit_file(repo.path(), "file.txt", "one\ntwo\n", "update");
+        let repo_path = repo.path().to_string_lossy();
+        let mut steps = Vec::new();
+
+        let context = build_commit_analysis_context(&repo_path, "HEAD", 8_192, |step| {
+            steps.push(step);
+        })
+        .unwrap();
+
+        assert_eq!(
+            steps,
+            vec![
+                LocalAiCommitAnalysisContextStep::ResolvingCommit,
+                LocalAiCommitAnalysisContextStep::ReadingCommitDiff,
+            ]
+        );
+        assert_eq!(context.action_kind, LocalAiActionKind::CommitAnalysis);
     }
 }
