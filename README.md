@@ -95,6 +95,26 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+### Verificacion del bundle macOS
+
+Las builds de macOS deben validar que el ejecutable empaquetado no dependa de
+librerias nativas instaladas con Homebrew, MacPorts u otro gestor local. Para
+generar solo el `.app` y revisar sus dependencias dinamicas:
+
+```bash
+pnpm tauri build --bundles app
+pnpm verify:macos-bundle-deps
+```
+
+El comando de verificacion usa `otool -L` sobre
+`src-tauri/target/release/bundle/macos/gitano.app/Contents/MacOS/gitano`.
+Tambien acepta una ruta explicita al ejecutable si se quiere revisar otro
+bundle:
+
+```bash
+scripts/verify-macos-bundle-deps.sh /path/to/gitano.app/Contents/MacOS/gitano
+```
+
 ## Tecnologías
 
 - **Frontend**: React + TypeScript + Tailwind CSS

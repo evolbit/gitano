@@ -10,7 +10,8 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "verify:macos-bundle-deps": "scripts/verify-macos-bundle-deps.sh"
   },
   "dependencies": {
     "@gfazioli/mantine-split-pane": "^2.1.2",
