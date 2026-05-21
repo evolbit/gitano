@@ -113,6 +113,9 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<CreateFormState>(EMPTY_CREATE_FORM);
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
+  const [selectedWorktreePath, setSelectedWorktreePath] = useState<string | null>(
+    null,
+  );
   const [contextMenu, setContextMenu] = useState<WorktreeContextMenu | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [deleteRequest, setDeleteRequest] =
@@ -127,6 +130,8 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     activeTab?.selectedBranch ??
     worktrees.find((worktree) => worktree.isCurrent)?.branch ??
     null;
+  const currentWorktreePath =
+    worktrees.find((worktree) => worktree.isCurrent)?.path ?? null;
 
   const createBaseOptions = useMemo(
     () => getCreateBaseOptions(currentBranch),
@@ -155,6 +160,21 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   useEffect(() => {
     void refreshWorktrees();
   }, [refreshWorktrees]);
+
+  useEffect(() => {
+    if (worktrees.length === 0) {
+      setSelectedWorktreePath(null);
+      return;
+    }
+
+    setSelectedWorktreePath((current) => {
+      if (current && worktrees.some((worktree) => worktree.path === current)) {
+        return current;
+      }
+
+      return currentWorktreePath ?? worktrees[0]?.path ?? null;
+    });
+  }, [currentWorktreePath, worktrees]);
 
   useEffect(() => {
     let cancelled = false;
@@ -336,10 +356,14 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     [activeTabId, addRecentRepo, repoPath, setWorktreeCreateBaseRef, updateTab],
   );
 
-  const openContextMenu = useCallback((worktree: GitWorktree, x: number, y: number) => {
-    setContextMenu({ x, y, worktree });
-    setMenuPos({ x, y });
-  }, []);
+  const openContextMenu = useCallback(
+    (worktree: GitWorktree, x: number, y: number) => {
+      setSelectedWorktreePath(worktree.path);
+      setContextMenu({ x, y, worktree });
+      setMenuPos({ x, y });
+    },
+    [],
+  );
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
@@ -495,14 +519,15 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
           const worktree = worktreeByTreeKey.get(node.full);
           if (!worktree) return null;
 
+          const isSelected = selectedWorktreePath === worktree.path;
+          const rowStateClass = isSelected
+            ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
+            : "text-foreground hover:bg-background-emphasis";
+
           return (
             <li
               key={worktree.path}
-              className={`group flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1 px-2 py-0.5 text-sm transition-colors ${
-                worktree.isCurrent
-                  ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
-                  : "text-foreground hover:bg-background-emphasis"
-              }`}
+              className={`group flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1 px-2 py-0.5 text-sm transition-colors ${rowStateClass}`}
               style={{
                 fontSize: "var(--ui-font-size-sm)",
                 paddingLeft: `${WORKTREE_ROW_BASE_INDENT + level * WORKTREE_TREE_INDENT_STEP}px`,
@@ -510,7 +535,11 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
               tabIndex={0}
               onMouseEnter={() => setHoveredRowKey(worktree.path)}
               onMouseLeave={() => setHoveredRowKey(null)}
-              onClick={() => selectWorktree(worktree)}>
+              onClick={() => setSelectedWorktreePath(worktree.path)}
+              onDoubleClick={() => {
+                setSelectedWorktreePath(worktree.path);
+                selectWorktree(worktree);
+              }}>
               <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
                 {worktree.isMain ? null : (
                   <IconArrowFork
@@ -552,6 +581,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     if (!contextMenu || !menuPos) return null;
 
     const { worktree } = contextMenu;
+    const canUseWorktree = !worktree.isCurrent;
     const canDelete = !worktree.isMain && !worktree.isCurrent;
     const actionClass = "px-4 py-2 hover:bg-zinc-700 cursor-pointer whitespace-nowrap";
     const disabledActionClass =
@@ -559,6 +589,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     const disabledReason = worktree.isMain
       ? "The main worktree cannot be deleted"
       : "Switch to another worktree before deleting this one";
+    const useWorktreeDisabledReason = "This worktree is already active";
 
     return ReactDOM.createPortal(
       <div
@@ -572,6 +603,20 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
         className="bg-background-emphasis border border-border rounded shadow-lg py-1 text-xs text-zinc-200 select-none z-[99999] min-w-[260px]">
         <div className="text-[9px] text-zinc-500 uppercase font-semibold px-4 pt-2 pb-1 tracking-wide">
           Worktree actions
+        </div>
+        <div
+          className={canUseWorktree ? actionClass : disabledActionClass}
+          title={canUseWorktree ? undefined : useWorktreeDisabledReason}
+          onClick={
+            canUseWorktree
+              ? () => {
+                  setSelectedWorktreePath(worktree.path);
+                  closeContextMenu();
+                  selectWorktree(worktree);
+                }
+              : undefined
+          }>
+          Use Worktree
         </div>
         <div
           className={canDelete ? `${actionClass} text-red-400` : disabledActionClass}
