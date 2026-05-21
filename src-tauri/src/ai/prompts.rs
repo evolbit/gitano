@@ -1,12 +1,14 @@
 use super::git_context::LocalAiGitContext;
 use super::types::{
-    LocalAiActionKind, LocalAiAnalysisResult, LocalAiCommitMessageResult,
+    LocalAiActionKind, LocalAiAnalysisResult, LocalAiBranchReviewFinding,
+    LocalAiBranchReviewNote, LocalAiBranchReviewResult, LocalAiCommitMessageResult,
     LocalAiConflictFileSuggestion, LocalAiConflictSuggestionsResult, LocalAiFinding,
-    LocalAiFindingSeverity, LocalAiStructuredResult,
+    LocalAiFindingSeverity, LocalAiReviewConfidence, LocalAiReviewLineSide,
+    LocalAiStructuredResult,
 };
 use serde_json::Value;
 
-pub const PROMPT_VERSION: &str = "local-ai-v2";
+pub const PROMPT_VERSION: &str = "local-ai-v3";
 
 pub fn build_prompt(context: &LocalAiGitContext) -> String {
     match context.action_kind {
@@ -19,6 +21,7 @@ pub fn build_prompt(context: &LocalAiGitContext) -> String {
             "Analyze this branch or PR-style diff for correctness, risk, and maintainability.",
             context,
         ),
+        LocalAiActionKind::BranchReview => build_branch_review_prompt(context),
         LocalAiActionKind::MergeConflictSuggestions => build_conflict_prompt(context),
     }
 }
@@ -39,6 +42,10 @@ fn build_commit_message_prompt(context: &LocalAiGitContext) -> String {
 }
 
 fn build_analysis_prompt(task: &str, context: &LocalAiGitContext) -> String {
+    if context.action_kind == LocalAiActionKind::BranchAnalysis {
+        return build_branch_analysis_prompt(context);
+    }
+
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
          Be specific, evidence-oriented, and concise. Do not claim certainty without file or line evidence.\n\
@@ -46,6 +53,36 @@ fn build_analysis_prompt(task: &str, context: &LocalAiGitContext) -> String {
          Return only JSON with this shape: {{\"summary\":\"...\",\"riskAssessment\":\"...\",\"changedAreas\":[\"...\"],\"findings\":[{{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}}]}}\n\n\
          Git context:\n{}",
         task, context.prompt_context
+    )
+}
+
+fn build_branch_analysis_prompt(context: &LocalAiGitContext) -> String {
+    format!(
+        "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
+         Analyze this branch or PR-style diff as a reviewer preparing to approve or question a PR.\n\
+         Focus on intent, real risks, behavioral changes, potential regressions, test gaps, recommendations, and action items.\n\
+         Do not return a raw changed-file list; the UI already shows the changed files. Mention files only when they support a concrete risk or action item.\n\
+         Do not create low-value findings. If there are no concrete findings, return an empty findings array and useful recommendations or action items if applicable.\n\
+         Keep output compact: summary and riskAssessment must stay under 600 characters each. Return at most 6 items in each list and at most 6 findings. Keep every list item and finding field under 320 characters.\n\
+         Always close the JSON object; do not include markdown fences or commentary outside JSON.\n\n\
+         Return only JSON with this shape: {{\"summary\":\"...\",\"riskAssessment\":\"...\",\"behavioralChanges\":[\"...\"],\"potentialRegressions\":[\"...\"],\"testGaps\":[\"...\"],\"recommendations\":[\"...\"],\"actionItems\":[\"...\"],\"findings\":[{{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}}]}}\n\n\
+         Git context:\n{}",
+        context.prompt_context
+    )
+}
+
+fn build_branch_review_prompt(context: &LocalAiGitContext) -> String {
+    format!(
+        "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
+         Review this branch like PR review feedback. Find changed lines that may introduce bugs, regressions, unsafe assumptions, missing validation, missing tests, or maintainability issues.\n\
+         Every inline finding must be anchored to a changed line from the diff. Use side \"new\" for added/modified new-code feedback and side \"old\" only when the deleted line itself needs attention.\n\
+         Do not summarize files. Do not produce informational cleanup comments. If there are no actionable changed-code risks, return an empty findings array and a concise summary.\n\
+         Suggested comments should be ready to paste into a PR and should ask for a concrete change or clarification.\n\
+         Keep output compact: return at most 6 findings and at most 3 notes. Keep every text field under 280 characters, except suggestedComment which must stay under 420 characters.\n\
+         Prefer fewer high-confidence findings over a long list. Always close the JSON object; do not include markdown fences or commentary outside JSON.\n\n\
+         Return only JSON with this shape: {{\"summary\":\"...\",\"findings\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"impact\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"...\",\"filePath\":\"path/to/file\",\"side\":\"old|new\",\"line\":123,\"endLine\":124}}],\"notes\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"optional\",\"filePath\":\"optional\"}}]}}\n\n\
+         Git context:\n{}",
+        context.prompt_context
     )
 }
 
@@ -63,8 +100,16 @@ pub fn parse_structured_result(
     action_kind: LocalAiActionKind,
     response: &str,
 ) -> Result<LocalAiStructuredResult, String> {
-    let value: Value = serde_json::from_str(response)
-        .map_err(|e| format!("Local AI returned invalid JSON: {}", e))?;
+    let value: Value = serde_json::from_str(response).map_err(|e| {
+        if e.is_eof() {
+            format!(
+                "Local AI returned incomplete JSON, likely because the model output stopped before the response was finished: {}",
+                e
+            )
+        } else {
+            format!("Local AI returned invalid JSON: {}", e)
+        }
+    })?;
 
     match action_kind {
         LocalAiActionKind::CommitMessage => Ok(LocalAiStructuredResult::CommitMessage(
@@ -72,6 +117,9 @@ pub fn parse_structured_result(
         )),
         LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => {
             Ok(LocalAiStructuredResult::Analysis(parse_analysis(&value)))
+        }
+        LocalAiActionKind::BranchReview => {
+            Ok(LocalAiStructuredResult::BranchReview(parse_branch_review(&value)))
         }
         LocalAiActionKind::MergeConflictSuggestions => Ok(
             LocalAiStructuredResult::ConflictSuggestions(parse_conflicts(&value)),
@@ -152,10 +200,45 @@ fn parse_analysis(value: &Value) -> LocalAiAnalysisResult {
             .into_iter()
             .chain(string_array_field(value, "changed_areas"))
             .collect(),
+        behavioral_changes: string_array_field(value, "behavioralChanges")
+            .into_iter()
+            .chain(string_array_field(value, "behavioral_changes"))
+            .collect(),
+        potential_regressions: string_array_field(value, "potentialRegressions")
+            .into_iter()
+            .chain(string_array_field(value, "potential_regressions"))
+            .collect(),
+        test_gaps: string_array_field(value, "testGaps")
+            .into_iter()
+            .chain(string_array_field(value, "test_gaps"))
+            .collect(),
+        recommendations: string_array_field(value, "recommendations"),
+        action_items: string_array_field(value, "actionItems")
+            .into_iter()
+            .chain(string_array_field(value, "action_items"))
+            .collect(),
         findings: value
             .get("findings")
             .and_then(Value::as_array)
             .map(|items| items.iter().map(parse_finding).collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn parse_branch_review(value: &Value) -> LocalAiBranchReviewResult {
+    LocalAiBranchReviewResult {
+        summary: string_field(value, &["summary"]).unwrap_or_else(|| {
+            "No actionable branch review findings returned.".to_string()
+        }),
+        findings: value
+            .get("findings")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(parse_branch_review_finding).collect())
+            .unwrap_or_default(),
+        notes: value
+            .get("notes")
+            .and_then(Value::as_array)
+            .map(|items| items.iter().map(parse_branch_review_note).collect())
             .unwrap_or_default(),
     }
 }
@@ -187,6 +270,59 @@ fn parse_finding(value: &Value) -> LocalAiFinding {
             .and_then(Value::as_u64)
             .map(|line| line as usize),
         suggestion: string_field(value, &["suggestion"]),
+    }
+}
+
+fn parse_branch_review_finding(value: &Value) -> Option<LocalAiBranchReviewFinding> {
+    Some(LocalAiBranchReviewFinding {
+        severity: parse_severity(
+            string_field(value, &["severity"])
+                .unwrap_or_else(|| "low".to_string())
+                .as_str(),
+        ),
+        confidence: parse_confidence(
+            string_field(value, &["confidence"])
+                .unwrap_or_else(|| "medium".to_string())
+                .as_str(),
+        ),
+        title: string_field(value, &["title"]).unwrap_or_else(|| "AI review finding".to_string()),
+        explanation: string_field(value, &["explanation", "body"]).unwrap_or_default(),
+        impact: string_field(value, &["impact"]).unwrap_or_default(),
+        recommendation: string_field(value, &["recommendation", "suggestion"]).unwrap_or_default(),
+        suggested_comment: string_field(value, &["suggestedComment", "suggested_comment"])
+            .unwrap_or_default(),
+        file_path: string_field(value, &["filePath", "file_path", "file"])?,
+        side: parse_review_side(
+            string_field(value, &["side"])
+                .unwrap_or_else(|| "new".to_string())
+                .as_str(),
+        ),
+        line: value.get("line").and_then(Value::as_u64)? as usize,
+        end_line: value
+            .get("endLine")
+            .or_else(|| value.get("end_line"))
+            .and_then(Value::as_u64)
+            .map(|line| line as usize),
+    })
+}
+
+fn parse_branch_review_note(value: &Value) -> LocalAiBranchReviewNote {
+    LocalAiBranchReviewNote {
+        severity: parse_severity(
+            string_field(value, &["severity"])
+                .unwrap_or_else(|| "low".to_string())
+                .as_str(),
+        ),
+        confidence: parse_confidence(
+            string_field(value, &["confidence"])
+                .unwrap_or_else(|| "medium".to_string())
+                .as_str(),
+        ),
+        title: string_field(value, &["title"]).unwrap_or_else(|| "AI review note".to_string()),
+        explanation: string_field(value, &["explanation", "body"]).unwrap_or_default(),
+        recommendation: string_field(value, &["recommendation", "suggestion"]).unwrap_or_default(),
+        suggested_comment: string_field(value, &["suggestedComment", "suggested_comment"]),
+        file_path: string_field(value, &["filePath", "file_path", "file"]),
     }
 }
 
@@ -226,6 +362,21 @@ fn parse_severity(value: &str) -> LocalAiFindingSeverity {
         "medium" => LocalAiFindingSeverity::Medium,
         "low" => LocalAiFindingSeverity::Low,
         _ => LocalAiFindingSeverity::Info,
+    }
+}
+
+fn parse_confidence(value: &str) -> LocalAiReviewConfidence {
+    match value.to_lowercase().as_str() {
+        "high" => LocalAiReviewConfidence::High,
+        "low" => LocalAiReviewConfidence::Low,
+        _ => LocalAiReviewConfidence::Medium,
+    }
+}
+
+fn parse_review_side(value: &str) -> LocalAiReviewLineSide {
+    match value.to_lowercase().as_str() {
+        "old" | "left" | "del" | "delete" | "deleted" => LocalAiReviewLineSide::Old,
+        _ => LocalAiReviewLineSide::New,
     }
 }
 
@@ -298,5 +449,52 @@ mod tests {
             }
             _ => panic!("expected analysis result"),
         }
+    }
+
+    #[test]
+    fn parses_branch_analysis_report_fields() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchAnalysis,
+            r#"{"summary":"Adds review AI","riskAssessment":"medium","behavioralChanges":["Adds a review action"],"potentialRegressions":["Review findings could be stale"],"testGaps":["No stale state test"],"recommendations":["Validate anchors"],"actionItems":["Add frontend coverage"],"findings":[]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::Analysis(analysis) => {
+                assert_eq!(analysis.behavioral_changes[0], "Adds a review action");
+                assert_eq!(analysis.action_items[0], "Add frontend coverage");
+            }
+            _ => panic!("expected branch analysis result"),
+        }
+    }
+
+    #[test]
+    fn parses_branch_review_findings_and_drops_unanchored_inline_items() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"summary":"One issue","findings":[{"severity":"high","confidence":"medium","title":"Missing guard","explanation":"The new call can fail.","impact":"The UI may show stale data.","recommendation":"Handle the error path.","suggestedComment":"Can we handle this error before updating state?","filePath":"src/app.ts","side":"new","line":42},{"severity":"medium","title":"No anchor","explanation":"Missing path"}],"notes":[{"severity":"low","confidence":"low","title":"General test gap","explanation":"No broad test.","recommendation":"Add one."}]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::BranchReview(review) => {
+                assert_eq!(review.findings.len(), 1);
+                assert_eq!(review.findings[0].file_path, "src/app.ts");
+                assert_eq!(review.notes.len(), 1);
+            }
+            _ => panic!("expected branch review result"),
+        }
+    }
+
+    #[test]
+    fn describes_incomplete_json_as_incomplete_output() {
+        let error = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"summary":"cut off","findings":[{"title":"unfinished"#,
+        )
+        .expect_err("incomplete JSON should fail");
+
+        assert!(error.contains("incomplete JSON"));
+        assert!(error.contains("model output stopped"));
     }
 }

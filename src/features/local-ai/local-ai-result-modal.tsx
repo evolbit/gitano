@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import ReactDOM from "react-dom";
 import { IconCheck, IconCircleDot, IconX } from "@/components/icons";
 import type {
   LocalAiAnalysisResult,
+  LocalAiBranchReviewFinding,
+  LocalAiBranchReviewResult,
   LocalAiConflictSuggestionsResult,
   LocalAiRunProgress,
   LocalAiRunResult,
@@ -15,6 +18,15 @@ type LocalAiResultModalProps = {
   loading?: boolean;
   error?: string | null;
   progress?: LocalAiRunProgress[];
+  showChangedAreas?: boolean;
+  renderBranchReviewFindingActions?: (
+    finding: LocalAiBranchReviewFinding,
+    index: number,
+  ) => ReactNode;
+  renderBranchReviewNoteActions?: (
+    note: LocalAiBranchReviewResult["notes"][number],
+    index: number,
+  ) => ReactNode;
   onClose: () => void;
   onRefresh?: () => void;
 };
@@ -160,7 +172,38 @@ function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
   );
 }
 
-function AnalysisBody({ analysis }: { analysis: LocalAiAnalysisResult }) {
+function ListSection({
+  title,
+  items,
+}: {
+  title: string;
+  items?: string[];
+}) {
+  if (!items?.length) return null;
+
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+        {title}
+      </h3>
+      <ul className="space-y-1.5 text-sm text-zinc-100">
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`} className="rounded border border-border bg-background-emphasis px-3 py-2">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AnalysisBody({
+  analysis,
+  showChangedAreas = true,
+}: {
+  analysis: LocalAiAnalysisResult;
+  showChangedAreas?: boolean;
+}) {
   return (
     <div className="space-y-4">
       <section>
@@ -179,7 +222,7 @@ function AnalysisBody({ analysis }: { analysis: LocalAiAnalysisResult }) {
         </section>
       ) : null}
 
-      {analysis.changedAreas.length ? (
+      {showChangedAreas && analysis.changedAreas.length ? (
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
             Changed areas
@@ -196,6 +239,12 @@ function AnalysisBody({ analysis }: { analysis: LocalAiAnalysisResult }) {
           </div>
         </section>
       ) : null}
+
+      <ListSection title="Behavioral changes" items={analysis.behavioralChanges} />
+      <ListSection title="Potential regressions" items={analysis.potentialRegressions} />
+      <ListSection title="Test gaps" items={analysis.testGaps} />
+      <ListSection title="Recommendations" items={analysis.recommendations} />
+      <ListSection title="Action items" items={analysis.actionItems} />
 
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
@@ -245,6 +294,137 @@ function AnalysisBody({ analysis }: { analysis: LocalAiAnalysisResult }) {
   );
 }
 
+function BranchReviewBody({
+  review,
+  renderFindingActions,
+  renderNoteActions,
+}: {
+  review: LocalAiBranchReviewResult;
+  renderFindingActions?: (
+    finding: LocalAiBranchReviewFinding,
+    index: number,
+  ) => React.ReactNode;
+  renderNoteActions?: (
+    note: LocalAiBranchReviewResult["notes"][number],
+    index: number,
+  ) => React.ReactNode;
+}) {
+  return (
+    <div className="space-y-4">
+      <section>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+          Summary
+        </h3>
+        <p className="text-sm text-zinc-100">{review.summary}</p>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+          Review findings
+        </h3>
+        {review.findings.length ? (
+          <div className="space-y-2">
+            {review.findings.map((finding, index) => (
+              <div
+                key={`${finding.filePath}-${finding.line}-${finding.title}-${index}`}
+                className="rounded border border-border bg-background-emphasis p-3"
+              >
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] uppercase ${severityClass(
+                      finding.severity,
+                    )}`}
+                  >
+                    {finding.severity}
+                  </span>
+                  <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] uppercase text-zinc-300">
+                    {finding.confidence} confidence
+                  </span>
+                  <span className="font-medium text-zinc-100">
+                    {finding.title}
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-300">{finding.explanation}</p>
+                {finding.impact ? (
+                  <p className="mt-2 text-xs text-zinc-400">
+                    Impact: {finding.impact}
+                  </p>
+                ) : null}
+                {finding.recommendation ? (
+                  <div className="mt-2 rounded border border-border bg-background px-2 py-1.5 text-xs text-zinc-300">
+                    {finding.recommendation}
+                  </div>
+                ) : null}
+                <div className="mt-2 font-mono text-xs text-zinc-500">
+                  {finding.filePath}:{finding.line}
+                  {finding.endLine ? `-${finding.endLine}` : ""} · {finding.side}
+                </div>
+                {finding.suggestedComment ? (
+                  <div className="mt-2 rounded border border-blue-500/20 bg-blue-500/10 px-2 py-1.5 text-xs text-blue-100">
+                    {finding.suggestedComment}
+                  </div>
+                ) : null}
+                {renderFindingActions ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {renderFindingActions(finding, index)}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded border border-border bg-background-emphasis p-3 text-sm text-zinc-400">
+            No actionable review findings returned.
+          </div>
+        )}
+      </section>
+
+      {review.notes.length ? (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+            Review notes
+          </h3>
+          <div className="space-y-2">
+            {review.notes.map((note, index) => (
+              <div
+                key={`${note.title}-${index}`}
+                className="rounded border border-border bg-background-emphasis p-3"
+              >
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] uppercase ${severityClass(
+                      note.severity,
+                    )}`}
+                  >
+                    {note.severity}
+                  </span>
+                  <span className="font-medium text-zinc-100">{note.title}</span>
+                </div>
+                <p className="text-sm text-zinc-300">{note.explanation}</p>
+                {note.recommendation ? (
+                  <div className="mt-2 rounded border border-border bg-background px-2 py-1.5 text-xs text-zinc-300">
+                    {note.recommendation}
+                  </div>
+                ) : null}
+                {note.filePath ? (
+                  <div className="mt-2 font-mono text-xs text-zinc-500">
+                    {note.filePath}
+                  </div>
+                ) : null}
+                {renderNoteActions ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {renderNoteActions(note, index)}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function ConflictBody({
   conflicts,
 }: {
@@ -285,6 +465,9 @@ export function LocalAiResultModal({
   loading,
   error,
   progress = [],
+  showChangedAreas = true,
+  renderBranchReviewFindingActions,
+  renderBranchReviewNoteActions,
   onClose,
   onRefresh,
 }: LocalAiResultModalProps) {
@@ -294,6 +477,8 @@ export function LocalAiResultModal({
     result?.result.kind === "analysis" ? result.result.data : null;
   const conflicts =
     result?.result.kind === "conflictSuggestions" ? result.result.data : null;
+  const branchReview =
+    result?.result.kind === "branchReview" ? result.result.data : null;
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10040]">
@@ -332,7 +517,17 @@ export function LocalAiResultModal({
             </div>
           ) : null}
           {!loading && !error && analysis ? (
-            <AnalysisBody analysis={analysis} />
+            <AnalysisBody
+              analysis={analysis}
+              showChangedAreas={showChangedAreas}
+            />
+          ) : null}
+          {!loading && !error && branchReview ? (
+            <BranchReviewBody
+              review={branchReview}
+              renderFindingActions={renderBranchReviewFindingActions}
+              renderNoteActions={renderBranchReviewNoteActions}
+            />
           ) : null}
           {!loading && !error && conflicts ? (
             <ConflictBody conflicts={conflicts} />

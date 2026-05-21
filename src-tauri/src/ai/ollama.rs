@@ -325,9 +325,18 @@ impl OllamaClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| format!("Local AI generation failed: {}", e))?
-            .error_for_status()
-            .map_err(|e| format!("Local AI generation failed: {}", e))?
+            .map_err(|e| format!("Local AI generation failed: {}", e))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format_ollama_http_error(
+                "Local AI generation failed",
+                status,
+                &body,
+            ));
+        }
+
+        let response = response
             .json::<OllamaGenerateResponse>()
             .await
             .map_err(|e| format!("Local AI response could not be parsed: {}", e))?;
@@ -392,17 +401,21 @@ fn generation_options(action_kind: LocalAiActionKind, context_window: usize) -> 
         LocalAiActionKind::CommitMessage => context_window.clamp(2_048, 8_192),
         LocalAiActionKind::CommitAnalysis
         | LocalAiActionKind::BranchAnalysis
+        | LocalAiActionKind::BranchReview
         | LocalAiActionKind::MergeConflictSuggestions => context_window.clamp(4_096, 32_768),
     };
     let num_predict = match action_kind {
         LocalAiActionKind::CommitMessage => 96,
-        LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => 1_400,
+        LocalAiActionKind::CommitAnalysis => 1_600,
+        LocalAiActionKind::BranchAnalysis => 3_072,
+        LocalAiActionKind::BranchReview => 4_096,
         LocalAiActionKind::MergeConflictSuggestions => 1_800,
     };
     let temperature = match action_kind {
         LocalAiActionKind::CommitMessage => 0.1,
         LocalAiActionKind::CommitAnalysis
         | LocalAiActionKind::BranchAnalysis
+        | LocalAiActionKind::BranchReview
         | LocalAiActionKind::MergeConflictSuggestions => 0.2,
     };
 
@@ -412,6 +425,52 @@ fn generation_options(action_kind: LocalAiActionKind, context_window: usize) -> 
         "num_ctx": num_ctx,
         "num_predict": num_predict
     })
+}
+
+fn format_ollama_http_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let details = ollama_error_details(body);
+    if details.is_empty() {
+        return format!("{}: Ollama returned HTTP {}.", context, status);
+    }
+    if let Some(diagnostic) = ollama_diagnostic_hint(&details) {
+        return format!(
+            "{}: Ollama returned HTTP {}: {}\n\n{}",
+            context, status, details, diagnostic
+        );
+    }
+
+    format!("{}: Ollama returned HTTP {}: {}", context, status, details)
+}
+
+fn ollama_error_details(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    serde_json::from_str::<serde_json::Value>(trimmed)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| trimmed.to_string())
+}
+
+fn ollama_diagnostic_hint(details: &str) -> Option<&'static str> {
+    let normalized = details.to_lowercase();
+    if normalized.contains("mtlcompilerservice")
+        || normalized.contains("failed to initialize metal backend")
+        || normalized.contains("unable to create llama context")
+    {
+        return Some(
+            "Diagnostic: Ollama's Metal runner crashed before generation started. This is a local Ollama/macOS Metal backend failure, not a Gitano prompt or JSON parsing error. Restart Gitano/Ollama, retry with the latest Ollama runtime, and if it persists restart macOS because MTLCompilerService is unavailable.",
+        );
+    }
+
+    None
 }
 
 impl OllamaModel {
@@ -661,6 +720,49 @@ mod tests {
 
         assert_eq!(options["num_ctx"], 8_192);
         assert_eq!(options["num_predict"], 96);
+    }
+
+    #[test]
+    fn branch_review_generation_uses_larger_prediction_budget() {
+        let options = generation_options(LocalAiActionKind::BranchReview, 32_768);
+
+        assert_eq!(options["num_ctx"], 32_768);
+        assert_eq!(options["num_predict"], 4_096);
+    }
+
+    #[test]
+    fn branch_analysis_generation_uses_larger_prediction_budget() {
+        let options = generation_options(LocalAiActionKind::BranchAnalysis, 32_768);
+
+        assert_eq!(options["num_ctx"], 32_768);
+        assert_eq!(options["num_predict"], 3_072);
+    }
+
+    #[test]
+    fn http_errors_include_ollama_error_body() {
+        let error = format_ollama_http_error(
+            "Local AI generation failed",
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"runner crashed while loading model"}"#,
+        );
+
+        assert_eq!(
+            error,
+            "Local AI generation failed: Ollama returned HTTP 500 Internal Server Error: runner crashed while loading model"
+        );
+    }
+
+    #[test]
+    fn http_errors_include_metal_backend_diagnostic() {
+        let error = format_ollama_http_error(
+            "Local AI generation failed",
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"llama runner process has terminated: Unable to reach MTLCompilerService. llama_init_from_model: failed to initialize the context: failed to initialize Metal backend"}"#,
+        );
+
+        assert!(error.contains("failed to initialize Metal backend"));
+        assert!(error.contains("Diagnostic: Ollama's Metal runner crashed"));
+        assert!(error.contains("MTLCompilerService is unavailable"));
     }
 
     #[test]

@@ -22,6 +22,13 @@ pub enum LocalAiCommitAnalysisContextStep {
     ReadingCommitDiff,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalAiBranchContextStep {
+    ResolvingRefs,
+    DeterminingDiffBase,
+    ReadingComparisonDiff,
+}
+
 pub fn build_git_context(
     request: &LocalAiRunRequest,
     context_window: usize,
@@ -35,7 +42,7 @@ pub fn build_git_context(
                 .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
             commit_context(&request.repo_path, sha)?
         }
-        LocalAiActionKind::BranchAnalysis => {
+        LocalAiActionKind::BranchAnalysis | LocalAiActionKind::BranchReview => {
             let base_ref = request
                 .base_ref
                 .as_deref()
@@ -49,6 +56,7 @@ pub fn build_git_context(
                 base_ref,
                 head_ref,
                 request.comparison_mode.as_deref().unwrap_or("direct"),
+                request.action_kind,
             )?
         }
         LocalAiActionKind::MergeConflictSuggestions => conflict_context(&request.repo_path)?,
@@ -72,6 +80,31 @@ where
     Ok(apply_context_budget(
         commit_context_with_progress(repo_path, sha, on_step)?,
         context_budget_chars(LocalAiActionKind::CommitAnalysis, context_window),
+    ))
+}
+
+pub fn build_branch_context<F>(
+    repo_path: &str,
+    base_ref: &str,
+    head_ref: &str,
+    comparison_mode: &str,
+    action_kind: LocalAiActionKind,
+    context_window: usize,
+    on_step: F,
+) -> Result<LocalAiGitContext, String>
+where
+    F: FnMut(LocalAiBranchContextStep),
+{
+    Ok(apply_context_budget(
+        branch_context_with_progress(
+            repo_path,
+            base_ref,
+            head_ref,
+            comparison_mode,
+            action_kind,
+            on_step,
+        )?,
+        context_budget_chars(action_kind, context_window),
     ))
 }
 
@@ -167,9 +200,33 @@ fn branch_context(
     base_ref: &str,
     head_ref: &str,
     comparison_mode: &str,
+    action_kind: LocalAiActionKind,
 ) -> Result<LocalAiGitContext, String> {
+    branch_context_with_progress(
+        repo_path,
+        base_ref,
+        head_ref,
+        comparison_mode,
+        action_kind,
+        |_| {},
+    )
+}
+
+fn branch_context_with_progress<F>(
+    repo_path: &str,
+    base_ref: &str,
+    head_ref: &str,
+    comparison_mode: &str,
+    action_kind: LocalAiActionKind,
+    mut on_step: F,
+) -> Result<LocalAiGitContext, String>
+where
+    F: FnMut(LocalAiBranchContextStep),
+{
+    on_step(LocalAiBranchContextStep::ResolvingRefs);
     let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
     let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
+    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
     let from_ref = if comparison_mode == "mergeBase" || comparison_mode == "merge-base" {
         run_git(repo_path, &["merge-base", base_ref, head_ref])?
     } else {
@@ -177,6 +234,8 @@ fn branch_context(
     };
     let from_ref = from_ref.trim().to_string();
     let head_sha = head_sha.trim().to_string();
+    on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
+    let name_status = run_git(repo_path, &["diff", "--name-status", &from_ref, &head_sha])?;
     let stat = run_git(repo_path, &["diff", "--stat", &from_ref, &head_sha])?;
     let diff = run_git(
         repo_path,
@@ -194,18 +253,20 @@ fn branch_context(
     }
 
     let content = format!(
-        "Action: Analyze a branch or PR-style comparison\nBase ref: {} ({})\nHead ref: {} ({})\nComparison mode: {}\nEffective diff base: {}\n\nChanged file summary:\n{}\n\nComparison diff:\n{}",
+        "{}\nBase ref: {} ({})\nHead ref: {} ({})\nComparison mode: {}\nEffective diff base: {}\n\nChanged files:\n{}\n\nChanged file summary:\n{}\n\nComparison diff:\n{}",
+        branch_action_label(action_kind),
         base_ref,
         base_sha.trim(),
         head_ref,
         head_sha,
         comparison_mode,
         from_ref,
+        name_status,
         stat,
         diff
     );
     let digest = digest_parts(&[
-        "branchAnalysis",
+        action_kind.as_key(),
         &from_ref,
         &head_sha,
         comparison_mode,
@@ -213,12 +274,21 @@ fn branch_context(
     ]);
 
     Ok(LocalAiGitContext {
-        action_kind: LocalAiActionKind::BranchAnalysis,
+        action_kind,
         title: format!("{}...{}", base_ref, head_ref),
         prompt_context: content,
         input_digest: digest,
         metadata: empty_metadata(),
     })
+}
+
+fn branch_action_label(action_kind: LocalAiActionKind) -> &'static str {
+    match action_kind {
+        LocalAiActionKind::BranchReview => {
+            "Action: Review changed code in a branch or PR-style comparison"
+        }
+        _ => "Action: Analyze a branch or PR-style comparison",
+    }
 }
 
 fn conflict_context(repo_path: &str) -> Result<LocalAiGitContext, String> {
@@ -293,6 +363,7 @@ fn context_budget_chars(action_kind: LocalAiActionKind, context_window: usize) -
         LocalAiActionKind::CommitMessage => model_budget.min(COMMIT_MESSAGE_MAX_CONTEXT_CHARS),
         LocalAiActionKind::CommitAnalysis
         | LocalAiActionKind::BranchAnalysis
+        | LocalAiActionKind::BranchReview
         | LocalAiActionKind::MergeConflictSuggestions => model_budget,
     }
 }
@@ -397,5 +468,37 @@ mod tests {
             ]
         );
         assert_eq!(context.action_kind, LocalAiActionKind::CommitAnalysis);
+    }
+
+    #[test]
+    fn branch_review_context_reports_real_steps_and_uses_review_action() {
+        let repo = init_repo();
+        commit_file(repo.path(), "file.txt", "one\n", "initial");
+        run_git(repo.path(), &["checkout", "-b", "feature"]);
+        commit_file(repo.path(), "file.txt", "one\ntwo\n", "update");
+        let repo_path = repo.path().to_string_lossy();
+        let mut steps = Vec::new();
+
+        let context = build_branch_context(
+            &repo_path,
+            "main",
+            "feature",
+            "direct",
+            LocalAiActionKind::BranchReview,
+            8_192,
+            |step| steps.push(step),
+        )
+        .unwrap();
+
+        assert_eq!(
+            steps,
+            vec![
+                LocalAiBranchContextStep::ResolvingRefs,
+                LocalAiBranchContextStep::DeterminingDiffBase,
+                LocalAiBranchContextStep::ReadingComparisonDiff,
+            ]
+        );
+        assert_eq!(context.action_kind, LocalAiActionKind::BranchReview);
+        assert!(context.prompt_context.contains("Review changed code"));
     }
 }

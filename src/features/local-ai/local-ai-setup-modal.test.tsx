@@ -135,6 +135,60 @@ describe("LocalAiSetupModal", () => {
     });
   });
 
+  it("prefers a model suitable for the requested action over the global model", async () => {
+    const reviewModel = {
+      ...model,
+      id: "qwen2.5-coder:7b",
+      displayName: "Qwen2.5 Coder 7B",
+      qualityTier: "recommended",
+      actionSuitability: ["branchReview"],
+    };
+    apiMocks.getLocalAiModelCatalog.mockResolvedValue([model, reviewModel]);
+    apiMocks.getLocalAiModelStatus.mockImplementation(async (modelId: string) => ({
+      runtime: {
+        available: true,
+        endpoint: "http://127.0.0.1:11435",
+        error: null,
+      },
+      modelId,
+      installed: true,
+      digest: "digest",
+      sizeBytes: 4_700_000_000,
+      running: false,
+      ready: true,
+    }));
+    apiMocks.getLocalAiModelCompatibility.mockImplementation(async (modelId: string) => ({
+      modelId,
+      level: "compatible",
+      blocking: false,
+      reasons: [],
+      recommendedModelId: null,
+      machine: {
+        os: "macos",
+        arch: "aarch64",
+        cpuCount: 8,
+        totalMemoryGb: 16,
+        availableMemoryGb: null,
+        modelStoragePath: "/models",
+        modelStorageFreeDiskGb: 20,
+      },
+    }));
+
+    render(
+      <LocalAiSetupModal
+        open
+        actionKind="branchReview"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Local model")).toHaveValue(
+        "qwen2.5-coder:7b",
+      );
+    });
+  });
+
   it("offers to download the app-managed runtime before the model", async () => {
     const user = userEvent.setup();
     apiMocks.getLocalAiModelStatus.mockResolvedValue({
@@ -301,6 +355,67 @@ describe("LocalAiSetupModal", () => {
     await waitFor(() => {
       expect(onReady).toHaveBeenCalledTimes(1);
     });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves an already-installed model for the requested action before resuming", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onReady = vi.fn();
+    apiMocks.getLocalAiModelStatus.mockResolvedValue({
+      runtime: {
+        available: true,
+        endpoint: "http://127.0.0.1:11435",
+        error: null,
+      },
+      modelId: "qwen2.5-coder:14b",
+      installed: true,
+      digest: "digest",
+      sizeBytes: 4_700_000_000,
+      running: false,
+      ready: true,
+    });
+    apiMocks.getLocalAiModelCompatibility.mockResolvedValue({
+      modelId: "qwen2.5-coder:14b",
+      level: "compatible",
+      blocking: false,
+      reasons: [],
+      recommendedModelId: null,
+      machine: {
+        os: "macos",
+        arch: "aarch64",
+        cpuCount: 8,
+        totalMemoryGb: 16,
+        availableMemoryGb: null,
+        modelStoragePath: "/models",
+        modelStorageFreeDiskGb: 20,
+      },
+    });
+    apiMocks.setLocalAiModelPreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:14b",
+      actionModelIds: {
+        branchReview: "qwen2.5-coder:14b",
+      },
+    });
+
+    render(
+      <LocalAiSetupModal
+        open
+        actionKind="branchReview"
+        onClose={onClose}
+        onReady={onReady}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Ready" }));
+
+    await waitFor(() => {
+      expect(apiMocks.setLocalAiModelPreference).toHaveBeenCalledWith({
+        modelId: "qwen2.5-coder:14b",
+        actionKind: "branchReview",
+      });
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

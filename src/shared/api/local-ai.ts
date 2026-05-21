@@ -8,6 +8,7 @@ export type LocalAiActionKind =
   | "commitMessage"
   | "commitAnalysis"
   | "branchAnalysis"
+  | "branchReview"
   | "mergeConflictSuggestions";
 
 export type LocalAiEntitlementStatus = {
@@ -132,6 +133,9 @@ export type LocalAiDownloadProgress = {
 export type LocalAiRunProgressState =
   | "resolvingCommit"
   | "readingCommitDiff"
+  | "resolvingRefs"
+  | "determiningDiffBase"
+  | "readingComparisonDiff"
   | "checkingCache"
   | "cacheHit"
   | "runningModel"
@@ -216,7 +220,45 @@ export type LocalAiAnalysisResult = {
   summary: string;
   riskAssessment: string | null;
   changedAreas: string[];
+  behavioralChanges?: string[];
+  potentialRegressions?: string[];
+  testGaps?: string[];
+  recommendations?: string[];
+  actionItems?: string[];
   findings: LocalAiFinding[];
+};
+
+export type LocalAiReviewLineSide = "old" | "new";
+export type LocalAiReviewConfidence = "low" | "medium" | "high";
+
+export type LocalAiBranchReviewFinding = {
+  severity: LocalAiFindingSeverity;
+  confidence: LocalAiReviewConfidence;
+  title: string;
+  explanation: string;
+  impact: string;
+  recommendation: string;
+  suggestedComment: string;
+  filePath: string;
+  side: LocalAiReviewLineSide;
+  line: number;
+  endLine: number | null;
+};
+
+export type LocalAiBranchReviewNote = {
+  severity: LocalAiFindingSeverity;
+  confidence: LocalAiReviewConfidence;
+  title: string;
+  explanation: string;
+  recommendation: string;
+  suggestedComment: string | null;
+  filePath: string | null;
+};
+
+export type LocalAiBranchReviewResult = {
+  summary: string;
+  findings: LocalAiBranchReviewFinding[];
+  notes: LocalAiBranchReviewNote[];
 };
 
 export type LocalAiConflictFileSuggestion = {
@@ -233,6 +275,7 @@ export type LocalAiConflictSuggestionsResult = {
 export type LocalAiStructuredResult =
   | { kind: "commitMessage"; data: LocalAiCommitMessageResult }
   | { kind: "analysis"; data: LocalAiAnalysisResult }
+  | { kind: "branchReview"; data: LocalAiBranchReviewResult }
   | { kind: "conflictSuggestions"; data: LocalAiConflictSuggestionsResult };
 
 export type LocalAiRunMetadata = {

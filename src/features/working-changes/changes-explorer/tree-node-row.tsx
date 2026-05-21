@@ -1,19 +1,18 @@
 import {
-  collectFilesFromTree,
-  type ChangesExplorerTreeNode,
-} from "@/shared/lib/tree/changes-explorer-tree";
-import { isUntrackedFile } from "./utils";
-import { ChangesExplorerCheckboxState } from "./utils";
-import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
-import { ChangesExplorerStatusIcon } from "./changes-explorer-status-icon";
-import { ChangesExplorerTreeNodes } from "./changes-explorer-tree-nodes";
-import { FileSelectionCheckbox } from "./file-selection-checkbox";
-import {
   IconChevronDown,
   IconChevronRight,
   IconFolder,
 } from "@/components/icons";
+import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import {
+  collectFilesFromTree,
+  type ChangesExplorerTreeNode,
+} from "@/shared/lib/tree/changes-explorer-tree";
 import { memo } from "react";
+import { ChangesExplorerStatusIcon } from "./changes-explorer-status-icon";
+import { ChangesExplorerTreeNodes } from "./changes-explorer-tree-nodes";
+import { FileSelectionCheckbox } from "./file-selection-checkbox";
+import { ChangesExplorerCheckboxState, isUntrackedFile } from "./utils";
 import { getFolderExpansionKey } from "./utils/folder-expansion-key";
 
 const TREE_INDENT_STEP = 18;
@@ -28,7 +27,9 @@ type TreeNodeRowProps = {
   expanded: Record<string, boolean>;
   selectedPath: string | null;
   showFileCheckboxes: boolean;
-  getFileCheckboxState: (file: ChangesExplorerFile) => ChangesExplorerCheckboxState;
+  getFileCheckboxState: (
+    file: ChangesExplorerFile,
+  ) => ChangesExplorerCheckboxState;
   onSelectFile: (file: ChangesExplorerFile) => void;
   onOpenFileContextMenu: (
     file: ChangesExplorerFile,
@@ -86,7 +87,9 @@ export const TreeNodeRow = memo(function TreeNodeRow({
         <button
           type="button"
           className="flex h-7 w-full items-center gap-1 overflow-hidden px-2 text-left text-sm text-zinc-400 transition-colors hover:bg-background-emphasis"
-          style={{ paddingLeft: `${TREE_FOLDER_BASE_INDENT + depth * TREE_INDENT_STEP}px` }}
+          style={{
+            paddingLeft: `${TREE_FOLDER_BASE_INDENT + depth * TREE_INDENT_STEP}px`,
+          }}
           onClick={() => onToggleFolder(expansionKey)}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -108,15 +111,16 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             )}
           </span>
           <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
-            <IconFolder size={15} className="h-4 w-4 flex-shrink-0 text-slate-300" />
+            <IconFolder
+              size={15}
+              className="h-4 w-4 flex-shrink-0 text-slate-300"
+            />
           </span>
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
           {showFileCheckboxes && folderFiles.length > 0 ? (
             <FileSelectionCheckbox
               checkboxState={folderCheckboxState}
-              onToggle={() =>
-                onToggleFolderSelection(node.path, folderFiles)
-              }
+              onToggle={() => onToggleFolderSelection(node.path, folderFiles)}
             />
           ) : null}
         </button>
@@ -137,7 +141,9 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             onToggleFileSelection={onToggleFileSelection}
             onToggleFolderSelection={onToggleFolderSelection}
             getFolderCheckboxState={getFolderCheckboxState}
-            alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
+            alignCountColumnWithHeaderActions={
+              alignCountColumnWithHeaderActions
+            }
           />
         ) : null}
       </div>
@@ -157,7 +163,9 @@ export const TreeNodeRow = memo(function TreeNodeRow({
           ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
           : "text-zinc-400 hover:bg-background-emphasis"
       }`}
-      style={{ paddingLeft: `${TREE_FILE_BASE_INDENT + depth * TREE_INDENT_STEP}px` }}
+      style={{
+        paddingLeft: `${TREE_FILE_BASE_INDENT + depth * TREE_INDENT_STEP}px`,
+      }}
       onClick={() => onSelectFile(node.file)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -167,7 +175,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       }}
     >
       <ChangesExplorerStatusIcon file={node.file} />
-      <span className="min-w-0 flex-1 truncate font-medium">{node.name}</span>
+      <span className="min-w-0 flex-1 truncate">{node.name}</span>
       {!isUntrackedFile(node.file) ? (
         <div
           className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${

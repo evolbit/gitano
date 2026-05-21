@@ -48,6 +48,7 @@ fn all_actions() -> Vec<LocalAiActionKind> {
         LocalAiActionKind::CommitMessage,
         LocalAiActionKind::CommitAnalysis,
         LocalAiActionKind::BranchAnalysis,
+        LocalAiActionKind::BranchReview,
         LocalAiActionKind::MergeConflictSuggestions,
     ]
 }
@@ -386,6 +387,9 @@ mod tests {
         assert!(recommended
             .action_suitability
             .contains(&LocalAiActionKind::BranchAnalysis));
+        assert!(recommended
+            .action_suitability
+            .contains(&LocalAiActionKind::BranchReview));
     }
 
     #[test]

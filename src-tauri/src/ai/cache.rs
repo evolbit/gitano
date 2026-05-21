@@ -109,6 +109,26 @@ mod tests {
     }
 
     #[test]
+    fn cache_key_changes_with_action_kind() {
+        let analysis = build_cache_key(
+            LocalAiActionKind::BranchAnalysis,
+            "v1",
+            "digest",
+            "/repo",
+            "input",
+        );
+        let review = build_cache_key(
+            LocalAiActionKind::BranchReview,
+            "v1",
+            "digest",
+            "/repo",
+            "input",
+        );
+
+        assert_ne!(analysis, review);
+    }
+
+    #[test]
     fn cached_result_is_marked_from_cache() {
         let result = LocalAiRunResult {
             action_kind: LocalAiActionKind::CommitMessage,

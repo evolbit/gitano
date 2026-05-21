@@ -18,6 +18,13 @@ The system SHALL build backend-owned Git context snapshots for local AI actions 
 - **WHEN** the user requests AI analysis for a branch comparison
 - **THEN** the backend MUST resolve the base and head refs to commits
 - **AND** the snapshot MUST include the changed file summary and diff context for the selected comparison mode
+- **AND** the snapshot MUST provide enough branch context to support a report about intent, risk, behavioral impact, tests, recommendations, and action items
+
+#### Scenario: Branch review starts
+- **WHEN** the user requests AI review for a branch comparison
+- **THEN** the backend MUST resolve the base and head refs to commits
+- **AND** the snapshot MUST include changed-line diff context for the selected comparison mode
+- **AND** the snapshot MUST preserve enough file path, side, and line information for returned findings to be matched to changed diff lines
 
 #### Scenario: Merge conflict suggestion starts
 - **WHEN** the user requests AI suggestions for merge conflicts
@@ -93,15 +100,58 @@ The system SHALL parse local AI responses into structured Gitano-owned result ty
 - **THEN** the result MUST include a summary and zero or more findings
 - **AND** each finding MUST include severity, title, explanation, and file or line evidence when available
 
-#### Scenario: Branch or PR-style analysis is generated
+#### Scenario: Branch analysis is generated
 - **WHEN** AI branch analysis succeeds
-- **THEN** the result MUST include a summary, risk assessment, changed-area overview, and zero or more findings
-- **AND** each finding MUST identify the affected file when available
+- **THEN** the result MUST include a summary, risk assessment, behavioral change summary, potential regressions, test gaps, recommendations, and action items
+- **AND** the result MUST NOT use a raw changed-file list as the primary changed-area output
+- **AND** each finding or action item MUST include supporting file or line evidence when available
+
+#### Scenario: Branch review is generated
+- **WHEN** AI branch review succeeds
+- **THEN** the result MUST include zero or more review findings
+- **AND** each inline review finding MUST include severity, confidence, title, explanation, impact, recommendation, suggested PR comment text, file path, side, and changed-line anchor
+- **AND** unanchored review notes MUST be represented separately from inline review findings
 
 #### Scenario: Merge conflict suggestions are generated
 - **WHEN** AI conflict suggestions succeed
 - **THEN** the result MUST include per-file suggestions
 - **AND** each suggestion MUST describe the intended resolution without applying it automatically
+
+### Requirement: Branch AI actions show truthful progress timelines
+The system SHALL show progress for branch analysis and branch review using real Gitano-controlled milestones rather than a generic loading-only state.
+
+#### Scenario: Branch analysis starts
+- **WHEN** the user starts local AI analysis for a branch comparison
+- **THEN** the frontend MUST clear previous branch-analysis progress for that comparison
+- **AND** the system MUST show a progress timeline before the final result is available
+
+#### Scenario: Branch review starts
+- **WHEN** the user starts local AI review for a branch comparison
+- **THEN** the frontend MUST clear previous branch-review progress for that comparison
+- **AND** the system MUST show a progress timeline before the final review findings are available
+
+#### Scenario: Backend reports branch milestones
+- **WHEN** the backend runs branch analysis or branch review
+- **THEN** it MUST emit progress for real milestones such as resolving refs, determining the diff base, reading comparison diff context, checking cache, running the local model, formatting the result, and completion
+- **AND** it MUST NOT emit progress that claims file-by-file analysis unless the backend actually performs file-by-file work
+
+#### Scenario: Cached branch result is available
+- **WHEN** the user starts branch analysis or branch review without forcing refresh
+- **AND** an eligible cached result exists
+- **THEN** the backend MUST return the cached result
+- **AND** the progress timeline MUST indicate that cached output is being used
+- **AND** the timeline MUST NOT show the local model as running
+
+#### Scenario: User refreshes branch AI output
+- **WHEN** the user refreshes a displayed branch analysis or branch review result
+- **THEN** the frontend MUST clear the previous progress timeline for that action
+- **AND** the backend MUST bypass the cached result for that request
+- **AND** the progress timeline MUST restart from the first branch-specific milestone
+
+#### Scenario: Branch AI final output is ready
+- **WHEN** branch analysis or branch review completes successfully
+- **THEN** the modal or review surface MUST render the structured final result
+- **AND** the progress timeline MUST no longer be the primary content
 
 ### Requirement: Local AI analysis results are digest cached
 The system SHALL cache local AI results by action, prompt version, selected model digest, repository identity, and Git input digest.

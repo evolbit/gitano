@@ -68,8 +68,13 @@ const ACTIONS: ReadonlyArray<{
   },
   {
     kind: "branchAnalysis",
-    label: "PR / branch review",
-    description: "Analyze branch comparisons before opening a PR.",
+    label: "Branch analysis",
+    description: "Analyze branch risk before opening a PR.",
+  },
+  {
+    kind: "branchReview",
+    label: "Branch review",
+    description: "Review changed lines before opening a PR.",
   },
   {
     kind: "mergeConflictSuggestions",

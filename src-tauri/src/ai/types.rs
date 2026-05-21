@@ -26,6 +26,7 @@ pub enum LocalAiActionKind {
     CommitMessage,
     CommitAnalysis,
     BranchAnalysis,
+    BranchReview,
     MergeConflictSuggestions,
 }
 
@@ -35,6 +36,7 @@ impl LocalAiActionKind {
             Self::CommitMessage => "commitMessage",
             Self::CommitAnalysis => "commitAnalysis",
             Self::BranchAnalysis => "branchAnalysis",
+            Self::BranchReview => "branchReview",
             Self::MergeConflictSuggestions => "mergeConflictSuggestions",
         }
     }
@@ -43,7 +45,8 @@ impl LocalAiActionKind {
         match self {
             Self::CommitMessage => "Commit",
             Self::CommitAnalysis => "Commit review",
-            Self::BranchAnalysis => "PR / branch review",
+            Self::BranchAnalysis => "Branch analysis",
+            Self::BranchReview => "Branch review",
             Self::MergeConflictSuggestions => "Merge conflicts",
         }
     }
@@ -205,6 +208,9 @@ pub struct LocalAiDownloadProgress {
 pub enum LocalAiRunProgressState {
     ResolvingCommit,
     ReadingCommitDiff,
+    ResolvingRefs,
+    DeterminingDiffBase,
+    ReadingComparisonDiff,
     CheckingCache,
     CacheHit,
     RunningModel,
@@ -328,8 +334,70 @@ pub struct LocalAiCommitMessageResult {
 pub struct LocalAiAnalysisResult {
     pub summary: String,
     pub risk_assessment: Option<String>,
+    #[serde(default)]
     pub changed_areas: Vec<String>,
+    #[serde(default)]
+    pub behavioral_changes: Vec<String>,
+    #[serde(default)]
+    pub potential_regressions: Vec<String>,
+    #[serde(default)]
+    pub test_gaps: Vec<String>,
+    #[serde(default)]
+    pub recommendations: Vec<String>,
+    #[serde(default)]
+    pub action_items: Vec<String>,
     pub findings: Vec<LocalAiFinding>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalAiReviewLineSide {
+    Old,
+    New,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalAiReviewConfidence {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiBranchReviewFinding {
+    pub severity: LocalAiFindingSeverity,
+    pub confidence: LocalAiReviewConfidence,
+    pub title: String,
+    pub explanation: String,
+    pub impact: String,
+    pub recommendation: String,
+    pub suggested_comment: String,
+    pub file_path: String,
+    pub side: LocalAiReviewLineSide,
+    pub line: usize,
+    pub end_line: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiBranchReviewNote {
+    pub severity: LocalAiFindingSeverity,
+    pub confidence: LocalAiReviewConfidence,
+    pub title: String,
+    pub explanation: String,
+    pub recommendation: String,
+    pub suggested_comment: Option<String>,
+    pub file_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiBranchReviewResult {
+    pub summary: String,
+    pub findings: Vec<LocalAiBranchReviewFinding>,
+    pub notes: Vec<LocalAiBranchReviewNote>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -352,6 +420,7 @@ pub struct LocalAiConflictSuggestionsResult {
 pub enum LocalAiStructuredResult {
     CommitMessage(LocalAiCommitMessageResult),
     Analysis(LocalAiAnalysisResult),
+    BranchReview(LocalAiBranchReviewResult),
     ConflictSuggestions(LocalAiConflictSuggestionsResult),
 }
 
@@ -398,7 +467,7 @@ mod tests {
     fn serializes_run_progress_as_camel_case() {
         let progress = LocalAiRunProgress {
             run_id: "run-1".to_string(),
-            action_kind: LocalAiActionKind::CommitAnalysis,
+            action_kind: LocalAiActionKind::BranchReview,
             state: LocalAiRunProgressState::RunningModel,
             message: "Running local model".to_string(),
             error: None,
@@ -410,7 +479,7 @@ mod tests {
             value,
             serde_json::json!({
                 "runId": "run-1",
-                "actionKind": "commitAnalysis",
+                "actionKind": "branchReview",
                 "state": "runningModel",
                 "message": "Running local model",
                 "error": null

@@ -1,7 +1,8 @@
 use super::cache::{build_cache_key, get_cached_result, put_cached_result};
 use super::entitlement::{ensure_entitled, entitlement_status};
 use super::git_context::{
-    build_commit_analysis_context, build_git_context, LocalAiCommitAnalysisContextStep,
+    build_branch_context, build_commit_analysis_context, build_git_context,
+    LocalAiBranchContextStep, LocalAiCommitAnalysisContextStep,
 };
 use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
@@ -318,13 +319,6 @@ async fn run_action_inner(
     request: &LocalAiRunRequest,
 ) -> Result<LocalAiRunResult, String> {
     ensure_entitled()?;
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::ResolvingCommit,
-        "Resolving commit",
-        None,
-    );
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
     let runtime = client.runtime_status().await;
@@ -343,6 +337,7 @@ async fn run_action_inner(
 
     let model_id = resolve_model_id(request.action_kind, request.model_id.as_deref())?;
     let model = ensure_supported_model(&model_id)?;
+    ensure_model_supports_action(&model, request.action_kind)?;
     let status = client.model_status(&model_id).await;
 
     if !status.runtime.available {
@@ -363,16 +358,37 @@ async fn run_action_inner(
         .digest
         .clone()
         .unwrap_or_else(|| format!("{}:unknown-digest", model_id));
-    let git_context = if request.action_kind == super::types::LocalAiActionKind::CommitAnalysis {
-        let sha = request
-            .commit_sha
-            .as_deref()
-            .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
-        build_commit_analysis_context(&request.repo_path, sha, model.context_window, |step| {
-            emit_context_progress(app, request, step);
-        })?
-    } else {
-        build_git_context(request, model.context_window)?
+    let git_context = match request.action_kind {
+        super::types::LocalAiActionKind::CommitAnalysis => {
+            let sha = request
+                .commit_sha
+                .as_deref()
+                .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
+            build_commit_analysis_context(&request.repo_path, sha, model.context_window, |step| {
+                emit_commit_context_progress(app, request, step);
+            })?
+        }
+        super::types::LocalAiActionKind::BranchAnalysis
+        | super::types::LocalAiActionKind::BranchReview => {
+            let base_ref = request
+                .base_ref
+                .as_deref()
+                .ok_or_else(|| "Base ref is required for branch AI.".to_string())?;
+            let head_ref = request
+                .head_ref
+                .as_deref()
+                .ok_or_else(|| "Head ref is required for branch AI.".to_string())?;
+            build_branch_context(
+                &request.repo_path,
+                base_ref,
+                head_ref,
+                request.comparison_mode.as_deref().unwrap_or("direct"),
+                request.action_kind,
+                model.context_window,
+                |step| emit_branch_context_progress(app, request, step),
+            )?
+        }
+        _ => build_git_context(request, model.context_window)?,
     };
     emit_run_progress(
         app,
@@ -406,7 +422,7 @@ async fn run_action_inner(
                 app,
                 request,
                 LocalAiRunProgressState::Completed,
-                "Analysis complete",
+                completed_message(request.action_kind),
                 None,
             );
             return Ok(cached);
@@ -434,7 +450,7 @@ async fn run_action_inner(
         app,
         request,
         LocalAiRunProgressState::FormattingResult,
-        "Formatting analysis",
+        formatting_message(request.action_kind),
         None,
     );
     let structured = parse_structured_result(request.action_kind, &raw_response)?;
@@ -454,13 +470,13 @@ async fn run_action_inner(
         app,
         request,
         LocalAiRunProgressState::Completed,
-        "Analysis complete",
+        completed_message(request.action_kind),
         None,
     );
     Ok(result)
 }
 
-fn emit_context_progress(
+fn emit_commit_context_progress(
     app: &AppHandle,
     request: &LocalAiRunRequest,
     step: LocalAiCommitAnalysisContextStep,
@@ -483,6 +499,36 @@ fn emit_context_progress(
     }
 }
 
+fn emit_branch_context_progress(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    step: LocalAiBranchContextStep,
+) {
+    match step {
+        LocalAiBranchContextStep::ResolvingRefs => emit_run_progress(
+            app,
+            request,
+            LocalAiRunProgressState::ResolvingRefs,
+            "Resolving comparison refs",
+            None,
+        ),
+        LocalAiBranchContextStep::DeterminingDiffBase => emit_run_progress(
+            app,
+            request,
+            LocalAiRunProgressState::DeterminingDiffBase,
+            "Determining diff base",
+            None,
+        ),
+        LocalAiBranchContextStep::ReadingComparisonDiff => emit_run_progress(
+            app,
+            request,
+            LocalAiRunProgressState::ReadingComparisonDiff,
+            "Reading comparison diff",
+            None,
+        ),
+    }
+}
+
 fn emit_run_progress(
     app: &AppHandle,
     request: &LocalAiRunRequest,
@@ -490,7 +536,7 @@ fn emit_run_progress(
     message: &str,
     error: Option<String>,
 ) {
-    if request.action_kind != super::types::LocalAiActionKind::CommitAnalysis {
+    if !supports_run_progress(request.action_kind) {
         return;
     }
 
@@ -510,8 +556,46 @@ fn emit_run_progress(
     );
 }
 
+fn supports_run_progress(action_kind: super::types::LocalAiActionKind) -> bool {
+    matches!(
+        action_kind,
+        super::types::LocalAiActionKind::CommitAnalysis
+            | super::types::LocalAiActionKind::BranchAnalysis
+            | super::types::LocalAiActionKind::BranchReview
+    )
+}
+
+fn formatting_message(action_kind: super::types::LocalAiActionKind) -> &'static str {
+    match action_kind {
+        super::types::LocalAiActionKind::BranchReview => "Formatting review",
+        _ => "Formatting analysis",
+    }
+}
+
+fn completed_message(action_kind: super::types::LocalAiActionKind) -> &'static str {
+    match action_kind {
+        super::types::LocalAiActionKind::BranchReview => "Review complete",
+        _ => "Analysis complete",
+    }
+}
+
 fn ensure_supported_model(model_id: &str) -> Result<LocalAiModelEntry, String> {
     find_model(model_id).ok_or_else(|| format!("Unsupported local AI model: {}", model_id))
+}
+
+fn ensure_model_supports_action(
+    model: &LocalAiModelEntry,
+    action_kind: super::types::LocalAiActionKind,
+) -> Result<(), String> {
+    if model.action_suitability.contains(&action_kind) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "LOCAL_AI_MODEL_SETUP_REQUIRED: {} is not configured for {}. Select a model that supports this action.",
+        model.display_name,
+        action_kind.display_label()
+    ))
 }
 
 async fn warm_configured_models() -> Result<LocalAiWarmModelsResponse, String> {
@@ -593,6 +677,20 @@ mod tests {
         let error = ensure_supported_model("not-a-model").expect_err("unsupported model");
 
         assert!(error.contains("Unsupported local AI model"));
+    }
+
+    #[test]
+    fn rejects_models_that_do_not_support_action_at_command_boundary() {
+        let model = ensure_supported_model("qwen2.5-coder:3b").expect("model exists");
+
+        let error = ensure_model_supports_action(
+            &model,
+            super::super::types::LocalAiActionKind::BranchReview,
+        )
+        .expect_err("model should not support branch review");
+
+        assert!(error.contains("LOCAL_AI_MODEL_SETUP_REQUIRED"));
+        assert!(error.contains("Branch review"));
     }
 
     #[test]

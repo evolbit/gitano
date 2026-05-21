@@ -1,12 +1,16 @@
 import ReactDOM from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconCloudDownload, IconX } from "@/components/icons";
-import type { LocalAiActionKind } from "@/shared/api/local-ai";
+import type {
+  LocalAiActionKind,
+  LocalAiModelEntry,
+} from "@/shared/api/local-ai";
 import { useLocalAiStore } from "./store";
 
 type LocalAiSetupModalProps = {
   open: boolean;
   actionKind?: LocalAiActionKind | null;
+  setupReason?: string | null;
   onClose: () => void;
   onReady?: () => void;
 };
@@ -20,9 +24,17 @@ function formatBytes(value: number | null | undefined) {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)}GB`;
 }
 
+function isModelSuitableForAction(
+  model: LocalAiModelEntry,
+  actionKind?: LocalAiActionKind | null,
+) {
+  return !actionKind || model.actionSuitability.includes(actionKind);
+}
+
 export function LocalAiSetupModal({
   open,
   actionKind,
+  setupReason,
   onClose,
   onReady,
 }: LocalAiSetupModalProps) {
@@ -44,10 +56,18 @@ export function LocalAiSetupModal({
   const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [allowLimited, setAllowLimited] = useState(false);
   const setupStartedRef = useRef(false);
+  const readyHandlingRef = useRef(false);
+  const selectableCatalog = useMemo(() => {
+    const suitableModels = catalog.filter((model) =>
+      isModelSuitableForAction(model, actionKind),
+    );
+    return suitableModels.length ? suitableModels : catalog;
+  }, [actionKind, catalog]);
 
   useEffect(() => {
     if (!open) {
       setupStartedRef.current = false;
+      readyHandlingRef.current = false;
     }
   }, [open]);
 
@@ -58,12 +78,21 @@ export function LocalAiSetupModal({
 
   useEffect(() => {
     if (!open || !preferences) return;
-    const preferredModelId =
-      (actionKind ? preferences.actionModelIds[actionKind] : null) ??
-      preferences.globalModelId;
-    const nextModelId = preferredModelId || catalog[0]?.id || "";
+    const preferredModelIds = [
+      actionKind ? preferences.actionModelIds[actionKind] : null,
+      preferences.globalModelId,
+    ];
+    const nextModelId =
+      preferredModelIds.find(
+        (modelId) =>
+          !!modelId &&
+          selectableCatalog.some((model) => model.id === modelId),
+      ) ||
+      selectableCatalog[0]?.id ||
+      catalog[0]?.id ||
+      "";
     setSelectedModelId(nextModelId);
-  }, [actionKind, catalog, open, preferences]);
+  }, [actionKind, catalog, open, preferences, selectableCatalog]);
 
   useEffect(() => {
     if (!open || !selectedModelId) return;
@@ -71,8 +100,11 @@ export function LocalAiSetupModal({
   }, [loadSetupState, open, selectedModelId]);
 
   const selectedModel = useMemo(
-    () => catalog.find((model) => model.id === selectedModelId) ?? null,
-    [catalog, selectedModelId],
+    () =>
+      selectableCatalog.find((model) => model.id === selectedModelId) ??
+      catalog.find((model) => model.id === selectedModelId) ??
+      null,
+    [catalog, selectableCatalog, selectedModelId],
   );
   const activeProgress = activeOperationId
     ? progressByOperationId[activeOperationId]
@@ -103,6 +135,33 @@ export function LocalAiSetupModal({
     : "Download model";
   const showCompatibilityWarning =
     !!compatibility && compatibility.level !== "compatible";
+  const selectedActionModelId = actionKind
+    ? preferences?.actionModelIds[actionKind]
+    : null;
+  const saveSelectedModelForAction = useCallback(async () => {
+    if (!actionKind || !selectedModelId) return true;
+    if (selectedActionModelId === selectedModelId) return true;
+
+    await setPreference(selectedModelId, actionKind);
+    return (
+      useLocalAiStore.getState().preferences?.actionModelIds?.[actionKind] ===
+      selectedModelId
+    );
+  }, [actionKind, selectedActionModelId, selectedModelId, setPreference]);
+  const handleReady = useCallback(async () => {
+    if (readyHandlingRef.current) return;
+    readyHandlingRef.current = true;
+    const saved = await saveSelectedModelForAction();
+    if (!saved) {
+      readyHandlingRef.current = false;
+      return;
+    }
+
+    setupStartedRef.current = false;
+    onReady?.();
+    onClose();
+    readyHandlingRef.current = false;
+  }, [onClose, onReady, saveSelectedModelForAction]);
 
   useEffect(() => {
     if (
@@ -116,16 +175,13 @@ export function LocalAiSetupModal({
       return;
     }
 
-    setupStartedRef.current = false;
-    onReady?.();
-    onClose();
+    void handleReady();
   }, [
     activeOperationId,
     activeProgress?.modelId,
     activeProgress?.state,
+    handleReady,
     isReady,
-    onClose,
-    onReady,
     open,
     selectedModelId,
   ]);
@@ -162,6 +218,12 @@ export function LocalAiSetupModal({
             </div>
           ) : null}
 
+          {setupReason ? (
+            <div className="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs leading-5 text-blue-100">
+              {setupReason}
+            </div>
+          ) : null}
+
           {entitlement && !entitlement.entitled ? (
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-100">
               {entitlement.reason ?? "Local AI requires a premium license."}
@@ -183,7 +245,7 @@ export function LocalAiSetupModal({
                 void setPreference(modelId, actionKind ?? null);
               }}
             >
-              {catalog.map((model) => (
+              {selectableCatalog.map((model) => (
                 <option
                   key={model.id}
                   value={model.id}
@@ -359,8 +421,7 @@ export function LocalAiSetupModal({
               type="button"
               className="inline-flex h-8 items-center gap-2 rounded border border-blue-500/50 bg-blue-500/15 px-3 text-xs font-semibold text-blue-100 hover:bg-blue-500/25"
               onClick={() => {
-                onReady?.();
-                onClose();
+                void handleReady();
               }}
             >
               Ready

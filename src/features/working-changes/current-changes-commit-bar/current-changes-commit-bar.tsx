@@ -257,7 +257,9 @@ export default function CurrentChangesCommitBar({
       case "commitAnalysis":
         return "Commit review";
       case "branchAnalysis":
-        return "PR / branch review";
+        return "Branch analysis";
+      case "branchReview":
+        return "Branch review";
     }
   };
 

@@ -1,10 +1,9 @@
 import { getFileName, getParentPath } from "@/shared/lib/path";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { memo } from "react";
-import { ChangesExplorerCheckboxState } from "./utils";
-import { isUntrackedFile } from "./utils";
-import { FileSelectionCheckbox } from "./file-selection-checkbox";
 import { ChangesExplorerStatusIcon } from "./changes-explorer-status-icon";
+import { FileSelectionCheckbox } from "./file-selection-checkbox";
+import { ChangesExplorerCheckboxState, isUntrackedFile } from "./utils";
 
 type FileRowProps = {
   file: ChangesExplorerFile;
@@ -55,7 +54,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
       <ChangesExplorerStatusIcon file={file} />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate font-medium">{fileName}</span>
+          <span className="truncate">{fileName}</span>
           {parentPath ? (
             <span className="truncate text-zinc-400">{parentPath}</span>
           ) : null}
