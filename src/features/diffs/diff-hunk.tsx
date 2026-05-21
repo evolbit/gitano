@@ -296,6 +296,8 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
 };
 
 const EMPTY_SET = new Set<number>();
+const SOURCE_WRAP_CLASS = "min-w-0 whitespace-pre-wrap break-words";
+const SOURCE_WRAP_STYLE: React.CSSProperties = { overflowWrap: "anywhere" };
 
 function getStageableBlocks(lines: DiffLine[]): StageableBlock[] {
   const blocks: StageableBlock[] = [];
@@ -436,24 +438,30 @@ const UnifiedLineRow: React.FC<{
         onMouseDown={onMouseDown}
         onMouseEnter={onMouseEnter}
       >
-        <CenterBlockGutter
-          show={showHunkGutter}
-          isBlockStart={isBlockStart}
-          isBlockFullyStaged={isBlockFullyStaged}
-          isBlockPartiallyStaged={isBlockPartiallyStaged}
-          onMouseDown={onBlockMouseDown}
-        />
-        <CenterLineGutter
-          show={showLineGutter}
-          isChecked={isStaged}
-          isIndeterminate={false}
-          onMouseDown={onMouseDown}
-        />
-        <div className={`flex flex-1 items-start px-4 ${baseColor} ${contentTone}`}>
-          <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
+        {showHunkGutter || showLineGutter ? (
+          <>
+            <CenterBlockGutter
+              show={showHunkGutter}
+              isBlockStart={isBlockStart}
+              isBlockFullyStaged={isBlockFullyStaged}
+              isBlockPartiallyStaged={isBlockPartiallyStaged}
+              onMouseDown={onBlockMouseDown}
+            />
+            <CenterLineGutter
+              show={showLineGutter}
+              isChecked={isStaged}
+              isIndeterminate={false}
+              onMouseDown={onMouseDown}
+            />
+          </>
+        ) : null}
+        <div
+          className={`flex min-w-0 flex-1 items-start px-4 ${baseColor} ${contentTone}`}
+        >
+          <span className="block w-10 shrink-0 select-none pr-2 pt-1 text-right text-zinc-200">
             {line.old_lineno ?? ""}
           </span>
-          <span className="block w-10 select-none pr-2 pt-1 text-right text-zinc-200">
+          <span className="block w-10 shrink-0 select-none pr-2 pt-1 text-right text-zinc-200">
             {line.new_lineno ?? ""}
           </span>
           {lineAccessory ? (
@@ -461,7 +469,10 @@ const UnifiedLineRow: React.FC<{
               {lineAccessory}
             </span>
           ) : null}
-          <span className="min-w-0 flex-1 whitespace-pre pt-1">
+          <span
+            className={`${SOURCE_WRAP_CLASS} flex-1 pt-1`}
+            style={SOURCE_WRAP_STYLE}
+          >
             {line.content}
           </span>
         </div>
@@ -617,12 +628,22 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
       gridTemplateColumns: "minmax(0,1fr) 2.5rem 1.5rem 1.5rem 2.5rem minmax(0,1fr)",
     }}
   >
-    <span className="px-4 pt-1 whitespace-pre">{line.content}</span>
+    <span
+      className={`${SOURCE_WRAP_CLASS} px-4 pt-1`}
+      style={SOURCE_WRAP_STYLE}
+    >
+      {line.content}
+    </span>
     <span className="flex items-start justify-end pr-2 pt-1">{line.old_lineno ?? ""}</span>
     <span />
     <span />
     <span className="flex items-start justify-end pr-2 pt-1">{line.new_lineno ?? ""}</span>
-    <span className="px-4 pt-1 whitespace-pre">{line.content}</span>
+    <span
+      className={`${SOURCE_WRAP_CLASS} px-4 pt-1`}
+      style={SOURCE_WRAP_STYLE}
+    >
+      {line.content}
+    </span>
   </div>
 );
 
@@ -636,7 +657,7 @@ const SplitSideCell: React.FC<{
   onMouseEnter?: () => void;
 }> = ({ cell, tone, lineAccessory, lineBelow, onMouseDown, onMouseEnter }) => (
   <div
-    className={`min-w-0 whitespace-pre px-4 pt-1 ${tone} ${
+    className={`min-w-0 px-4 pt-1 ${tone} ${
       cell && onMouseDown ? "cursor-pointer" : ""
     }`}
     onMouseDown={cell ? onMouseDown : undefined}
@@ -648,7 +669,12 @@ const SplitSideCell: React.FC<{
           {lineAccessory}
         </span>
       ) : null}
-      <span className="min-w-0 flex-1">{cell?.line.content ?? ""}</span>
+      <span
+        className={`${SOURCE_WRAP_CLASS} flex-1`}
+        style={SOURCE_WRAP_STYLE}
+      >
+        {cell?.line.content ?? ""}
+      </span>
     </div>
     {lineBelow ? (
       <div className="mt-1 border-t border-border/40 bg-background/80 py-2 font-sans">
