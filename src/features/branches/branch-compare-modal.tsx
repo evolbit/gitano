@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { IconPlus, IconSparkles, IconX } from "@/components/icons";
+import { IconExchange, IconPlus, IconSparkles, IconX } from "@/components/icons";
 import {
   DiffInteractionProvider,
   DiffViewerBase,
@@ -49,13 +49,12 @@ import {
   type ReviewThread,
 } from "@/features/review-comments";
 import { getBranches } from "./api";
-import { BranchCompareTargetDropdown } from "./branch-compare-target-dropdown";
-import { getDefaultBranchComparisonBase } from "./branch-compare-utils";
+import { BranchCompareBranchDropdown } from "./branch-compare-target-dropdown";
 
 type BranchCompareModalProps = {
   repoPath: string;
-  sourceBranch: string;
-  currentBranch?: string | null;
+  initialSourceBranch: string | null;
+  initialTargetBranch: string | null;
   onClose: () => void;
 };
 
@@ -235,8 +234,8 @@ function branchAiFailureTitle(action: BranchAiAction, errorMessage: string) {
 
 export function BranchCompareModal({
   repoPath,
-  sourceBranch,
-  currentBranch,
+  initialSourceBranch,
+  initialTargetBranch,
   onClose,
 }: BranchCompareModalProps) {
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
@@ -244,7 +243,12 @@ export function BranchCompareModal({
   const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
   const [branchLoading, setBranchLoading] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
-  const [baseBranch, setBaseBranch] = useState<string | null>(null);
+  const [sourceBranch, setSourceBranch] = useState<string | null>(
+    initialSourceBranch,
+  );
+  const [targetBranch, setTargetBranch] = useState<string | null>(
+    initialTargetBranch,
+  );
   const [files, setFiles] = useState<FileChange[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -282,13 +286,28 @@ export function BranchCompareModal({
     review: null,
   });
 
+  useEffect(() => {
+    setSourceBranch(initialSourceBranch);
+    setTargetBranch(initialTargetBranch);
+  }, [initialSourceBranch, initialTargetBranch]);
+
+  const comparisonReady = Boolean(
+    sourceBranch && targetBranch && sourceBranch !== targetBranch,
+  );
   const pairKey = useMemo(
     () =>
-      baseBranch
-        ? getReviewComparisonPairKey(baseBranch, sourceBranch)
+      sourceBranch && targetBranch
+        ? getReviewComparisonPairKey(targetBranch, sourceBranch)
         : "",
-    [baseBranch, sourceBranch],
+    [sourceBranch, targetBranch],
   );
+  const emptyStateMessage = !sourceBranch
+    ? "Select a source branch"
+    : !targetBranch
+      ? "Select a target branch"
+      : sourceBranch === targetBranch
+        ? "No changes between these branches"
+        : "No changed files";
   const branchReviewData = reviewResultData(branchReview.result);
   const branchReviewAnchorIndex = useMemo(
     () => buildAnchorIndex(reviewHunksByPath),
@@ -398,10 +417,16 @@ export function BranchCompareModal({
     setBranchReview(emptyBranchAiState());
     setReviewHunksByPath({});
     setDismissedAiFindingKeys(new Set());
+    setActiveReviewAnchor(null);
   }, [pairKey]);
 
   useEffect(() => {
-    if (!baseBranch || !branchReviewData?.findings.length) {
+    if (
+      !comparisonReady ||
+      !sourceBranch ||
+      !targetBranch ||
+      !branchReviewData?.findings.length
+    ) {
       setReviewHunksByPath({});
       setReviewHunksLoading(false);
       return;
@@ -415,7 +440,7 @@ export function BranchCompareModal({
       filePaths.map(async (filePath) => {
         const fileHunks = await getBranchComparisonFileDiff({
           path: repoPath,
-          baseRef: baseBranch,
+          baseRef: targetBranch,
           headRef: sourceBranch,
           filePath,
           context: DIFF_CONTEXT_LINES,
@@ -439,7 +464,7 @@ export function BranchCompareModal({
     return () => {
       cancelled = true;
     };
-  }, [baseBranch, branchReviewData, repoPath, sourceBranch]);
+  }, [branchReviewData, comparisonReady, repoPath, sourceBranch, targetBranch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -451,14 +476,6 @@ export function BranchCompareModal({
         if (cancelled) return;
         setLocalBranches(local);
         setRemoteBranches(remote);
-        setBaseBranch(
-          getDefaultBranchComparisonBase({
-            currentBranch,
-            localBranches: local,
-            remoteBranches: remote,
-            sourceBranch,
-          }),
-        );
       })
       .catch((error) => {
         if (cancelled) return;
@@ -471,17 +488,25 @@ export function BranchCompareModal({
     return () => {
       cancelled = true;
     };
-  }, [currentBranch, repoPath, sourceBranch]);
+  }, [repoPath]);
 
   useEffect(() => {
-    if (!baseBranch) {
+    if (!comparisonReady || !sourceBranch || !targetBranch) {
+      filesRequestId.current += 1;
+      hunksRequestId.current += 1;
       setFiles([]);
       setSelectedPath(null);
+      setHunks([]);
+      setHunksLoading(false);
+      setHunksError(null);
+      setFilesLoading(false);
+      setFilesError(null);
       return;
     }
 
     const requestId = filesRequestId.current + 1;
     filesRequestId.current = requestId;
+    hunksRequestId.current += 1;
     setFilesLoading(true);
     setFilesError(null);
     setFiles([]);
@@ -490,7 +515,7 @@ export function BranchCompareModal({
 
     getBranchComparisonFiles({
       path: repoPath,
-      baseRef: baseBranch,
+      baseRef: targetBranch,
       headRef: sourceBranch,
       comparisonMode: BRANCH_COMPARE_MODE,
     })
@@ -505,11 +530,14 @@ export function BranchCompareModal({
       .finally(() => {
         if (requestId === filesRequestId.current) setFilesLoading(false);
       });
-  }, [baseBranch, repoPath, sourceBranch]);
+  }, [comparisonReady, repoPath, sourceBranch, targetBranch]);
 
   useEffect(() => {
-    if (!baseBranch || !selectedPath) {
+    if (!comparisonReady || !sourceBranch || !targetBranch || !selectedPath) {
+      hunksRequestId.current += 1;
       setHunks([]);
+      setHunksLoading(false);
+      setHunksError(null);
       return;
     }
 
@@ -521,7 +549,7 @@ export function BranchCompareModal({
 
     getBranchComparisonFileDiff({
       path: repoPath,
-      baseRef: baseBranch,
+      baseRef: targetBranch,
       headRef: sourceBranch,
       filePath: selectedPath,
       context: DIFF_CONTEXT_LINES,
@@ -536,7 +564,7 @@ export function BranchCompareModal({
       .finally(() => {
         if (requestId === hunksRequestId.current) setHunksLoading(false);
       });
-  }, [baseBranch, repoPath, selectedPath, sourceBranch]);
+  }, [comparisonReady, repoPath, selectedPath, sourceBranch, targetBranch]);
 
   const selectedFile = useMemo(
     () => files.find((file) => file.path === selectedPath) ?? null,
@@ -572,7 +600,7 @@ export function BranchCompareModal({
 
   const runBranchAiAction = useCallback(
     async (action: BranchAiAction, forceRefresh = false) => {
-      if (!baseBranch) return;
+      if (!comparisonReady || !sourceBranch || !targetBranch) return;
 
       const actionKind = branchAiActionKind(action);
       const runId = createBranchAiRunId(action);
@@ -595,7 +623,7 @@ export function BranchCompareModal({
           repoPath,
           actionKind,
           runId,
-          baseRef: baseBranch,
+          baseRef: targetBranch,
           headRef: sourceBranch,
           comparisonMode: BRANCH_COMPARE_MODE,
           forceRefresh,
@@ -638,7 +666,7 @@ export function BranchCompareModal({
         });
       }
     },
-    [baseBranch, notifyAiError, repoPath, sourceBranch],
+    [comparisonReady, notifyAiError, repoPath, sourceBranch, targetBranch],
   );
 
   const applyAiFinding = useCallback(
@@ -901,37 +929,54 @@ export function BranchCompareModal({
   );
 
   const branchAiLoading = branchAnalysis.loading || branchReview.loading;
+  const comparisonTitle = sourceBranch ?? "branch";
 
   const modalContent = (
     <div className="fixed inset-0 z-[10000]">
       <div className="absolute inset-0 bg-black/60" />
       <div className="relative mx-auto my-6 flex h-[96vh] w-[96vw] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
         <div className="flex min-w-0 items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0">
-              <div className="text-xs uppercase tracking-normal text-muted-foreground">
-                Compare
-              </div>
-              <div className="truncate text-base font-semibold text-foreground">
-                {sourceBranch}
-              </div>
-            </div>
-            <span className="text-muted-foreground">to</span>
-            <BranchCompareTargetDropdown
-              selectedBranch={baseBranch}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">
+              Show changes in
+            </span>
+            <BranchCompareBranchDropdown
+              selectedBranch={sourceBranch}
               localBranches={localBranches}
               remoteBranches={remoteBranches}
-              sourceBranch={sourceBranch}
+              placeholder="Select source branch"
               loading={branchLoading}
               error={branchError}
-              onSelectBranch={setBaseBranch}
+              onSelectBranch={setSourceBranch}
+            />
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+              title="Swap comparison direction"
+              aria-label="Swap comparison direction"
+              onClick={() => {
+                setSourceBranch(targetBranch);
+                setTargetBranch(sourceBranch);
+              }}
+            >
+              <IconExchange size={16} />
+            </button>
+            <span className="text-sm font-semibold text-foreground">against</span>
+            <BranchCompareBranchDropdown
+              selectedBranch={targetBranch}
+              localBranches={localBranches}
+              remoteBranches={remoteBranches}
+              placeholder="Select target branch"
+              loading={branchLoading}
+              error={branchError}
+              onSelectBranch={setTargetBranch}
             />
           </div>
           <div className="ml-4 flex items-center gap-2">
             <button
               type="button"
               className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!baseBranch || branchAiLoading}
+              disabled={!comparisonReady || branchAiLoading}
               onClick={() => {
                 void runBranchAiAction("analysis");
               }}
@@ -942,7 +987,7 @@ export function BranchCompareModal({
             <button
               type="button"
               className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!baseBranch || branchAiLoading}
+              disabled={!comparisonReady || branchAiLoading}
               onClick={() => {
                 void runBranchAiAction("review");
               }}
@@ -980,9 +1025,7 @@ export function BranchCompareModal({
               showHeader
               sectionMode="single"
               isLoading={filesLoading}
-              emptyStateMessage={
-                baseBranch ? "No changed files" : "Select a branch"
-              }
+              emptyStateMessage={emptyStateMessage}
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
@@ -1000,14 +1043,14 @@ export function BranchCompareModal({
               </DiffInteractionProvider>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {filesLoading ? "Loading files..." : "No file selected"}
+                {filesLoading ? "Loading files..." : emptyStateMessage}
               </div>
             )}
           </Split.Pane>
         </Split>
         <LocalAiResultModal
           open={Boolean(branchAnalysis.result) || branchAnalysis.loading}
-          title={`Analyze ${sourceBranch}`}
+          title={`Analyze ${comparisonTitle}`}
           result={branchAnalysis.result}
           loading={branchAnalysis.loading}
           error={branchAnalysis.error}
@@ -1023,7 +1066,7 @@ export function BranchCompareModal({
         />
         <LocalAiResultModal
           open={Boolean(visibleBranchReviewResult) || branchReview.loading}
-          title={`Review ${sourceBranch}`}
+          title={`Review ${comparisonTitle}`}
           result={visibleBranchReviewResult}
           loading={branchReview.loading}
           error={branchReview.error}

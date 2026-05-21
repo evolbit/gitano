@@ -12,11 +12,11 @@ import {
 } from "@/components/icons";
 import type { BranchTargetOption } from "./branch-compare-utils";
 
-type BranchCompareTargetDropdownProps = {
+type BranchCompareBranchDropdownProps = {
   selectedBranch: string | null;
   localBranches: string[];
   remoteBranches: string[];
-  sourceBranch: string;
+  placeholder: string;
   loading: boolean;
   error: string | null;
   onSelectBranch: (branchName: string) => void;
@@ -28,25 +28,23 @@ type DropdownRow =
 
 const ROW_HEIGHT = 34;
 
-export function BranchCompareTargetDropdown({
+export function BranchCompareBranchDropdown({
   selectedBranch,
   localBranches,
   remoteBranches,
-  sourceBranch,
+  placeholder,
   loading,
   error,
   onSelectBranch,
-}: BranchCompareTargetDropdownProps) {
+}: BranchCompareBranchDropdownProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const listRef = useRef<HTMLDivElement>(null);
-  const normalizedSource = sourceBranch.toLowerCase();
   const normalizedSearch = deferredSearch.trim().toLowerCase();
 
   const rows = useMemo<DropdownRow[]>(() => {
     const matches = (branch: string) =>
-      branch.toLowerCase() !== normalizedSource &&
       (!normalizedSearch || branch.toLowerCase().includes(normalizedSearch));
     const toBranchRows = (
       section: BranchTargetOption["section"],
@@ -74,7 +72,7 @@ export function BranchCompareTargetDropdown({
     }
 
     return nextRows;
-  }, [localBranches, normalizedSearch, normalizedSource, remoteBranches]);
+  }, [localBranches, normalizedSearch, remoteBranches]);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -82,6 +80,15 @@ export function BranchCompareTargetDropdown({
     estimateSize: () => ROW_HEIGHT,
     overscan: 8,
   });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const renderedRows =
+    virtualRows.length > 0
+      ? virtualRows
+      : rows.slice(0, 20).map((_, index) => ({
+          index,
+          key: `fallback:${index}`,
+          start: index * ROW_HEIGHT,
+        }));
 
   return (
     <div className="relative min-w-[280px]">
@@ -92,7 +99,7 @@ export function BranchCompareTargetDropdown({
       >
         <IconGitBranch size={16} className="shrink-0 text-lime-400" />
         <span className="min-w-0 flex-1 truncate">
-          {selectedBranch ?? "Select branch"}
+          {selectedBranch ?? placeholder}
         </span>
         <IconChevronDown size={16} className="shrink-0 text-zinc-500" />
       </button>
@@ -131,7 +138,7 @@ export function BranchCompareTargetDropdown({
                 className="relative w-full"
                 style={{ height: rowVirtualizer.getTotalSize() }}
               >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                {renderedRows.map((virtualRow) => {
                   const row = rows[virtualRow.index];
                   if (!row) return null;
 

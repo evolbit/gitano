@@ -41,6 +41,7 @@ import {
 import type {
   BranchContextMenuState,
   BranchContextRequest,
+  BranchComparisonSelection,
   BranchCreateFormState,
   BranchOperationCommand,
   BranchType,
@@ -106,9 +107,8 @@ export function useBranchListBehavior() {
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
   const [creatingWorktree, setCreatingWorktree] = useState(false);
-  const [compareSourceBranch, setCompareSourceBranch] = useState<string | null>(
-    null,
-  );
+  const [branchComparison, setBranchComparison] =
+    useState<BranchComparisonSelection | null>(null);
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -661,7 +661,7 @@ export function useBranchListBehavior() {
   }, []);
 
   const openBranchCompare = useCallback(
-    (branchName: string) => {
+    (comparison: BranchComparisonSelection) => {
       if (requiresInitialCommit) {
         setGitActionNotice({
           kind: "error",
@@ -672,13 +672,13 @@ export function useBranchListBehavior() {
         return;
       }
 
-      setCompareSourceBranch(branchName);
+      setBranchComparison(comparison);
     },
     [requiresInitialCommit, setGitActionNotice],
   );
 
   const closeBranchCompare = useCallback(() => {
-    setCompareSourceBranch(null);
+    setBranchComparison(null);
   }, []);
 
   const cancelRenameBranch = useCallback(() => {
@@ -717,7 +717,7 @@ export function useBranchListBehavior() {
     menuPos,
     menuRef,
     creatingWorktree,
-    compareSourceBranch,
+    branchComparison,
     requiresInitialCommit,
     isRowActionsVisible,
     setHoveredRowKey,

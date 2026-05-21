@@ -18,6 +18,11 @@ export type BranchContextMenuState = {
   node: BranchTreeNode;
 };
 
+export type BranchComparisonSelection = {
+  sourceBranch: string | null;
+  targetBranch: string | null;
+};
+
 export type BranchOperationCommand =
   | "git_branch_fast_forward_to_branch"
   | "git_branch_merge_into"

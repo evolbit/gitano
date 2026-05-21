@@ -117,11 +117,11 @@ export function BranchList() {
           void branchList.deleteBranch();
         }}
       />
-      {branchList.compareSourceBranch ? (
+      {branchList.branchComparison ? (
         <BranchCompareModal
           repoPath={branchList.repoPath}
-          sourceBranch={branchList.compareSourceBranch}
-          currentBranch={branchList.selectedBranch}
+          initialSourceBranch={branchList.branchComparison.sourceBranch}
+          initialTargetBranch={branchList.branchComparison.targetBranch}
           onClose={branchList.closeBranchCompare}
         />
       ) : null}

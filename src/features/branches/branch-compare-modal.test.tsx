@@ -36,9 +36,9 @@ vi.mock("@/shared/platform/clipboard", () => clipboardMocks);
 describe("BranchCompareModal local AI", () => {
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn();
-    branchApiMocks.getBranches.mockImplementation((_repoPath: string, type: string) =>
-      Promise.resolve(type === "local" ? ["main", "feature"] : []),
-    );
+	    branchApiMocks.getBranches.mockImplementation((_repoPath: string, type: string) =>
+	      Promise.resolve(type === "local" ? ["main", "feature", "develop"] : []),
+	    );
     diffApiMocks.getBranchComparisonFiles.mockResolvedValue([]);
     diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([]);
     localAiMocks.runLocalAiAction.mockResolvedValue({
@@ -169,12 +169,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -199,12 +199,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -221,6 +221,182 @@ describe("BranchCompareModal local AI", () => {
       headRef: "feature",
       comparisonMode: "direct",
       forceRefresh: false,
+    });
+  });
+
+  it("reloads comparison files when the source branch changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="feature"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalledWith({
+        path: "/repo",
+        baseRef: "main",
+        headRef: "feature",
+        comparisonMode: "direct",
+      });
+    });
+    diffApiMocks.getBranchComparisonFiles.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "feature" }));
+    await user.click(await screen.findByRole("button", { name: "develop" }));
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalledWith({
+        path: "/repo",
+        baseRef: "main",
+        headRef: "develop",
+        comparisonMode: "direct",
+      });
+    });
+  });
+
+  it("reloads comparison files when the target branch changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="feature"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalled();
+    });
+    diffApiMocks.getBranchComparisonFiles.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "main" }));
+    await user.click(await screen.findByRole("button", { name: "develop" }));
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalledWith({
+        path: "/repo",
+        baseRef: "develop",
+        headRef: "feature",
+        comparisonMode: "direct",
+      });
+    });
+  });
+
+  it("supports empty endpoint selections without loading comparison files", async () => {
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch={null}
+          initialTargetBranch={null}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(branchApiMocks.getBranches).toHaveBeenCalled();
+    });
+
+    expect(diffApiMocks.getBranchComparisonFiles).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Select a source branch").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review" })).toBeDisabled();
+  });
+
+  it("treats same-branch comparisons as a no-op empty state", async () => {
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="main"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(branchApiMocks.getBranches).toHaveBeenCalled();
+    });
+
+    expect(diffApiMocks.getBranchComparisonFiles).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText("No changes between these branches").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Analyze" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review" })).toBeDisabled();
+  });
+
+  it("swaps branch comparison direction", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="feature"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalled();
+    });
+    diffApiMocks.getBranchComparisonFiles.mockClear();
+
+    await user.click(
+      screen.getByRole("button", { name: "Swap comparison direction" }),
+    );
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalledWith({
+        path: "/repo",
+        baseRef: "feature",
+        headRef: "main",
+        comparisonMode: "direct",
+      });
+    });
+  });
+
+  it("clears stale local AI analysis when the comparison pair changes", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="feature"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalled();
+    });
+    await user.click(screen.getByRole("button", { name: "Analyze" }));
+    expect(await screen.findByText("Looks good")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "feature" }));
+    await user.click(await screen.findByRole("button", { name: "develop" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Looks good")).not.toBeInTheDocument();
     });
   });
 
@@ -243,12 +419,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -280,12 +456,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -317,12 +493,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -401,12 +577,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 
@@ -476,12 +652,12 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
-          repoPath="/repo"
-          sourceBranch="feature"
-          currentBranch="main"
-          onClose={vi.fn()}
-        />
+	        <BranchCompareModal
+	          repoPath="/repo"
+	          initialSourceBranch="feature"
+	          initialTargetBranch="main"
+	          onClose={vi.fn()}
+	        />
       </MantineProvider>,
     );
 

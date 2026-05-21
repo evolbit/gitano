@@ -15,6 +15,7 @@ import type {
   MenuPosition,
   PendingRemoteBranchAction,
   RemoteBranchActionCommand,
+  BranchComparisonSelection,
 } from "./types";
 
 type BranchContextMenuProps = {
@@ -46,7 +47,7 @@ type BranchContextMenuProps = {
   onCreateRandomWorktreeFromBranch: (baseRef: string) => void;
   onCopyText: (text: string, successTitle: string, successDetails: string) => void;
   onCopyBranchTipSha: (branchName: string) => void;
-  onCompareBranch: (branchName: string) => void;
+  onCompareBranch: (comparison: BranchComparisonSelection) => void;
   onRequestRenameBranch: (branchName: string) => void;
   onRequestDeleteBranch: (branchName: string) => void;
 };
@@ -144,7 +145,11 @@ export function BranchContextMenu({
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
   const compareDisabledReason = !isBranchNode
     ? "Compare is only available for branches"
-    : null;
+    : !selectedBranch
+      ? "Compare requires a current local branch"
+      : selectedBranch === branchName
+        ? "Source and target branch are the same"
+        : null;
   const compareActionClass = compareDisabledReason
     ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
@@ -254,6 +259,7 @@ export function BranchContextMenu({
         <BranchContextMenuSeparator />
         <BranchContextMenuCompareItems
           branchName={branchName}
+          currentBranch={selectedBranch ?? null}
           disabledReason={compareDisabledReason}
           itemClass={compareActionClass}
           onCompareBranch={onCompareBranch}
