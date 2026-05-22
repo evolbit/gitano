@@ -1,3 +1,4 @@
+use super::context_window::prompt_context_budget_chars;
 use super::types::{LocalAiActionKind, LocalAiRunMetadata, LocalAiRunRequest};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -5,7 +6,6 @@ use std::process::Command;
 
 const DIFF_CONTEXT_LINES: usize = 3;
 const COMMIT_MESSAGE_DIFF_CONTEXT_LINES: usize = 1;
-const COMMIT_MESSAGE_MAX_CONTEXT_CHARS: usize = 18_000;
 
 #[derive(Debug, Clone)]
 pub struct LocalAiGitContext {
@@ -14,6 +14,14 @@ pub struct LocalAiGitContext {
     pub prompt_context: String,
     pub input_digest: String,
     pub metadata: LocalAiRunMetadata,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalAiBranchReviewFileContexts {
+    pub title: String,
+    pub input_digest: String,
+    pub metadata: LocalAiRunMetadata,
+    pub blocks: Vec<LocalAiGitContext>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +72,7 @@ pub fn build_git_context(
 
     Ok(apply_context_budget(
         raw,
-        context_budget_chars(request.action_kind, context_window),
+        prompt_context_budget_chars(request.action_kind, context_window),
     ))
 }
 
@@ -79,7 +87,7 @@ where
 {
     Ok(apply_context_budget(
         commit_context_with_progress(repo_path, sha, on_step)?,
-        context_budget_chars(LocalAiActionKind::CommitAnalysis, context_window),
+        prompt_context_budget_chars(LocalAiActionKind::CommitAnalysis, context_window),
     ))
 }
 
@@ -104,8 +112,29 @@ where
             action_kind,
             on_step,
         )?,
-        context_budget_chars(action_kind, context_window),
+        prompt_context_budget_chars(action_kind, context_window),
     ))
+}
+
+pub fn build_branch_review_file_contexts<F>(
+    repo_path: &str,
+    base_ref: &str,
+    head_ref: &str,
+    comparison_mode: &str,
+    context_window: usize,
+    on_step: F,
+) -> Result<LocalAiBranchReviewFileContexts, String>
+where
+    F: FnMut(LocalAiBranchContextStep),
+{
+    build_branch_review_file_contexts_with_progress(
+        repo_path,
+        base_ref,
+        head_ref,
+        comparison_mode,
+        context_window,
+        on_step,
+    )
 }
 
 fn staged_context(repo_path: &str) -> Result<LocalAiGitContext, String> {
@@ -282,6 +311,135 @@ where
     })
 }
 
+fn build_branch_review_file_contexts_with_progress<F>(
+    repo_path: &str,
+    base_ref: &str,
+    head_ref: &str,
+    comparison_mode: &str,
+    context_window: usize,
+    mut on_step: F,
+) -> Result<LocalAiBranchReviewFileContexts, String>
+where
+    F: FnMut(LocalAiBranchContextStep),
+{
+    on_step(LocalAiBranchContextStep::ResolvingRefs);
+    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
+    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
+    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
+    let from_ref = if comparison_mode == "mergeBase" || comparison_mode == "merge-base" {
+        run_git(repo_path, &["merge-base", base_ref, head_ref])?
+    } else {
+        base_sha.clone()
+    };
+    let from_ref = from_ref.trim().to_string();
+    let head_sha = head_sha.trim().to_string();
+    on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
+    let name_status = run_git(repo_path, &["diff", "--name-status", &from_ref, &head_sha])?;
+    let stat = run_git(repo_path, &["diff", "--stat", &from_ref, &head_sha])?;
+    let file_paths = parse_name_status_paths(&name_status);
+
+    if file_paths.is_empty() {
+        return Err("The selected branch comparison has no diff context to analyze.".to_string());
+    }
+
+    let mut blocks = Vec::new();
+    let max_chars = prompt_context_budget_chars(LocalAiActionKind::BranchReview, context_window);
+
+    for file_path in &file_paths {
+        let diff = run_git(
+            repo_path,
+            &[
+                "diff",
+                "--find-renames",
+                &format!("-U{}", DIFF_CONTEXT_LINES),
+                &from_ref,
+                &head_sha,
+                "--",
+                file_path,
+            ],
+        )?;
+
+        if diff.trim().is_empty() {
+            continue;
+        }
+
+        let content = format!(
+            "Action: Review changed code in one segmented branch-review file block\nBase ref: {} ({})\nHead ref: {} ({})\nComparison mode: {}\nEffective diff base: {}\nReview scope: file-level block\nCurrent review file: {}\n\nAll changed files in this comparison:\n{}\n\nChanged file summary:\n{}\n\nFile diff block:\n{}",
+            base_ref,
+            base_sha.trim(),
+            head_ref,
+            head_sha,
+            comparison_mode,
+            from_ref,
+            file_path,
+            name_status,
+            stat,
+            diff
+        );
+        let digest = digest_parts(&[
+            "branchReviewFileBlock",
+            &from_ref,
+            &head_sha,
+            comparison_mode,
+            file_path,
+            &diff,
+        ]);
+        let context = LocalAiGitContext {
+            action_kind: LocalAiActionKind::BranchReview,
+            title: file_path.clone(),
+            prompt_context: content,
+            input_digest: digest,
+            metadata: empty_metadata(),
+        };
+
+        blocks.push(apply_context_budget(context, max_chars));
+    }
+
+    if blocks.is_empty() {
+        return Err("The selected branch comparison has no diff context to analyze.".to_string());
+    }
+
+    let block_digests = blocks
+        .iter()
+        .map(|block| block.input_digest.as_str())
+        .collect::<Vec<_>>()
+        .join("\0");
+    let mut metadata = empty_metadata();
+    for block in &blocks {
+        metadata
+            .omitted_files
+            .extend(block.metadata.omitted_files.iter().cloned());
+        metadata
+            .omitted_sections
+            .extend(block.metadata.omitted_sections.iter().cloned());
+    }
+
+    Ok(LocalAiBranchReviewFileContexts {
+        title: format!("{}...{}", base_ref, head_ref),
+        input_digest: digest_parts(&[
+            "branchReviewFileBlocks",
+            &from_ref,
+            &head_sha,
+            comparison_mode,
+            &name_status,
+            &stat,
+            &block_digests,
+        ]),
+        metadata,
+        blocks,
+    })
+}
+
+fn parse_name_status_paths(name_status: &str) -> Vec<String> {
+    name_status
+        .lines()
+        .filter_map(|line| line.split('\t').next_back())
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
 fn branch_action_label(action_kind: LocalAiActionKind) -> &'static str {
     match action_kind {
         LocalAiActionKind::BranchReview => {
@@ -356,18 +514,6 @@ fn apply_context_budget(mut context: LocalAiGitContext, max_chars: usize) -> Loc
     context
 }
 
-fn context_budget_chars(action_kind: LocalAiActionKind, context_window: usize) -> usize {
-    let model_budget = context_window.saturating_mul(3).max(8_000);
-
-    match action_kind {
-        LocalAiActionKind::CommitMessage => model_budget.min(COMMIT_MESSAGE_MAX_CONTEXT_CHARS),
-        LocalAiActionKind::CommitAnalysis
-        | LocalAiActionKind::BranchAnalysis
-        | LocalAiActionKind::BranchReview
-        | LocalAiActionKind::MergeConflictSuggestions => model_budget,
-    }
-}
-
 fn empty_metadata() -> LocalAiRunMetadata {
     LocalAiRunMetadata {
         omitted_files: vec![],
@@ -406,6 +552,7 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::context_window::prompt_context_budget_chars;
     use crate::git::test_support::{commit_file, init_repo, run_git, write_file};
 
     #[test]
@@ -441,9 +588,16 @@ mod tests {
 
     #[test]
     fn commit_message_context_uses_smaller_budget() {
-        let budget = context_budget_chars(LocalAiActionKind::CommitMessage, 32_768);
+        let budget = prompt_context_budget_chars(LocalAiActionKind::CommitMessage, 32_768);
 
-        assert_eq!(budget, COMMIT_MESSAGE_MAX_CONTEXT_CHARS);
+        assert_eq!(budget, 18_000);
+    }
+
+    #[test]
+    fn branch_review_context_reserves_prediction_budget_for_phi_context() {
+        let budget = prompt_context_budget_chars(LocalAiActionKind::BranchReview, 131_072);
+
+        assert_eq!(budget, (65_536 - 4_096) * 3);
     }
 
     #[test]
@@ -500,5 +654,56 @@ mod tests {
         );
         assert_eq!(context.action_kind, LocalAiActionKind::BranchReview);
         assert!(context.prompt_context.contains("Review changed code"));
+    }
+
+    #[test]
+    fn parses_name_status_paths_with_renames() {
+        let paths = parse_name_status_paths("M\tsrc/app.ts\nR100\tsrc/old.ts\tsrc/new.ts\n");
+
+        assert_eq!(paths, vec!["src/app.ts", "src/new.ts"]);
+    }
+
+    #[test]
+    fn branch_review_file_contexts_split_changed_files() {
+        let repo = init_repo();
+        commit_file(repo.path(), "a.txt", "one\n", "initial");
+        commit_file(repo.path(), "b.txt", "one\n", "add b");
+        run_git(repo.path(), &["checkout", "-b", "feature"]);
+        commit_file(repo.path(), "a.txt", "one\ntwo\n", "update a");
+        commit_file(repo.path(), "b.txt", "one\ntwo\n", "update b");
+        let repo_path = repo.path().to_string_lossy();
+        let mut steps = Vec::new();
+
+        let contexts = build_branch_review_file_contexts(
+            &repo_path,
+            "main",
+            "feature",
+            "direct",
+            8_192,
+            |step| steps.push(step),
+        )
+        .unwrap();
+
+        assert_eq!(contexts.blocks.len(), 2);
+        assert!(contexts
+            .blocks
+            .iter()
+            .all(|block| block.action_kind == LocalAiActionKind::BranchReview));
+        assert!(contexts
+            .blocks
+            .iter()
+            .any(|block| block.prompt_context.contains("Current review file: a.txt")));
+        assert!(contexts
+            .blocks
+            .iter()
+            .any(|block| block.prompt_context.contains("Current review file: b.txt")));
+        assert_eq!(
+            steps,
+            vec![
+                LocalAiBranchContextStep::ResolvingRefs,
+                LocalAiBranchContextStep::DeterminingDiffBase,
+                LocalAiBranchContextStep::ReadingComparisonDiff,
+            ]
+        );
     }
 }

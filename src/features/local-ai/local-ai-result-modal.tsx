@@ -197,6 +197,43 @@ function ListSection({
   );
 }
 
+function ContextMetadataNotice({
+  metadata,
+}: {
+  metadata?: LocalAiRunResult["metadata"] | null;
+}) {
+  const omittedFiles = metadata?.omittedFiles ?? [];
+  const omittedSections = metadata?.omittedSections ?? [];
+  const items = [
+    ...omittedFiles.map((file) => `Omitted file: ${file}`),
+    ...omittedSections,
+  ];
+
+  if (!items.length) return null;
+
+  const visibleItems = items.slice(0, 5);
+  const hiddenCount = items.length - visibleItems.length;
+
+  return (
+    <section className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-normal text-amber-100">
+        Context
+      </h3>
+      <p className="text-xs text-amber-100/90">
+        Some context was omitted or truncated.
+      </p>
+      <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-amber-100/90">
+        {visibleItems.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+        {hiddenCount > 0 ? (
+          <li>{hiddenCount} more omitted context entries.</li>
+        ) : null}
+      </ul>
+    </section>
+  );
+}
+
 function AnalysisBody({
   analysis,
   showChangedAreas = true,
@@ -515,6 +552,9 @@ export function LocalAiResultModal({
             <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
               {error}
             </div>
+          ) : null}
+          {!loading && !error && result ? (
+            <ContextMetadataNotice metadata={result.metadata} />
           ) : null}
           {!loading && !error && analysis ? (
             <AnalysisBody

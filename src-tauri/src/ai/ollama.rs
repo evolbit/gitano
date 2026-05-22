@@ -1,3 +1,4 @@
+use super::context_window::{effective_context_window, generation_num_predict};
 use super::types::{
     LocalAiActionKind, LocalAiDownloadProgress, LocalAiModelStatus, LocalAiProgressState,
     LocalAiRuntimeStatus, LOCAL_AI_PROGRESS_EVENT,
@@ -323,9 +324,10 @@ impl OllamaClient {
             .client
             .post(self.url("/api/generate"))
             .json(&request)
+            .timeout(generation_timeout(action_kind))
             .send()
             .await
-            .map_err(|e| format!("Local AI generation failed: {}", e))?;
+            .map_err(|e| format_generation_error(action_kind, e))?;
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -397,20 +399,8 @@ impl OllamaClient {
 }
 
 fn generation_options(action_kind: LocalAiActionKind, context_window: usize) -> serde_json::Value {
-    let num_ctx = match action_kind {
-        LocalAiActionKind::CommitMessage => context_window.clamp(2_048, 8_192),
-        LocalAiActionKind::CommitAnalysis
-        | LocalAiActionKind::BranchAnalysis
-        | LocalAiActionKind::BranchReview
-        | LocalAiActionKind::MergeConflictSuggestions => context_window.clamp(4_096, 32_768),
-    };
-    let num_predict = match action_kind {
-        LocalAiActionKind::CommitMessage => 96,
-        LocalAiActionKind::CommitAnalysis => 1_600,
-        LocalAiActionKind::BranchAnalysis => 3_072,
-        LocalAiActionKind::BranchReview => 4_096,
-        LocalAiActionKind::MergeConflictSuggestions => 1_800,
-    };
+    let num_ctx = effective_context_window(action_kind, context_window);
+    let num_predict = generation_num_predict(action_kind);
     let temperature = match action_kind {
         LocalAiActionKind::CommitMessage => 0.1,
         LocalAiActionKind::CommitAnalysis
@@ -425,6 +415,30 @@ fn generation_options(action_kind: LocalAiActionKind, context_window: usize) -> 
         "num_ctx": num_ctx,
         "num_predict": num_predict
     })
+}
+
+fn generation_timeout(action_kind: LocalAiActionKind) -> Duration {
+    match action_kind {
+        LocalAiActionKind::BranchAnalysis | LocalAiActionKind::BranchReview => {
+            Duration::from_secs(8 * 60)
+        }
+        LocalAiActionKind::CommitAnalysis | LocalAiActionKind::MergeConflictSuggestions => {
+            Duration::from_secs(5 * 60)
+        }
+        LocalAiActionKind::CommitMessage => Duration::from_secs(2 * 60),
+    }
+}
+
+fn format_generation_error(action_kind: LocalAiActionKind, error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        return format!(
+            "Local AI {} timed out after {} minutes. Try a smaller comparison or a lighter local model.",
+            action_kind.display_label().to_lowercase(),
+            generation_timeout(action_kind).as_secs() / 60
+        );
+    }
+
+    format!("Local AI generation failed: {}", error)
 }
 
 fn format_ollama_http_error(context: &str, status: reqwest::StatusCode, body: &str) -> String {
@@ -724,9 +738,9 @@ mod tests {
 
     #[test]
     fn branch_review_generation_uses_larger_prediction_budget() {
-        let options = generation_options(LocalAiActionKind::BranchReview, 32_768);
+        let options = generation_options(LocalAiActionKind::BranchReview, 131_072);
 
-        assert_eq!(options["num_ctx"], 32_768);
+        assert_eq!(options["num_ctx"], 65_536);
         assert_eq!(options["num_predict"], 4_096);
     }
 

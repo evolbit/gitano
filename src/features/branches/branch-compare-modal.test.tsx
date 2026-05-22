@@ -480,6 +480,9 @@ describe("BranchCompareModal local AI", () => {
       });
     });
     expect(screen.queryByText("Model setup")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("No actionable review findings returned."),
+    ).not.toBeInTheDocument();
   });
 
   it("renders branch AI progress events while review is running", async () => {
@@ -597,6 +600,79 @@ describe("BranchCompareModal local AI", () => {
     expect(
       screen.getByText("Can we guard this call before updating state?"),
     ).toBeInTheDocument();
+  });
+
+  it("renders invalid-anchor AI review findings as notes without apply controls", async () => {
+    const user = userEvent.setup();
+    diffApiMocks.getBranchComparisonFiles.mockResolvedValue([
+      { path: "src/app.ts", status: "modified", insertions: 1, deletions: 0 },
+    ]);
+    diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([
+      {
+        header: "@@ -1,1 +1,2 @@",
+        old_start: 1,
+        old_lines: 1,
+        new_start: 1,
+        new_lines: 2,
+        is_new_file: false,
+        lines: [
+          { kind: "Context", content: " keep", old_lineno: 1, new_lineno: 1 },
+          { kind: "Add", content: "+ risky()", old_lineno: null, new_lineno: 2 },
+        ],
+      },
+    ]);
+    localAiMocks.runLocalAiAction.mockResolvedValue({
+      actionKind: "branchReview",
+      result: {
+        kind: "branchReview",
+        data: {
+          summary: "One issue",
+          findings: [
+            {
+              severity: "medium",
+              confidence: "high",
+              title: "Invalid anchor finding",
+              explanation: "The concern is useful but the line is not in the diff.",
+              impact: "The user still needs to see the feedback.",
+              recommendation: "Show it as a note.",
+              suggestedComment: "Can we verify this path?",
+              filePath: "src/app.ts",
+              side: "new",
+              line: 99,
+              endLine: null,
+            },
+          ],
+          notes: [],
+        },
+      },
+      modelId: "qwen2.5-coder:7b",
+      modelDigest: "digest",
+      promptVersion: "v1",
+      inputDigest: "input",
+      fromCache: false,
+      metadata: { omittedFiles: [], omittedSections: [] },
+    });
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="feature"
+          initialTargetBranch="main"
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await screen.findByText(/risky/);
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Review notes")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Apply draft" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Invalid anchor finding")).toBeInTheDocument();
+    expect(screen.getByText("Show it as a note.")).toBeInTheDocument();
   });
 
   it("copies and dismisses AI review findings", async () => {

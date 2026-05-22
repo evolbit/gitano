@@ -1,8 +1,9 @@
 use super::cache::{build_cache_key, get_cached_result, put_cached_result};
+use super::context_window::{effective_context_window, generation_context_window_for_prompt};
 use super::entitlement::{ensure_entitled, entitlement_status};
 use super::git_context::{
-    build_branch_context, build_commit_analysis_context, build_git_context,
-    LocalAiBranchContextStep, LocalAiCommitAnalysisContextStep,
+    build_branch_context, build_branch_review_file_contexts, build_commit_analysis_context,
+    build_git_context, LocalAiBranchContextStep, LocalAiCommitAnalysisContextStep,
 };
 use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
@@ -19,16 +20,22 @@ use super::runtime::{
     using_external_ollama,
 };
 use super::types::{
-    LocalAiCompatibility, LocalAiCompatibilityLevel, LocalAiEntitlementStatus,
+    LocalAiActionKind, LocalAiBranchReviewNote, LocalAiBranchReviewResult, LocalAiCompatibility,
+    LocalAiCompatibilityLevel, LocalAiEntitlementStatus, LocalAiFindingSeverity,
     LocalAiMachineProfile, LocalAiModelEntry, LocalAiModelStatus, LocalAiPreferences,
     LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
-    LocalAiPrepareRuntimeResponse, LocalAiRunProgress, LocalAiRunProgressState, LocalAiRunRequest,
-    LocalAiRunResult, LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus,
-    LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
-    LocalAiWarmModelFailure, LocalAiWarmModelsResponse, LOCAL_AI_RUN_PROGRESS_EVENT,
+    LocalAiPrepareRuntimeResponse, LocalAiReviewConfidence, LocalAiReviewLineSide,
+    LocalAiRunProgress, LocalAiRunProgressState, LocalAiRunRequest, LocalAiRunResult,
+    LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest,
+    LocalAiSetModelWarmPreferenceRequest, LocalAiStructuredResult, LocalAiWarmModelFailure,
+    LocalAiWarmModelsResponse, LOCAL_AI_RUN_PROGRESS_EVENT,
 };
+use futures_util::{stream, StreamExt};
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
+
+const BRANCH_REVIEW_PARALLEL_CALLS: usize = 5;
 
 #[tauri::command]
 pub fn ai_get_entitlement_status() -> LocalAiEntitlementStatus {
@@ -358,13 +365,28 @@ async fn run_action_inner(
         .digest
         .clone()
         .unwrap_or_else(|| format!("{}:unknown-digest", model_id));
+
+    if request.action_kind == LocalAiActionKind::BranchReview {
+        return run_segmented_branch_review(
+            app,
+            request,
+            client,
+            model_id,
+            &model,
+            model_digest,
+            &preferences,
+        )
+        .await;
+    }
+
+    let effective_context = effective_context_window(request.action_kind, model.context_window);
     let git_context = match request.action_kind {
         super::types::LocalAiActionKind::CommitAnalysis => {
             let sha = request
                 .commit_sha
                 .as_deref()
                 .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
-            build_commit_analysis_context(&request.repo_path, sha, model.context_window, |step| {
+            build_commit_analysis_context(&request.repo_path, sha, effective_context, |step| {
                 emit_commit_context_progress(app, request, step);
             })?
         }
@@ -384,11 +406,11 @@ async fn run_action_inner(
                 head_ref,
                 request.comparison_mode.as_deref().unwrap_or("direct"),
                 request.action_kind,
-                model.context_window,
+                effective_context,
                 |step| emit_branch_context_progress(app, request, step),
             )?
         }
-        _ => build_git_context(request, model.context_window)?,
+        _ => build_git_context(request, effective_context)?,
     };
     emit_run_progress(
         app,
@@ -430,6 +452,11 @@ async fn run_action_inner(
     }
 
     let prompt = build_prompt(&git_context);
+    let generation_context = generation_context_window_for_prompt(
+        request.action_kind,
+        model.context_window,
+        prompt.len(),
+    );
     emit_run_progress(
         app,
         request,
@@ -442,7 +469,7 @@ async fn run_action_inner(
             &model_id,
             &prompt,
             request.action_kind,
-            model.context_window,
+            generation_context,
             &keep_alive_duration(&preferences),
         )
         .await?;
@@ -474,6 +501,272 @@ async fn run_action_inner(
         None,
     );
     Ok(result)
+}
+
+async fn run_segmented_branch_review(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    client: OllamaClient,
+    model_id: String,
+    model: &LocalAiModelEntry,
+    model_digest: String,
+    preferences: &LocalAiPreferences,
+) -> Result<LocalAiRunResult, String> {
+    let base_ref = request
+        .base_ref
+        .as_deref()
+        .ok_or_else(|| "Base ref is required for branch AI.".to_string())?;
+    let head_ref = request
+        .head_ref
+        .as_deref()
+        .ok_or_else(|| "Head ref is required for branch AI.".to_string())?;
+    let effective_context = effective_context_window(request.action_kind, model.context_window);
+    let file_contexts = build_branch_review_file_contexts(
+        &request.repo_path,
+        base_ref,
+        head_ref,
+        request.comparison_mode.as_deref().unwrap_or("direct"),
+        effective_context,
+        |step| emit_branch_context_progress(app, request, step),
+    )?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::CheckingCache,
+        if request.force_refresh {
+            "Bypassing cached review"
+        } else {
+            "Checking cache"
+        },
+        None,
+    );
+    let cache_key = build_cache_key(
+        request.action_kind,
+        PROMPT_VERSION,
+        &model_digest,
+        &request.repo_path,
+        &file_contexts.input_digest,
+    );
+
+    if !request.force_refresh {
+        if let Some(cached) = get_cached_result(&cache_key) {
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::CacheHit,
+                "Using cached review",
+                None,
+            );
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::Completed,
+                completed_message(request.action_kind),
+                None,
+            );
+            return Ok(cached);
+        }
+    }
+
+    let input_digest = file_contexts.input_digest;
+    let metadata = file_contexts.metadata;
+    let blocks = file_contexts.blocks;
+    let total_blocks = blocks.len();
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::RunningModel,
+        &format!(
+            "Running local model on {} file block{}",
+            total_blocks,
+            if total_blocks == 1 { "" } else { "s" }
+        ),
+        None,
+    );
+
+    let keep_alive = keep_alive_duration(preferences);
+    let block_results = stream::iter(blocks.into_iter().map(|context| {
+        let client = client.clone();
+        let model_id = model_id.clone();
+        let keep_alive = keep_alive.clone();
+        let model_context_window = model.context_window;
+
+        async move {
+            let file_path = context.title.clone();
+            let prompt = build_prompt(&context);
+            let generation_context = generation_context_window_for_prompt(
+                LocalAiActionKind::BranchReview,
+                model_context_window,
+                prompt.len(),
+            );
+            let raw_response = client
+                .generate_json(
+                    &model_id,
+                    &prompt,
+                    LocalAiActionKind::BranchReview,
+                    generation_context,
+                    &keep_alive,
+                )
+                .await
+                .map_err(|error| format!("{}: {}", file_path, error))?;
+            let structured =
+                parse_structured_result(LocalAiActionKind::BranchReview, &raw_response)
+                    .map_err(|error| format!("{}: {}", file_path, error))?;
+            match structured {
+                LocalAiStructuredResult::BranchReview(review) => Ok((file_path, review)),
+                _ => Err("Local AI returned the wrong branch review result type.".to_string()),
+            }
+        }
+    }))
+    .buffer_unordered(BRANCH_REVIEW_PARALLEL_CALLS)
+    .collect::<Vec<Result<(String, LocalAiBranchReviewResult), String>>>()
+    .await;
+
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::FormattingResult,
+        formatting_message(request.action_kind),
+        None,
+    );
+
+    let mut reviews = Vec::new();
+    let mut failures = Vec::new();
+    for result in block_results {
+        match result {
+            Ok(review) => reviews.push(review),
+            Err(error) => failures.push(error),
+        }
+    }
+
+    if reviews.is_empty() {
+        return Err(format!(
+            "Local AI branch review failed for all {} file block{}: {}",
+            total_blocks,
+            if total_blocks == 1 { "" } else { "s" },
+            failures.join("; ")
+        ));
+    }
+
+    let had_failures = !failures.is_empty();
+    let structured = LocalAiStructuredResult::BranchReview(merge_branch_review_blocks(
+        reviews,
+        failures,
+        total_blocks,
+    ));
+    let result = LocalAiRunResult {
+        action_kind: request.action_kind,
+        model_id,
+        model_digest,
+        prompt_version: PROMPT_VERSION.to_string(),
+        input_digest,
+        from_cache: false,
+        metadata,
+        result: structured,
+    };
+
+    if !had_failures {
+        put_cached_result(cache_key, &result)?;
+    }
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::Completed,
+        completed_message(request.action_kind),
+        None,
+    );
+    Ok(result)
+}
+
+fn merge_branch_review_blocks(
+    reviews: Vec<(String, LocalAiBranchReviewResult)>,
+    failures: Vec<String>,
+    total_blocks: usize,
+) -> LocalAiBranchReviewResult {
+    let mut findings = Vec::new();
+    let mut notes = Vec::new();
+    let mut finding_keys = HashSet::new();
+    let mut note_keys = HashSet::new();
+
+    for (_file_path, review) in reviews {
+        for finding in review.findings {
+            let side = match finding.side {
+                LocalAiReviewLineSide::Old => "old",
+                LocalAiReviewLineSide::New => "new",
+            };
+            let key = format!(
+                "{}:{}:{}:{}",
+                finding.file_path, side, finding.line, finding.title
+            );
+            if finding_keys.insert(key) {
+                findings.push(finding);
+            }
+        }
+
+        for note in review.notes {
+            let key = format!(
+                "{}:{}:{}",
+                note.file_path.as_deref().unwrap_or_default(),
+                note.title,
+                note.explanation
+            );
+            if note_keys.insert(key) {
+                notes.push(note);
+            }
+        }
+    }
+
+    if total_blocks > 1 {
+        notes.push(LocalAiBranchReviewNote {
+            severity: LocalAiFindingSeverity::Low,
+            confidence: LocalAiReviewConfidence::Medium,
+            title: "Segmented review".to_string(),
+            explanation: format!(
+                "Reviewed {} file blocks independently with up to {} local model calls in parallel.",
+                total_blocks, BRANCH_REVIEW_PARALLEL_CALLS
+            ),
+            recommendation:
+                "Review cross-file behavior manually when related changes span multiple files."
+                    .to_string(),
+            suggested_comment: None,
+            file_path: None,
+        });
+    }
+
+    for failure in failures {
+        notes.push(LocalAiBranchReviewNote {
+            severity: LocalAiFindingSeverity::Medium,
+            confidence: LocalAiReviewConfidence::Medium,
+            title: "Review block failed".to_string(),
+            explanation: failure,
+            recommendation: "Retry the branch review or inspect the affected file manually."
+                .to_string(),
+            suggested_comment: None,
+            file_path: None,
+        });
+    }
+
+    let summary = if findings.is_empty() {
+        format!(
+            "No actionable changed-code risks were found across {} reviewed file block{}.",
+            total_blocks,
+            if total_blocks == 1 { "" } else { "s" }
+        )
+    } else {
+        format!(
+            "Reviewed {} file block{} and returned {} actionable finding{}.",
+            total_blocks,
+            if total_blocks == 1 { "" } else { "s" },
+            findings.len(),
+            if findings.len() == 1 { "" } else { "s" }
+        )
+    };
+
+    LocalAiBranchReviewResult {
+        summary,
+        findings,
+        notes,
+    }
 }
 
 fn emit_commit_context_progress(
@@ -708,5 +1001,22 @@ mod tests {
 
         preferences.keep_alive_minutes = 0;
         assert_eq!(keep_alive_duration(&preferences), "1m");
+    }
+
+    #[test]
+    fn merge_branch_review_blocks_adds_segmented_review_note() {
+        let review = LocalAiBranchReviewResult {
+            summary: "One issue".to_string(),
+            findings: vec![],
+            notes: vec![],
+        };
+
+        let merged = merge_branch_review_blocks(vec![("a.txt".to_string(), review)], vec![], 2);
+
+        assert!(merged
+            .notes
+            .iter()
+            .any(|note| note.title == "Segmented review"));
+        assert!(merged.summary.contains("2 reviewed file blocks"));
     }
 }

@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod commands;
+pub mod context_window;
 pub mod entitlement;
 pub mod git_context;
 pub mod machine;

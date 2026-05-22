@@ -143,4 +143,41 @@ describe("LocalAiResultModal", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Running local model")).not.toBeInTheDocument();
   });
+
+  it("renders omitted context metadata", () => {
+    const result: LocalAiRunResult = {
+      actionKind: "branchReview",
+      modelId: "phi4-mini",
+      modelDigest: "digest",
+      promptVersion: "v1",
+      inputDigest: "input",
+      fromCache: false,
+      metadata: {
+        omittedFiles: ["src/large-file.ts"],
+        omittedSections: [
+          "Prompt context was truncated to fit the selected model budget.",
+        ],
+      },
+      result: {
+        kind: "branchReview",
+        data: {
+          summary: "No actionable changed-code risks were found.",
+          findings: [],
+          notes: [],
+        },
+      },
+    };
+
+    renderModal({ result });
+
+    expect(
+      screen.getByText("Some context was omitted or truncated."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Omitted file: src/large-file.ts")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Prompt context was truncated to fit the selected model budget.",
+      ),
+    ).toBeInTheDocument();
+  });
 });

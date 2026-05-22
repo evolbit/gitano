@@ -1,14 +1,13 @@
 use super::git_context::LocalAiGitContext;
 use super::types::{
-    LocalAiActionKind, LocalAiAnalysisResult, LocalAiBranchReviewFinding,
-    LocalAiBranchReviewNote, LocalAiBranchReviewResult, LocalAiCommitMessageResult,
-    LocalAiConflictFileSuggestion, LocalAiConflictSuggestionsResult, LocalAiFinding,
-    LocalAiFindingSeverity, LocalAiReviewConfidence, LocalAiReviewLineSide,
-    LocalAiStructuredResult,
+    LocalAiActionKind, LocalAiAnalysisResult, LocalAiBranchReviewFinding, LocalAiBranchReviewNote,
+    LocalAiBranchReviewResult, LocalAiCommitMessageResult, LocalAiConflictFileSuggestion,
+    LocalAiConflictSuggestionsResult, LocalAiFinding, LocalAiFindingSeverity,
+    LocalAiReviewConfidence, LocalAiReviewLineSide, LocalAiStructuredResult,
 };
 use serde_json::Value;
 
-pub const PROMPT_VERSION: &str = "local-ai-v3";
+pub const PROMPT_VERSION: &str = "local-ai-v4";
 
 pub fn build_prompt(context: &LocalAiGitContext) -> String {
     match context.action_kind {
@@ -79,7 +78,7 @@ fn build_branch_review_prompt(context: &LocalAiGitContext) -> String {
          Do not summarize files. Do not produce informational cleanup comments. If there are no actionable changed-code risks, return an empty findings array and a concise summary.\n\
          Suggested comments should be ready to paste into a PR and should ask for a concrete change or clarification.\n\
          Keep output compact: return at most 6 findings and at most 3 notes. Keep every text field under 280 characters, except suggestedComment which must stay under 420 characters.\n\
-         Prefer fewer high-confidence findings over a long list. Always close the JSON object; do not include markdown fences or commentary outside JSON.\n\n\
+         Prefer fewer high-confidence findings over a long list. Do not return an empty object; summary is required even when findings is empty. Always close the JSON object; do not include markdown fences or commentary outside JSON.\n\n\
          Return only JSON with this shape: {{\"summary\":\"...\",\"findings\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"impact\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"...\",\"filePath\":\"path/to/file\",\"side\":\"old|new\",\"line\":123,\"endLine\":124}}],\"notes\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"optional\",\"filePath\":\"optional\"}}]}}\n\n\
          Git context:\n{}",
         context.prompt_context
@@ -118,9 +117,9 @@ pub fn parse_structured_result(
         LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => {
             Ok(LocalAiStructuredResult::Analysis(parse_analysis(&value)))
         }
-        LocalAiActionKind::BranchReview => {
-            Ok(LocalAiStructuredResult::BranchReview(parse_branch_review(&value)))
-        }
+        LocalAiActionKind::BranchReview => Ok(LocalAiStructuredResult::BranchReview(
+            parse_branch_review(&value)?,
+        )),
         LocalAiActionKind::MergeConflictSuggestions => Ok(
             LocalAiStructuredResult::ConflictSuggestions(parse_conflicts(&value)),
         ),
@@ -225,22 +224,38 @@ fn parse_analysis(value: &Value) -> LocalAiAnalysisResult {
     }
 }
 
-fn parse_branch_review(value: &Value) -> LocalAiBranchReviewResult {
-    LocalAiBranchReviewResult {
-        summary: string_field(value, &["summary"]).unwrap_or_else(|| {
-            "No actionable branch review findings returned.".to_string()
-        }),
-        findings: value
-            .get("findings")
-            .and_then(Value::as_array)
-            .map(|items| items.iter().filter_map(parse_branch_review_finding).collect())
-            .unwrap_or_default(),
-        notes: value
-            .get("notes")
-            .and_then(Value::as_array)
-            .map(|items| items.iter().map(parse_branch_review_note).collect())
-            .unwrap_or_default(),
+fn parse_branch_review(value: &Value) -> Result<LocalAiBranchReviewResult, String> {
+    let summary = string_field(value, &["summary"]);
+    let mut findings = Vec::new();
+    let mut notes = Vec::new();
+
+    if let Some(items) = value.get("findings").and_then(Value::as_array) {
+        for item in items {
+            match parse_branch_review_item(item) {
+                Some(ParsedBranchReviewItem::Finding(finding)) => findings.push(finding),
+                Some(ParsedBranchReviewItem::Note(note)) => notes.push(note),
+                None => {}
+            }
+        }
     }
+
+    if let Some(items) = value.get("notes").and_then(Value::as_array) {
+        notes.extend(items.iter().filter_map(parse_branch_review_note));
+    }
+
+    if summary.is_none() && findings.is_empty() && notes.is_empty() {
+        return Err(
+            "Local AI returned unusable branch review output: no summary, findings, or notes were returned."
+                .to_string(),
+        );
+    }
+
+    Ok(LocalAiBranchReviewResult {
+        summary: summary
+            .unwrap_or_else(|| "Branch review returned unanchored feedback.".to_string()),
+        findings,
+        notes,
+    })
 }
 
 fn parse_conflicts(value: &Value) -> LocalAiConflictSuggestionsResult {
@@ -273,57 +288,120 @@ fn parse_finding(value: &Value) -> LocalAiFinding {
     }
 }
 
-fn parse_branch_review_finding(value: &Value) -> Option<LocalAiBranchReviewFinding> {
-    Some(LocalAiBranchReviewFinding {
-        severity: parse_severity(
-            string_field(value, &["severity"])
-                .unwrap_or_else(|| "low".to_string())
-                .as_str(),
-        ),
-        confidence: parse_confidence(
-            string_field(value, &["confidence"])
-                .unwrap_or_else(|| "medium".to_string())
-                .as_str(),
-        ),
-        title: string_field(value, &["title"]).unwrap_or_else(|| "AI review finding".to_string()),
-        explanation: string_field(value, &["explanation", "body"]).unwrap_or_default(),
-        impact: string_field(value, &["impact"]).unwrap_or_default(),
-        recommendation: string_field(value, &["recommendation", "suggestion"]).unwrap_or_default(),
-        suggested_comment: string_field(value, &["suggestedComment", "suggested_comment"])
-            .unwrap_or_default(),
-        file_path: string_field(value, &["filePath", "file_path", "file"])?,
-        side: parse_review_side(
-            string_field(value, &["side"])
-                .unwrap_or_else(|| "new".to_string())
-                .as_str(),
-        ),
-        line: value.get("line").and_then(Value::as_u64)? as usize,
-        end_line: value
-            .get("endLine")
-            .or_else(|| value.get("end_line"))
-            .and_then(Value::as_u64)
-            .map(|line| line as usize),
-    })
+enum ParsedBranchReviewItem {
+    Finding(LocalAiBranchReviewFinding),
+    Note(LocalAiBranchReviewNote),
 }
 
-fn parse_branch_review_note(value: &Value) -> LocalAiBranchReviewNote {
-    LocalAiBranchReviewNote {
-        severity: parse_severity(
-            string_field(value, &["severity"])
-                .unwrap_or_else(|| "low".to_string())
-                .as_str(),
-        ),
-        confidence: parse_confidence(
-            string_field(value, &["confidence"])
-                .unwrap_or_else(|| "medium".to_string())
-                .as_str(),
-        ),
-        title: string_field(value, &["title"]).unwrap_or_else(|| "AI review note".to_string()),
-        explanation: string_field(value, &["explanation", "body"]).unwrap_or_default(),
-        recommendation: string_field(value, &["recommendation", "suggestion"]).unwrap_or_default(),
-        suggested_comment: string_field(value, &["suggestedComment", "suggested_comment"]),
-        file_path: string_field(value, &["filePath", "file_path", "file"]),
+fn parse_branch_review_item(value: &Value) -> Option<ParsedBranchReviewItem> {
+    let severity = parse_severity(
+        string_field(value, &["severity"])
+            .unwrap_or_else(|| "low".to_string())
+            .as_str(),
+    );
+    let confidence = parse_confidence(
+        string_field(value, &["confidence"])
+            .unwrap_or_else(|| "medium".to_string())
+            .as_str(),
+    );
+    let title = string_field(value, &["title"]);
+    let explanation = string_field(value, &["explanation", "body"]);
+    let impact = string_field(value, &["impact"]);
+    let recommendation = string_field(value, &["recommendation", "suggestion"]);
+    let suggested_comment = string_field(value, &["suggestedComment", "suggested_comment"]);
+    let file_path = string_field(value, &["filePath", "file_path", "file"]);
+    let line = usize_field(value, &["line"]);
+
+    if !has_branch_review_text(
+        title.as_deref(),
+        explanation.as_deref(),
+        impact.as_deref(),
+        recommendation.as_deref(),
+        suggested_comment.as_deref(),
+    ) {
+        return None;
     }
+
+    if let (Some(file_path), Some(line)) = (file_path.clone(), line) {
+        return Some(ParsedBranchReviewItem::Finding(
+            LocalAiBranchReviewFinding {
+                severity,
+                confidence,
+                title: title.unwrap_or_else(|| "AI review finding".to_string()),
+                explanation: explanation.clone().unwrap_or_default(),
+                impact: impact.unwrap_or_default(),
+                recommendation: recommendation.clone().unwrap_or_default(),
+                suggested_comment: suggested_comment
+                    .clone()
+                    .or_else(|| recommendation.clone())
+                    .or_else(|| explanation.clone())
+                    .unwrap_or_default(),
+                file_path,
+                side: parse_review_side(
+                    string_field(value, &["side"])
+                        .unwrap_or_else(|| "new".to_string())
+                        .as_str(),
+                ),
+                line,
+                end_line: usize_field(value, &["endLine", "end_line"]),
+            },
+        ));
+    }
+
+    Some(ParsedBranchReviewItem::Note(LocalAiBranchReviewNote {
+        severity,
+        confidence,
+        title: title.unwrap_or_else(|| "AI review note".to_string()),
+        explanation: explanation
+            .or_else(|| impact.clone())
+            .unwrap_or_else(|| "No explanation returned.".to_string()),
+        recommendation: recommendation.unwrap_or_default(),
+        suggested_comment,
+        file_path,
+    }))
+}
+
+fn parse_branch_review_note(value: &Value) -> Option<LocalAiBranchReviewNote> {
+    match parse_branch_review_item(value) {
+        Some(ParsedBranchReviewItem::Finding(finding)) => {
+            let suggested_comment = if finding.suggested_comment.trim().is_empty() {
+                None
+            } else {
+                Some(finding.suggested_comment)
+            };
+
+            Some(LocalAiBranchReviewNote {
+                severity: finding.severity,
+                confidence: finding.confidence,
+                title: finding.title,
+                explanation: finding.explanation,
+                recommendation: finding.recommendation,
+                suggested_comment,
+                file_path: Some(finding.file_path),
+            })
+        }
+        Some(ParsedBranchReviewItem::Note(note)) => Some(note),
+        None => None,
+    }
+}
+
+fn has_branch_review_text(
+    title: Option<&str>,
+    explanation: Option<&str>,
+    impact: Option<&str>,
+    recommendation: Option<&str>,
+    suggested_comment: Option<&str>,
+) -> bool {
+    [
+        title,
+        explanation,
+        impact,
+        recommendation,
+        suggested_comment,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|field| !field.trim().is_empty())
 }
 
 fn parse_conflict_file(value: &Value) -> LocalAiConflictFileSuggestion {
@@ -339,7 +417,19 @@ fn string_field(value: &Value, names: &[&str]) -> Option<String> {
     names
         .iter()
         .find_map(|name| value.get(name).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+fn usize_field(value: &Value, names: &[&str]) -> Option<usize> {
+    names.iter().find_map(|name| {
+        let value = value.get(name)?;
+        let parsed = value
+            .as_u64()
+            .or_else(|| value.as_str()?.trim().parse::<u64>().ok())?;
+        usize::try_from(parsed).ok().filter(|line| *line > 0)
+    })
 }
 
 fn string_array_field(value: &Value, name: &str) -> Vec<String> {
@@ -350,6 +440,8 @@ fn string_array_field(value: &Value, name: &str) -> Vec<String> {
             items
                 .iter()
                 .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
                 .map(ToString::to_string)
                 .collect()
         })
@@ -469,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_branch_review_findings_and_drops_unanchored_inline_items() {
+    fn parses_branch_review_findings_and_converts_unanchored_inline_items_to_notes() {
         let result = parse_structured_result(
             LocalAiActionKind::BranchReview,
             r#"{"summary":"One issue","findings":[{"severity":"high","confidence":"medium","title":"Missing guard","explanation":"The new call can fail.","impact":"The UI may show stale data.","recommendation":"Handle the error path.","suggestedComment":"Can we handle this error before updating state?","filePath":"src/app.ts","side":"new","line":42},{"severity":"medium","title":"No anchor","explanation":"Missing path"}],"notes":[{"severity":"low","confidence":"low","title":"General test gap","explanation":"No broad test.","recommendation":"Add one."}]}"#,
@@ -480,7 +572,67 @@ mod tests {
             LocalAiStructuredResult::BranchReview(review) => {
                 assert_eq!(review.findings.len(), 1);
                 assert_eq!(review.findings[0].file_path, "src/app.ts");
+                assert_eq!(review.notes.len(), 2);
+                assert_eq!(review.notes[0].title, "No anchor");
+            }
+            _ => panic!("expected branch review result"),
+        }
+    }
+
+    #[test]
+    fn rejects_empty_branch_review_json() {
+        let error = parse_structured_result(LocalAiActionKind::BranchReview, r#"{}"#)
+            .expect_err("empty branch review output should fail");
+
+        assert!(error.contains("unusable branch review output"));
+    }
+
+    #[test]
+    fn rejects_blank_summary_and_empty_branch_review_content() {
+        let error = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"summary":"   ","findings":[],"notes":[]}"#,
+        )
+        .expect_err("blank no-content branch review output should fail");
+
+        assert!(error.contains("no summary, findings, or notes"));
+    }
+
+    #[test]
+    fn preserves_genuine_no_finding_branch_review_summary() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"summary":"No actionable changed-code risks were found.","findings":[],"notes":[]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::BranchReview(review) => {
+                assert_eq!(
+                    review.summary,
+                    "No actionable changed-code risks were found."
+                );
+                assert!(review.findings.is_empty());
+                assert!(review.notes.is_empty());
+            }
+            _ => panic!("expected branch review result"),
+        }
+    }
+
+    #[test]
+    fn converts_useful_malformed_branch_review_finding_to_note() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"summary":"One unanchored issue","findings":[{"severity":"high","confidence":"high","title":"Validate input","explanation":"The new path trusts user input.","recommendation":"Validate before saving.","filePath":"src/app.ts"}],"notes":[]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::BranchReview(review) => {
+                assert!(review.findings.is_empty());
                 assert_eq!(review.notes.len(), 1);
+                assert_eq!(review.notes[0].title, "Validate input");
+                assert_eq!(review.notes[0].file_path.as_deref(), Some("src/app.ts"));
             }
             _ => panic!("expected branch review result"),
         }
