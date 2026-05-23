@@ -9,7 +9,9 @@ import {
   getLocalAiModelPreferences,
   getLocalAiModelStatus,
   runLocalAiAction,
+  type AnalysisEngine,
   type LocalAiActionKind,
+  type LocalAiPreferences,
   type LocalAiRunResult,
 } from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
@@ -21,6 +23,49 @@ type CurrentChangesCommitBarProps = {
   repoPath: string;
   onCommitted?: () => void;
 };
+
+function localModelEngine(modelId: string | null): AnalysisEngine {
+  return {
+    type: "local_model",
+    modelId,
+  };
+}
+
+function globalAnalysisEngine(
+  preferences: LocalAiPreferences,
+): AnalysisEngine {
+  return (
+    preferences.analysisEngine ??
+    localModelEngine(preferences.globalModelId?.trim() || null)
+  );
+}
+
+function effectiveActionEngine(
+  preferences: LocalAiPreferences,
+  actionKind: LocalAiActionKind,
+): AnalysisEngine {
+  const globalEngine = globalAnalysisEngine(preferences);
+  const actionEngine = preferences.actionEngines?.[actionKind];
+
+  if (actionEngine?.type === "external_agent") {
+    return actionEngine;
+  }
+
+  if (actionEngine?.type === "local_model") {
+    const actionModelId = actionEngine.modelId?.trim();
+    if (actionModelId) return localModelEngine(actionModelId);
+    return globalEngine.type === "external_agent"
+      ? globalEngine
+      : localModelEngine(null);
+  }
+
+  const legacyActionModelId = preferences.actionModelIds?.[actionKind]?.trim();
+  if (legacyActionModelId) return localModelEngine(legacyActionModelId);
+
+  return globalEngine.type === "external_agent"
+    ? globalEngine
+    : localModelEngine(null);
+}
 
 export default function CurrentChangesCommitBar({
   repoPath,
@@ -266,7 +311,13 @@ export default function CurrentChangesCommitBar({
   const ensureActionModelReady = async (actionKind: LocalAiActionKind) => {
     try {
       const preferences = await getLocalAiModelPreferences();
-      const actionModelId = preferences?.actionModelIds?.[actionKind];
+      const actionEngine = effectiveActionEngine(preferences, actionKind);
+
+      if (actionEngine.type === "external_agent") {
+        return true;
+      }
+
+      const actionModelId = actionEngine.modelId?.trim();
 
       if (!actionModelId) {
         notifyAiError(
@@ -389,7 +440,7 @@ export default function CurrentChangesCommitBar({
                 title={
                   aiLoading
                     ? "Generating commit message"
-                    : "Generate commit message locally"
+                    : "Generate commit message with AI"
                 }
               >
                 {aiLoading ? (

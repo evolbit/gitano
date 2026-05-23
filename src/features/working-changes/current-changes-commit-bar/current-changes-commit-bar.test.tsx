@@ -240,6 +240,99 @@ describe("CurrentChangesCommitBar", () => {
     );
   });
 
+  it("generates a commit message with the global external agent engine", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: { type: "external_agent", agentId: "codex-acp" },
+      actionEngines: {},
+    });
+    localAiMocks.runLocalAiAction.mockResolvedValue({
+      result: {
+        kind: "commitMessage",
+        data: {
+          message: "Use external agent for commits",
+          alternatives: [],
+        },
+      },
+    });
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    await user.click(
+      screen.getByRole("button", { name: /generate commit message/i }),
+    );
+
+    expect(localAiMocks.getLocalAiModelStatus).not.toHaveBeenCalled();
+    expect(localAiMocks.runLocalAiAction).toHaveBeenCalledWith({
+      repoPath: "/repo",
+      actionKind: "commitMessage",
+    });
+    expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
+      "Use external agent for commits",
+    );
+  });
+
+  it("uses an action-specific external agent over a global local model", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {
+        commitMessage: "qwen2.5-coder:7b",
+      },
+      analysisEngine: {
+        type: "local_model",
+        modelId: "qwen2.5-coder:7b",
+      },
+      actionEngines: {
+        commitMessage: { type: "external_agent", agentId: "codex-acp" },
+      },
+    });
+    localAiMocks.runLocalAiAction.mockResolvedValue({
+      result: {
+        kind: "commitMessage",
+        data: {
+          message: "Prefer action external agent",
+          alternatives: [],
+        },
+      },
+    });
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    await user.click(
+      screen.getByRole("button", { name: /generate commit message/i }),
+    );
+
+    expect(localAiMocks.getLocalAiModelStatus).not.toHaveBeenCalled();
+    expect(localAiMocks.runLocalAiAction).toHaveBeenCalledWith({
+      repoPath: "/repo",
+      actionKind: "commitMessage",
+    });
+    expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
+      "Prefer action external agent",
+    );
+  });
+
   it("shows a loading affordance while generating a commit message", async () => {
     const user = userEvent.setup();
     getRepositoryStateMock.mockResolvedValue({
