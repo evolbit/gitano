@@ -2,6 +2,8 @@ import ReactDOM from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconCloudDownload, IconX } from "@/components/icons";
 import type {
+  AnalysisEngine,
+  ExternalAiAgentEntry,
   LocalAiActionKind,
   LocalAiModelEntry,
 } from "@/shared/api/local-ai";
@@ -31,6 +33,37 @@ function isModelSuitableForAction(
   return !actionKind || model.actionSuitability.includes(actionKind);
 }
 
+function localEngineValue(modelId: string) {
+  return `local:${modelId}`;
+}
+
+function externalEngineValue(agentId: string) {
+  return `external:${agentId}`;
+}
+
+function engineValue(engine: AnalysisEngine | null | undefined) {
+  if (!engine) return "";
+  if (engine.type === "external_agent") return externalEngineValue(engine.agentId);
+  return engine.modelId ? localEngineValue(engine.modelId) : "";
+}
+
+function engineFromValue(value: string): AnalysisEngine | null {
+  if (value.startsWith("external:")) {
+    const agentId = value.slice("external:".length);
+    return agentId ? { type: "external_agent", agentId } : null;
+  }
+  if (value.startsWith("local:")) {
+    const modelId = value.slice("local:".length);
+    return modelId ? { type: "local_model", modelId } : null;
+  }
+
+  return null;
+}
+
+function firstReadyAgent(agents: ExternalAiAgentEntry[]) {
+  return agents.find((agent) => agent.status.available) ?? null;
+}
+
 export function LocalAiSetupModal({
   open,
   actionKind,
@@ -40,6 +73,7 @@ export function LocalAiSetupModal({
 }: LocalAiSetupModalProps) {
   const {
     catalog,
+    externalAgents,
     entitlement,
     preferences,
     modelStatus,
@@ -51,9 +85,11 @@ export function LocalAiSetupModal({
     error,
     loadSetupState,
     setPreference,
+    setAnalysisEnginePreference,
     prepareSelectedModel,
   } = useLocalAiStore();
   const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const [selectedEngineValue, setSelectedEngineValue] = useState<string>("");
   const [allowLimited, setAllowLimited] = useState(false);
   const setupStartedRef = useRef(false);
   const readyHandlingRef = useRef(false);
@@ -78,7 +114,26 @@ export function LocalAiSetupModal({
 
   useEffect(() => {
     if (!open || !preferences) return;
+    const actionEngine = actionKind
+      ? preferences.actionEngines?.[actionKind]
+      : null;
+    const globalEngine = preferences.analysisEngine;
+    const readyAgent = firstReadyAgent(externalAgents);
+    const setupNeedsEngineSelection =
+      setupReason?.toLowerCase().includes("no ai model selected") ||
+      setupReason?.toLowerCase().includes("no ai models available");
+    const preferredEngine =
+      actionEngine && engineValue(actionEngine)
+        ? actionEngine
+        : readyAgent && setupNeedsEngineSelection
+          ? ({ type: "external_agent", agentId: readyAgent.id } satisfies AnalysisEngine)
+        : globalEngine && engineValue(globalEngine)
+          ? globalEngine
+          : readyAgent
+            ? ({ type: "external_agent", agentId: readyAgent.id } satisfies AnalysisEngine)
+            : null;
     const preferredModelIds = [
+      preferredEngine?.type === "local_model" ? preferredEngine.modelId : null,
       actionKind ? preferences.actionModelIds[actionKind] : null,
       preferences.globalModelId,
     ];
@@ -92,13 +147,31 @@ export function LocalAiSetupModal({
       catalog[0]?.id ||
       "";
     setSelectedModelId(nextModelId);
-  }, [actionKind, catalog, open, preferences, selectableCatalog]);
+    setSelectedEngineValue(
+      preferredEngine?.type === "external_agent"
+        ? externalEngineValue(preferredEngine.agentId)
+        : nextModelId
+          ? localEngineValue(nextModelId)
+          : "",
+    );
+  }, [
+    actionKind,
+    catalog,
+    externalAgents,
+    open,
+    preferences,
+    selectableCatalog,
+    setupReason,
+  ]);
 
   useEffect(() => {
-    if (!open || !selectedModelId) return;
+    if (!open || !selectedModelId || !selectedEngineValue.startsWith("local:")) {
+      return;
+    }
     void loadSetupState(selectedModelId);
-  }, [loadSetupState, open, selectedModelId]);
+  }, [loadSetupState, open, selectedEngineValue, selectedModelId]);
 
+  const selectedEngine = engineFromValue(selectedEngineValue);
   const selectedModel = useMemo(
     () =>
       selectableCatalog.find((model) => model.id === selectedModelId) ??
@@ -106,6 +179,10 @@ export function LocalAiSetupModal({
       null,
     [catalog, selectableCatalog, selectedModelId],
   );
+  const selectedAgent =
+    selectedEngine?.type === "external_agent"
+      ? externalAgents.find((agent) => agent.id === selectedEngine.agentId) ?? null
+      : null;
   const activeProgress = activeOperationId
     ? progressByOperationId[activeOperationId]
     : null;
@@ -117,6 +194,7 @@ export function LocalAiSetupModal({
     !!activeProgress &&
     activeProgress.state !== "completed" &&
     activeProgress.state !== "failed";
+  const isExternalEngine = selectedEngine?.type === "external_agent";
   const isReady = modelStatus?.ready && modelStatus.modelId === selectedModelId;
   const runtimeUnavailable =
     modelStatus?.runtime.available === false ||
@@ -124,6 +202,7 @@ export function LocalAiSetupModal({
   const setupModelId =
     selectedModelId || preferences?.globalModelId || modelStatus?.modelId || "";
   const canPrepare =
+    !isExternalEngine &&
     !!selectedModelId &&
     entitlement?.entitled &&
     !loading &&
@@ -138,6 +217,9 @@ export function LocalAiSetupModal({
   const selectedActionModelId = actionKind
     ? preferences?.actionModelIds[actionKind]
     : null;
+  const selectedActionEngine = actionKind
+    ? preferences?.actionEngines?.[actionKind]
+    : null;
   const saveSelectedModelForAction = useCallback(async () => {
     if (!actionKind || !selectedModelId) return true;
     if (selectedActionModelId === selectedModelId) return true;
@@ -148,10 +230,40 @@ export function LocalAiSetupModal({
       selectedModelId
     );
   }, [actionKind, selectedActionModelId, selectedModelId, setPreference]);
+  const saveSelectedEngineForAction = useCallback(async () => {
+    if (selectedEngine?.type === "external_agent") {
+      if (
+        actionKind &&
+        selectedActionEngine?.type === "external_agent" &&
+        selectedActionEngine.agentId === selectedEngine.agentId
+      ) {
+        return true;
+      }
+
+      await setAnalysisEnginePreference(selectedEngine, actionKind ?? null);
+      const preferences = useLocalAiStore.getState().preferences;
+      const savedEngine = actionKind
+        ? preferences?.actionEngines?.[actionKind]
+        : preferences?.analysisEngine;
+
+      return (
+        savedEngine?.type === "external_agent" &&
+        savedEngine.agentId === selectedEngine.agentId
+      );
+    }
+
+    return saveSelectedModelForAction();
+  }, [
+    actionKind,
+    saveSelectedModelForAction,
+    selectedActionEngine,
+    selectedEngine,
+    setAnalysisEnginePreference,
+  ]);
   const handleReady = useCallback(async () => {
     if (readyHandlingRef.current) return;
     readyHandlingRef.current = true;
-    const saved = await saveSelectedModelForAction();
+    const saved = await saveSelectedEngineForAction();
     if (!saved) {
       readyHandlingRef.current = false;
       return;
@@ -161,7 +273,7 @@ export function LocalAiSetupModal({
     onReady?.();
     onClose();
     readyHandlingRef.current = false;
-  }, [onClose, onReady, saveSelectedModelForAction]);
+  }, [onClose, onReady, saveSelectedEngineForAction]);
 
   useEffect(() => {
     if (
@@ -188,6 +300,9 @@ export function LocalAiSetupModal({
 
   if (!open) return null;
 
+  const selectedAgentReady = Boolean(isExternalEngine && selectedAgent?.status.available);
+  const readyButtonVisible = Boolean(isReady || selectedAgentReady);
+
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10050]">
       <div className="absolute inset-0 bg-black/60" />
@@ -195,10 +310,10 @@ export function LocalAiSetupModal({
         <div className="flex items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
           <div>
             <div className="text-xs uppercase tracking-normal text-muted-foreground">
-              Premium local AI
+              AI
             </div>
             <div className="text-base font-semibold text-foreground">
-              Model setup
+              Analysis engine setup
             </div>
           </div>
           <button
@@ -232,32 +347,83 @@ export function LocalAiSetupModal({
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-zinc-300">
-              Local model
+              Analysis engine
             </span>
             <select
-              value={selectedModelId}
+              value={selectedEngineValue}
               disabled={loading}
               className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
               onChange={(event) => {
-                const modelId = event.target.value;
-                setSelectedModelId(modelId);
+                const value = event.target.value;
+                const engine = engineFromValue(value);
+                setSelectedEngineValue(value);
                 setAllowLimited(false);
-                void setPreference(modelId, actionKind ?? null);
+                if (engine?.type === "local_model" && engine.modelId) {
+                  setSelectedModelId(engine.modelId);
+                  void setPreference(engine.modelId, actionKind ?? null);
+                }
               }}
             >
-              {selectableCatalog.map((model) => (
-                <option
-                  key={model.id}
-                  value={model.id}
-                >
-                  {model.displayName} · {model.downloadSizeGb.toFixed(1)}GB ·{" "}
-                  {model.qualityTier}
-                </option>
-              ))}
+              <optgroup label="Local models">
+                {selectableCatalog.map((model) => (
+                  <option
+                    key={model.id}
+                    value={localEngineValue(model.id)}
+                  >
+                    {model.displayName} · {model.downloadSizeGb.toFixed(1)}GB ·{" "}
+                    {model.qualityTier}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="External agents">
+                {externalAgents.map((agent) => (
+                  <option
+                    key={agent.id}
+                    value={externalEngineValue(agent.id)}
+                    disabled={!agent.status.available}
+                  >
+                    {agent.displayName}
+                    {agent.status.available ? "" : " · not ready"}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
 
-          {selectedModel ? (
+          {selectedAgent ? (
+            <div className="space-y-3 rounded border border-border bg-background-emphasis p-3 text-xs text-zinc-300">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div>
+                  <div className="text-zinc-500">Provider</div>
+                  <div className="font-medium text-zinc-100">
+                    {selectedAgent.provider}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-zinc-500">Version</div>
+                  <div className="font-medium text-zinc-100">
+                    {selectedAgent.status.version ?? selectedAgent.version}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-zinc-500">Status</div>
+                  <div className="font-medium text-zinc-100">
+                    {selectedAgent.status.available ? "Ready" : "Not ready"}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-zinc-400">
+                External agents run through the user's local agent installation
+                and account. Repository context is handled by the selected
+                agent, not by Gitano's local Ollama runtime.
+              </p>
+              {selectedAgent.status.error ? (
+                <div className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-100">
+                  {selectedAgent.status.error}
+                </div>
+              ) : null}
+            </div>
+          ) : selectedModel ? (
             <div className="space-y-3 rounded border border-border bg-background-emphasis p-3 text-xs text-zinc-300">
               <div className="grid gap-2 sm:grid-cols-3">
                 <div>
@@ -289,7 +455,7 @@ export function LocalAiSetupModal({
             </div>
           ) : null}
 
-          {modelStatus?.runtime.available === false ? (
+          {!isExternalEngine && modelStatus?.runtime.available === false ? (
             <div className="space-y-3 rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-blue-100">
               <div>
                 <div className="font-medium">Local AI setup required</div>
@@ -313,7 +479,7 @@ export function LocalAiSetupModal({
             </div>
           ) : null}
 
-          {showCompatibilityWarning ? (
+          {!isExternalEngine && showCompatibilityWarning ? (
             <div className="space-y-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-100">
               <div className="font-medium">
                 {compatibility.blocking
@@ -416,7 +582,7 @@ export function LocalAiSetupModal({
           >
             Close
           </button>
-          {isReady ? (
+          {readyButtonVisible ? (
             <button
               type="button"
               className="inline-flex h-8 items-center gap-2 rounded border border-blue-500/50 bg-blue-500/15 px-3 text-xs font-semibold text-blue-100 hover:bg-blue-500/25"

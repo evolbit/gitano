@@ -22,6 +22,8 @@ export function AppShell() {
   const closeTab = useRepoStore((s) => s.closeTab);
   const setActiveTab = useRepoStore((s) => s.setActiveTab);
   const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
+  const activeRepoPath =
+    tabs.find((tab) => tab.id === activeTab)?.repoPath || null;
 
   useEffect(() => {
     if (!tabs.some((tab) => tab.id === HOME_TAB.id)) {
@@ -131,6 +133,7 @@ export function AppShell() {
       <SettingsWindow
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        repoPath={activeRepoPath}
       />
     </div>
   );

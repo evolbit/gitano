@@ -21,8 +21,10 @@ import {
 } from "@/shared/api/git/commits";
 import { createTag } from "@/shared/api/git/tags";
 import {
+  listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   runLocalAiAction,
+  type ExternalAiRunEvent,
   type LocalAiRunProgress,
   type LocalAiRunResult,
 } from "@/shared/api/local-ai";
@@ -108,6 +110,7 @@ type CommitAiAnalysisState = {
   setupOpen: boolean;
   progressRunId: string | null;
   progress: LocalAiRunProgress[];
+  externalEvents: ExternalAiRunEvent[];
 };
 
 function createCommitAiRunId() {
@@ -297,6 +300,42 @@ export default function CommitList() {
         return {
           ...current,
           progress: [...current.progress, progress],
+        };
+      });
+    });
+
+    return () => {
+      void Promise.resolve(unlistenPromise)
+        .then((unlisten) => unlisten())
+        .catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listenToExternalAiRunEvents((event) => {
+      if (
+        event.actionKind !== "commitAnalysis" ||
+        event.runId !== activeCommitAiRunIdRef.current
+      ) {
+        return;
+      }
+
+      setCommitAiAnalysis((current) => {
+        if (!current || current.progressRunId !== event.runId) {
+          return current;
+        }
+
+        const previous = current.externalEvents[current.externalEvents.length - 1];
+        if (
+          previous?.kind === event.kind &&
+          previous.message === event.message
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          externalEvents: [...current.externalEvents, event],
         };
       });
     });
@@ -788,6 +827,7 @@ export default function CommitList() {
         setupOpen: false,
         progressRunId: runId,
         progress: [],
+        externalEvents: [],
       });
 
       try {
@@ -801,15 +841,18 @@ export default function CommitList() {
         if (activeCommitAiRunIdRef.current !== runId) {
           return;
         }
-        setCommitAiAnalysis({
-          commit,
-          result,
-          loading: false,
-          error: null,
-          setupOpen: false,
-          progressRunId: runId,
-          progress: [],
-        });
+        setCommitAiAnalysis((current) =>
+          current && current.progressRunId === runId
+            ? {
+                ...current,
+                result,
+                loading: false,
+                error: null,
+                setupOpen: false,
+                progressRunId: runId,
+              }
+            : current,
+        );
       } catch (analysisError) {
         if (activeCommitAiRunIdRef.current !== runId) {
           return;
@@ -818,15 +861,27 @@ export default function CommitList() {
         if (!openSetup) {
           notifyError("Local AI analysis failed", analysisError);
         }
-        setCommitAiAnalysis({
-          commit,
-          result: null,
-          loading: false,
-          error: null,
-          setupOpen: openSetup,
-          progressRunId: runId,
-          progress: [],
-        });
+        setCommitAiAnalysis((current) =>
+          current && current.progressRunId === runId
+            ? {
+                ...current,
+                result: null,
+                loading: false,
+                error: null,
+                setupOpen: openSetup,
+                progressRunId: runId,
+              }
+            : {
+                commit,
+                result: null,
+                loading: false,
+                error: null,
+                setupOpen: openSetup,
+                progressRunId: runId,
+                progress: [],
+                externalEvents: [],
+              },
+        );
       }
     },
     [notifyError, repoPath],
@@ -1263,6 +1318,7 @@ export default function CommitList() {
           loading={commitAiAnalysis.loading}
           error={commitAiAnalysis.error}
           progress={commitAiAnalysis.progress}
+          externalEvents={commitAiAnalysis.externalEvents}
           onRefresh={() => {
             void runCommitAiAnalysis(commitAiAnalysis.commit, true);
           }}

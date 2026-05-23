@@ -1,6 +1,7 @@
 use super::types::{
-    LocalAiActionKind, LocalAiModelEntry, LocalAiModelQualityTier, LocalAiModelRequirements,
-    LocalAiModelWarmMemoryClass, LocalAiPreferences, DEFAULT_KEEP_ALIVE_MINUTES,
+    AnalysisEngine, LocalAiActionKind, LocalAiModelEntry, LocalAiModelQualityTier,
+    LocalAiModelRequirements, LocalAiModelWarmMemoryClass, LocalAiPreferences,
+    DEFAULT_KEEP_ALIVE_MINUTES,
 };
 use serde_json;
 use std::collections::HashMap;
@@ -190,6 +191,10 @@ pub fn default_preferences() -> LocalAiPreferences {
     LocalAiPreferences {
         global_model_id: String::new(),
         action_model_ids: HashMap::new(),
+        analysis_engine: AnalysisEngine::LocalModel { model_id: None },
+        action_engines: HashMap::new(),
+        external_agent_option_values: HashMap::new(),
+        action_external_agent_option_values: HashMap::new(),
         warm_model_ids: Vec::new(),
         keep_alive_minutes: DEFAULT_KEEP_ALIVE_MINUTES,
     }
@@ -229,16 +234,26 @@ pub fn load_preferences() -> LocalAiPreferences {
         return default_preferences();
     };
 
-    serde_json::from_str(&contents).unwrap_or_else(|_| default_preferences())
+    let mut preferences: LocalAiPreferences =
+        serde_json::from_str(&contents).unwrap_or_else(|_| default_preferences());
+    preferences.migrate_legacy_model_fields();
+    preferences.sync_legacy_model_fields();
+    preferences
 }
 
 pub fn save_preferences(preferences: &LocalAiPreferences) -> Result<(), String> {
+    let mut preferences = preferences.clone();
+    preferences.migrate_legacy_model_fields();
+    if preferences.has_external_agent_engine() {
+        preferences.warm_model_ids.clear();
+    }
+    preferences.sync_legacy_model_fields();
     let path = preferences_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    let contents = serde_json::to_string_pretty(preferences).map_err(|e| e.to_string())?;
+    let contents = serde_json::to_string_pretty(&preferences).map_err(|e| e.to_string())?;
     fs::write(path, contents).map_err(|e| e.to_string())
 }
 
@@ -259,30 +274,208 @@ pub fn set_model_preference(
             if find_model(model_id).is_none() {
                 return Err(format!("Unsupported local AI model: {}", model_id));
             }
-            preferences
-                .action_model_ids
-                .insert(action_kind.as_key().to_string(), model_id.to_string());
+            preferences.action_engines.insert(
+                action_kind.as_key().to_string(),
+                AnalysisEngine::LocalModel {
+                    model_id: Some(model_id.to_string()),
+                },
+            );
         }
         (Some(action_kind), None) => {
-            preferences.action_model_ids.remove(action_kind.as_key());
+            preferences.action_engines.remove(action_kind.as_key());
         }
         (None, Some(model_id)) => {
             if find_model(model_id).is_none() {
                 return Err(format!("Unsupported local AI model: {}", model_id));
             }
-            preferences.global_model_id = model_id.to_string();
+            preferences.analysis_engine = AnalysisEngine::LocalModel {
+                model_id: Some(model_id.to_string()),
+            };
         }
         (None, None) => {
             return Err("Global default model must be selected.".to_string());
         }
     }
 
+    preferences.sync_legacy_model_fields();
     save_preferences(&preferences)?;
     Ok(preferences)
 }
 
+pub fn set_analysis_engine_preference(
+    engine: AnalysisEngine,
+    action_kind: Option<LocalAiActionKind>,
+) -> Result<LocalAiPreferences, String> {
+    validate_analysis_engine(&engine)?;
+    let mut preferences = load_preferences();
+    let should_clear_warm = engine.is_external_agent();
+
+    match action_kind {
+        Some(action_kind) => {
+            preferences
+                .action_engines
+                .insert(action_kind.as_key().to_string(), engine);
+        }
+        None => {
+            preferences.analysis_engine = engine;
+        }
+    }
+
+    if should_clear_warm {
+        preferences.warm_model_ids.clear();
+    }
+
+    preferences.sync_legacy_model_fields();
+    save_preferences(&preferences)?;
+    Ok(preferences)
+}
+
+pub fn set_external_agent_config_preference(
+    agent_id: &str,
+    action_kind: Option<LocalAiActionKind>,
+    config_id: &str,
+    value: Option<&str>,
+) -> Result<LocalAiPreferences, String> {
+    let agent_id = agent_id.trim();
+    if agent_id.is_empty() {
+        return Err("External agent id must be selected.".to_string());
+    }
+
+    let config_id = config_id.trim();
+    if config_id.is_empty() {
+        return Err("External agent config id must be selected.".to_string());
+    }
+
+    let value = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    let mut preferences = load_preferences();
+
+    match action_kind {
+        Some(action_kind) => {
+            let action_key = action_kind.as_key().to_string();
+            match value {
+                Some(value) => {
+                    preferences
+                        .action_external_agent_option_values
+                        .entry(action_key)
+                        .or_default()
+                        .entry(agent_id.to_string())
+                        .or_default()
+                        .insert(config_id.to_string(), value);
+                }
+                None => {
+                    if let Some(agent_values_by_action) = preferences
+                        .action_external_agent_option_values
+                        .get_mut(action_kind.as_key())
+                    {
+                        if let Some(agent_values) = agent_values_by_action.get_mut(agent_id) {
+                            agent_values.remove(config_id);
+                            if agent_values.is_empty() {
+                                agent_values_by_action.remove(agent_id);
+                            }
+                        }
+                        if agent_values_by_action.is_empty() {
+                            preferences
+                                .action_external_agent_option_values
+                                .remove(action_kind.as_key());
+                        }
+                    }
+                }
+            }
+        }
+        None => match value {
+            Some(value) => {
+                preferences
+                    .external_agent_option_values
+                    .entry(agent_id.to_string())
+                    .or_default()
+                    .insert(config_id.to_string(), value);
+            }
+            None => {
+                if let Some(agent_values) =
+                    preferences.external_agent_option_values.get_mut(agent_id)
+                {
+                    agent_values.remove(config_id);
+                    if agent_values.is_empty() {
+                        preferences.external_agent_option_values.remove(agent_id);
+                    }
+                }
+            }
+        },
+    }
+
+    save_preferences(&preferences)?;
+    Ok(preferences)
+}
+
+pub fn external_agent_effective_option_values(
+    preferences: &LocalAiPreferences,
+    agent_id: &str,
+    action_kind: LocalAiActionKind,
+    overrides: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut values = preferences
+        .external_agent_option_values
+        .get(agent_id)
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(action_values) = preferences
+        .action_external_agent_option_values
+        .get(action_kind.as_key())
+        .and_then(|agents| agents.get(agent_id))
+    {
+        values.extend(action_values.clone());
+    }
+
+    values.extend(overrides.iter().filter_map(|(config_id, value)| {
+        let config_id = config_id.trim();
+        let value = value.trim();
+        if config_id.is_empty() || value.is_empty() {
+            None
+        } else {
+            Some((config_id.to_string(), value.to_string()))
+        }
+    }));
+
+    values
+}
+
+fn validate_analysis_engine(engine: &AnalysisEngine) -> Result<(), String> {
+    match engine {
+        AnalysisEngine::LocalModel { model_id } => {
+            let Some(model_id) = model_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+            else {
+                return Ok(());
+            };
+            if find_model(model_id).is_some() {
+                Ok(())
+            } else {
+                Err(format!("Unsupported local AI model: {}", model_id))
+            }
+        }
+        AnalysisEngine::ExternalAgent { agent_id } => {
+            let agent_id = agent_id.trim();
+            if agent_id.is_empty() {
+                Err("External agent id must be selected.".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
 pub fn set_warm_model_preference(model_id: &str, warm: bool) -> Result<LocalAiPreferences, String> {
     let mut preferences = load_preferences();
+    if preferences.has_external_agent_engine() {
+        return Err("Model warmup is only available for local model engines.".to_string());
+    }
+
     let model_id = model_id.trim();
     if find_model(model_id).is_none() {
         return Err(format!("Unsupported local AI model: {}", model_id));
@@ -322,25 +515,35 @@ pub fn reconcile_preferences_with_available_models(
 ) -> Result<LocalAiPreferences, String> {
     let mut preferences = load_preferences();
 
-    preferences
-        .action_model_ids
-        .retain(|_, model_id| available_model_ids.iter().any(|id| id == model_id));
+    preferences.action_engines.retain(|_, engine| match engine {
+        AnalysisEngine::LocalModel { model_id } => model_id.as_ref().map_or(true, |model_id| {
+            available_model_ids.iter().any(|id| id == model_id)
+        }),
+        AnalysisEngine::ExternalAgent { .. } => true,
+    });
     preferences
         .warm_model_ids
         .retain(|model_id| available_model_ids.iter().any(|id| id == model_id));
 
-    if available_model_ids.is_empty() {
-        preferences.global_model_id.clear();
-        preferences.action_model_ids.clear();
+    if preferences.has_external_agent_engine() {
         preferences.warm_model_ids.clear();
-    } else if preferences.global_model_id.trim().is_empty()
-        || !available_model_ids
-            .iter()
-            .any(|model_id| model_id == &preferences.global_model_id)
+    } else if available_model_ids.is_empty() {
+        preferences.analysis_engine = AnalysisEngine::LocalModel { model_id: None };
+        preferences.action_engines.clear();
+        preferences.warm_model_ids.clear();
+    } else if preferences
+        .analysis_engine
+        .local_model_id()
+        .map_or(true, |model_id| {
+            !available_model_ids.iter().any(|id| id == model_id)
+        })
     {
-        preferences.global_model_id = available_model_ids[0].clone();
+        preferences.analysis_engine = AnalysisEngine::LocalModel {
+            model_id: Some(available_model_ids[0].clone()),
+        };
     }
 
+    preferences.sync_legacy_model_fields();
     save_preferences(&preferences)?;
     Ok(preferences)
 }
@@ -364,12 +567,23 @@ pub fn resolve_model_id(
     }
 
     let preferences = load_preferences();
-    preferences
-        .action_model_ids
+    let engine = preferences
+        .action_engines
         .get(action_kind.as_key())
-        .filter(|model_id| !model_id.trim().is_empty())
-        .cloned()
-        .ok_or_else(|| format!("No AI model selected for {}", action_kind.display_label()))
+        .ok_or_else(|| format!("No AI model selected for {}", action_kind.display_label()))?;
+
+    match engine {
+        AnalysisEngine::LocalModel { model_id } => model_id
+            .as_deref()
+            .filter(|model_id| !model_id.trim().is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("No AI model selected for {}", action_kind.display_label())),
+        AnalysisEngine::ExternalAgent { agent_id } => Err(format!(
+            "Selected analysis engine {} is not a local model for {}.",
+            agent_id,
+            action_kind.display_label()
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -474,6 +688,98 @@ mod tests {
         let cleared = set_warm_model_preference("phi4-mini", false).expect("clear warm model");
 
         assert!(cleared.warm_model_ids.is_empty());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn external_global_engine_clears_warm_preferences() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.analysis_engine = AnalysisEngine::LocalModel {
+            model_id: Some("phi4-mini".to_string()),
+        };
+        preferences.warm_model_ids.push("phi4-mini".to_string());
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated = set_analysis_engine_preference(
+            AnalysisEngine::ExternalAgent {
+                agent_id: "codex-acp".to_string(),
+            },
+            None,
+        )
+        .expect("set external engine");
+
+        assert!(updated.warm_model_ids.is_empty());
+        assert!(updated.analysis_engine.is_external_agent());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn external_action_engine_clears_warm_preferences() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.analysis_engine = AnalysisEngine::LocalModel {
+            model_id: Some("phi4-mini".to_string()),
+        };
+        preferences.warm_model_ids.push("phi4-mini".to_string());
+        save_preferences(&preferences).expect("save preferences");
+
+        let updated = set_analysis_engine_preference(
+            AnalysisEngine::ExternalAgent {
+                agent_id: "codex-acp".to_string(),
+            },
+            Some(LocalAiActionKind::BranchAnalysis),
+        )
+        .expect("set external action engine");
+
+        assert!(updated.warm_model_ids.is_empty());
+        assert!(updated.has_external_agent_engine());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn warm_model_preference_rejects_external_engine() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = default_preferences();
+        preferences.analysis_engine = AnalysisEngine::ExternalAgent {
+            agent_id: "codex-acp".to_string(),
+        };
+        save_preferences(&preferences).expect("save preferences");
+
+        let error = set_warm_model_preference("phi4-mini", true)
+            .expect_err("external engines cannot warm models");
+
+        assert!(error.contains("only available for local model engines"));
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),

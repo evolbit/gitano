@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  getExternalAiAgentCatalog,
   getLocalAiEntitlementStatus,
   getLocalAiModelCatalog,
   getLocalAiModelCompatibility,
@@ -7,7 +8,10 @@ import {
   getLocalAiModelStatus,
   listenToLocalAiProgress,
   prepareLocalAiModel,
+  setLocalAiAnalysisEnginePreference,
   setLocalAiModelPreference,
+  type AnalysisEngine,
+  type ExternalAiAgentEntry,
   type LocalAiActionKind,
   type LocalAiCompatibility,
   type LocalAiDownloadProgress,
@@ -25,6 +29,7 @@ type SetupRequest = {
 
 type LocalAiStore = {
   catalog: LocalAiModelEntry[];
+  externalAgents: ExternalAiAgentEntry[];
   entitlement: LocalAiEntitlementStatus | null;
   preferences: LocalAiPreferences | null;
   modelStatus: LocalAiModelStatus | null;
@@ -41,6 +46,10 @@ type LocalAiStore = {
   loadSetupState: (modelId?: string | null) => Promise<void>;
   setPreference: (
     modelId: string,
+    actionKind?: LocalAiActionKind | null,
+  ) => Promise<void>;
+  setAnalysisEnginePreference: (
+    engine: AnalysisEngine,
     actionKind?: LocalAiActionKind | null,
   ) => Promise<void>;
   prepareSelectedModel: (modelId: string, allowLimited: boolean) => Promise<void>;
@@ -80,6 +89,7 @@ function appendProgressTimeline(
 
 export const useLocalAiStore = create<LocalAiStore>((set, get) => ({
   catalog: [],
+  externalAgents: [],
   entitlement: null,
   preferences: null,
   modelStatus: null,
@@ -114,6 +124,7 @@ export const useLocalAiStore = create<LocalAiStore>((set, get) => ({
         getLocalAiEntitlementStatus(),
         getLocalAiModelPreferences(),
       ]);
+      const externalAgents = await getExternalAiAgentCatalog().catch(() => []);
       const selectedModelId =
         modelId || preferences.globalModelId || catalog[0]?.id || "";
       const [modelStatus, compatibility] = selectedModelId
@@ -124,6 +135,7 @@ export const useLocalAiStore = create<LocalAiStore>((set, get) => ({
         : [null, null];
       set({
         catalog,
+        externalAgents,
         entitlement,
         preferences,
         modelStatus,
@@ -149,6 +161,22 @@ export const useLocalAiStore = create<LocalAiStore>((set, get) => ({
         getLocalAiModelCompatibility(modelId),
       ]);
       set({ preferences, modelStatus, compatibility });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      set({ loading: false });
+    }
+  },
+  setAnalysisEnginePreference: async (engine, actionKind) => {
+    set({ loading: true, error: null });
+    try {
+      const preferences = await setLocalAiAnalysisEnginePreference({
+        engine,
+        actionKind,
+      });
+      set({ preferences });
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : String(error),

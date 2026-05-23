@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocalAiStore } from "@/features/local-ai/store";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { BranchCompareModal } from "./branch-compare-modal";
 
@@ -15,13 +16,16 @@ const diffApiMocks = vi.hoisted(() => ({
 const localAiMocks = vi.hoisted(() => ({
   runLocalAiAction: vi.fn(),
   listenToLocalAiRunProgress: vi.fn(),
+  listenToExternalAiRunEvents: vi.fn(),
   getLocalAiModelCatalog: vi.fn(),
+  getExternalAiAgentCatalog: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
   getLocalAiModelCompatibility: vi.fn(),
   prepareLocalAiModel: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
+  setLocalAiAnalysisEnginePreference: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
 }));
 const clipboardMocks = vi.hoisted(() => ({
@@ -57,7 +61,11 @@ describe("BranchCompareModal local AI", () => {
     localAiMocks.listenToLocalAiRunProgress.mockReturnValue(
       Promise.resolve(() => {}),
     );
+    localAiMocks.listenToExternalAiRunEvents.mockReturnValue(
+      Promise.resolve(() => {}),
+    );
     localAiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
+    localAiMocks.getExternalAiAgentCatalog.mockResolvedValue([]);
     localAiMocks.getLocalAiModelCatalog.mockResolvedValue([
       {
         id: "qwen2.5-coder:3b",
@@ -152,12 +160,37 @@ describe("BranchCompareModal local AI", () => {
         branchReview: "qwen2.5-coder:7b",
       },
     });
+    localAiMocks.setLocalAiAnalysisEnginePreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:3b",
+      actionModelIds: {
+        branchReview: "qwen2.5-coder:7b",
+      },
+      analysisEngine: { type: "local_model", modelId: "qwen2.5-coder:3b" },
+      actionEngines: {
+        branchReview: { type: "local_model", modelId: "qwen2.5-coder:7b" },
+      },
+    });
     clipboardMocks.writeClipboardText.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    useLocalAiStore.setState({
+      catalog: [],
+      externalAgents: [],
+      entitlement: null,
+      preferences: null,
+      modelStatus: null,
+      compatibility: null,
+      progressByOperationId: {},
+      progressTimelineByOperationId: {},
+      activeOperationId: null,
+      setupOpen: false,
+      setupRequest: null,
+      loading: false,
+      error: null,
+    });
     useGitActionsStore.setState({
       pendingAction: null,
       notice: null,
@@ -479,7 +512,7 @@ describe("BranchCompareModal local AI", () => {
         expanded: true,
       });
     });
-    expect(screen.queryByText("Model setup")).not.toBeInTheDocument();
+    expect(screen.queryByText("Analysis engine setup")).not.toBeInTheDocument();
     expect(
       screen.queryByText("No actionable review findings returned."),
     ).not.toBeInTheDocument();

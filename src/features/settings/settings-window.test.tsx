@@ -5,16 +5,25 @@ import { ACTION_MODEL_REQUIRED_MESSAGE } from "./constants";
 import { SettingsWindow } from "./settings-window";
 
 const apiMocks = vi.hoisted(() => ({
+  authenticateExternalAiAgent: vi.fn(),
   deleteLocalAiModel: vi.fn(),
+  getExternalAiAgentCatalog: vi.fn(),
+  getExternalAiAgentSessionConfig: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
   getLocalAiMachineProfile: vi.fn(),
   getLocalAiModelCatalog: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
   getLocalAiRuntimeStatus: vi.fn(),
+  installExternalAiAgent: vi.fn(),
+  listenToExternalAiAgentProgress: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
   prepareLocalAiModel: vi.fn(),
   prepareLocalAiRuntime: vi.fn(),
+  removeExternalAiAgent: vi.fn(),
+  setExternalAiAgentAsDefault: vi.fn(),
+  setExternalAiAgentConfigPreference: vi.fn(),
+  setLocalAiAnalysisEnginePreference: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
   setLocalAiModelWarmPreference: vi.fn(),
   warmConfiguredLocalAiModels: vi.fn(),
@@ -76,14 +85,101 @@ const legacyModels = models.map(
     model,
 );
 
+const externalAgents = [
+  {
+    id: "codex-acp",
+    displayName: "Codex CLI",
+    provider: "OpenAI",
+    description: "ACP adapter for Codex",
+    version: "0.14.0",
+    repository: "https://github.com/zed-industries/codex-acp",
+    license: "Apache-2.0",
+    installSource: {
+      kind: "binary",
+      package: null,
+      archive: "https://example.test/codex.tar.gz",
+      command: ["codex-acp"],
+    },
+    status: {
+      agentId: "codex-acp",
+      installed: true,
+      authenticated: true,
+      available: true,
+      state: "ready",
+      version: "0.14.0",
+      error: null,
+    },
+  },
+  {
+    id: "gemini",
+    displayName: "Gemini CLI",
+    provider: "Google",
+    description: "ACP adapter for Gemini",
+    version: "0.42.0",
+    repository: "https://github.com/google-gemini/gemini-cli",
+    license: "Apache-2.0",
+    installSource: {
+      kind: "npx",
+      package: "@google/gemini-cli@0.42.0",
+      archive: null,
+      command: ["npx", "-y", "@google/gemini-cli@0.42.0", "--acp"],
+    },
+    status: {
+      agentId: "gemini",
+      installed: false,
+      authenticated: false,
+      available: false,
+      state: "notInstalled",
+      version: null,
+      error: null,
+    },
+  },
+];
+
 describe("SettingsWindow", () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
     apiMocks.getLocalAiModelCatalog.mockResolvedValue(models);
+    apiMocks.getExternalAiAgentCatalog.mockResolvedValue(externalAgents);
+    apiMocks.getExternalAiAgentSessionConfig.mockResolvedValue({
+      agentId: "codex-acp",
+      options: [
+        {
+          id: "model",
+          name: "Model",
+          description: "Model used by the agent.",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-5.5",
+          options: [
+            {
+              value: "gpt-5.5",
+              name: "GPT-5.5",
+              description: null,
+            },
+            {
+              value: "gpt-5",
+              name: "GPT-5",
+              description: null,
+            },
+          ],
+        },
+      ],
+    });
     apiMocks.getLocalAiModelPreferences.mockResolvedValue({
       globalModelId: "qwen2.5-coder:7b",
       actionModelIds: {
         commitMessage: "qwen2.5-coder:1.5b",
+      },
+      analysisEngine: {
+        type: "local_model",
+        modelId: "qwen2.5-coder:7b",
+      },
+      actionEngines: {
+        commitMessage: {
+          type: "local_model",
+          modelId: "qwen2.5-coder:1.5b",
+        },
       },
       warmModelIds: [],
       keepAliveMinutes: 30,
@@ -128,6 +224,9 @@ describe("SettingsWindow", () => {
       running: false,
       ready: modelId === "qwen2.5-coder:7b",
     }));
+    apiMocks.listenToExternalAiAgentProgress.mockReturnValue(
+      Promise.resolve(() => {}),
+    );
     apiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
     apiMocks.warmConfiguredLocalAiModels.mockResolvedValue({
       warmedModelIds: [],
@@ -263,7 +362,7 @@ describe("SettingsWindow", () => {
       await screen.findByRole("button", { name: "Configuration" }),
     );
 
-    expect(screen.getByLabelText("PR / branch review model")).toHaveValue("");
+    expect(screen.getByLabelText("Branch review analysis engine")).toHaveValue("");
   });
 
   it("clears an action-specific model when the unset placeholder is selected", async () => {
@@ -283,7 +382,7 @@ describe("SettingsWindow", () => {
     await user.click(
       await screen.findByRole("button", { name: "Configuration" }),
     );
-    await user.selectOptions(screen.getByLabelText("Commit model"), "");
+    await user.selectOptions(screen.getByLabelText("Commit analysis engine"), "");
 
     expect(apiMocks.setLocalAiModelPreference).toHaveBeenCalledWith({
       modelId: "",
@@ -293,7 +392,7 @@ describe("SettingsWindow", () => {
 
   it("shows preference command errors inside the settings window", async () => {
     const user = userEvent.setup();
-    apiMocks.setLocalAiModelPreference.mockRejectedValueOnce(
+    apiMocks.setLocalAiAnalysisEnginePreference.mockRejectedValueOnce(
       new Error("Unsupported local AI model:"),
     );
 
@@ -308,13 +407,180 @@ describe("SettingsWindow", () => {
       await screen.findByRole("button", { name: "Configuration" }),
     );
     await user.selectOptions(
-      screen.getByLabelText("Commit model"),
-      "qwen2.5-coder:7b",
+      screen.getByLabelText("Commit analysis engine"),
+      "local:qwen2.5-coder:7b",
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Unsupported local AI model:",
     );
+  });
+
+  it("renders external agents and installs unavailable agents", async () => {
+    const user = userEvent.setup();
+    apiMocks.installExternalAiAgent.mockResolvedValue({
+      operationId: "external-agent-gemini-1",
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "External Agents" }),
+    );
+    expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.getByText("Gemini CLI")).toBeInTheDocument();
+
+    const installButton = screen.getByRole("button", { name: /install/i });
+    await user.click(installButton);
+
+    expect(apiMocks.installExternalAiAgent).toHaveBeenCalledWith({
+      agentId: "gemini",
+    });
+  });
+
+  it("persists an external agent selection from the grouped selector", async () => {
+    const user = userEvent.setup();
+    apiMocks.setLocalAiAnalysisEnginePreference.mockResolvedValue({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Global default analysis engine"),
+      "external:codex-acp",
+    );
+
+    expect(apiMocks.setLocalAiAnalysisEnginePreference).toHaveBeenCalledWith({
+      engine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionKind: null,
+    });
+  });
+
+  it("renders ACP config options and persists action-specific overrides", async () => {
+    const user = userEvent.setup();
+    apiMocks.getLocalAiModelPreferences.mockResolvedValueOnce({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "local_model",
+        modelId: "qwen2.5-coder:7b",
+      },
+      actionEngines: {
+        branchReview: {
+          type: "external_agent",
+          agentId: "codex-acp",
+        },
+      },
+      externalAgentOptionValues: {},
+      actionExternalAgentOptionValues: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+    apiMocks.setExternalAiAgentConfigPreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "local_model",
+        modelId: "qwen2.5-coder:7b",
+      },
+      actionEngines: {
+        branchReview: {
+          type: "external_agent",
+          agentId: "codex-acp",
+        },
+      },
+      externalAgentOptionValues: {},
+      actionExternalAgentOptionValues: {
+        branchReview: {
+          "codex-acp": {
+            model: "gpt-5",
+          },
+        },
+      },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+        repoPath="/repo"
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    const modelSelect = await screen.findByLabelText("Branch review Model");
+    expect(apiMocks.getExternalAiAgentSessionConfig).toHaveBeenCalledWith({
+      agentId: "codex-acp",
+      repoPath: "/repo",
+    });
+
+    await user.selectOptions(modelSelect, "gpt-5");
+
+    expect(apiMocks.setExternalAiAgentConfigPreference).toHaveBeenCalledWith({
+      agentId: "codex-acp",
+      actionKind: "branchReview",
+      configId: "model",
+      value: "gpt-5",
+    });
+  });
+
+  it("disables warmup controls when an external agent is selected", async () => {
+    const user = userEvent.setup();
+    apiMocks.getLocalAiModelPreferences.mockResolvedValueOnce({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Models" }));
+    expect(
+      screen.getAllByText(
+        "Warmup is unavailable while an external agent is selected.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(apiMocks.warmConfiguredLocalAiModels).not.toHaveBeenCalled();
   });
 
   it("clears the UI state when an older backend rejects the empty model", async () => {
@@ -333,14 +599,14 @@ describe("SettingsWindow", () => {
     await user.click(
       await screen.findByRole("button", { name: "Configuration" }),
     );
-    await user.selectOptions(screen.getByLabelText("Commit model"), "");
+    await user.selectOptions(screen.getByLabelText("Commit analysis engine"), "");
 
     expect(apiMocks.setLocalAiModelPreference).toHaveBeenCalledWith({
       modelId: "",
       actionKind: "commitMessage",
     });
     await waitFor(() => {
-      expect(screen.getByLabelText("Commit model")).toHaveValue("");
+      expect(screen.getByLabelText("Commit analysis engine")).toHaveValue("");
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

@@ -10,6 +10,7 @@ export {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconChevronUp,
   IconCircleDot,
   IconCloud,
   IconCloudDownload,

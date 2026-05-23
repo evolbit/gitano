@@ -3,35 +3,46 @@ use super::context_window::{effective_context_window, generation_context_window_
 use super::entitlement::{ensure_entitled, entitlement_status};
 use super::git_context::{
     build_branch_context, build_branch_review_file_contexts, build_commit_analysis_context,
-    build_git_context, LocalAiBranchContextStep, LocalAiCommitAnalysisContextStep,
+    build_external_agent_branch_context, build_external_agent_commit_analysis_context,
+    build_external_agent_git_context, build_git_context, BranchDiffOrder, LocalAiBranchContextStep,
+    LocalAiCommitAnalysisContextStep,
 };
 use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
-    find_model, load_preferences, model_catalog, reconcile_preferences_after_model_delete,
-    reconcile_preferences_with_available_models, resolve_model_id,
+    external_agent_effective_option_values, find_model, load_preferences, model_catalog,
+    reconcile_preferences_after_model_delete, reconcile_preferences_with_available_models,
+    resolve_model_id, set_analysis_engine_preference, set_external_agent_config_preference,
     set_first_downloaded_model_as_global_default, set_model_preference, set_warm_model_preference,
     NO_AI_MODELS_AVAILABLE_MESSAGE,
 };
 use super::ollama::{emit_failed_progress, OllamaClient};
-use super::prompts::{build_prompt, parse_structured_result, PROMPT_VERSION};
+use super::prompts::{
+    build_external_agent_prompt, build_prompt, parse_structured_result,
+    EXTERNAL_AGENT_PROMPT_VERSION, PROMPT_VERSION,
+};
 use super::runtime::{
     ensure_runtime_ready, latest_compatible_runtime_version, managed_runtime_supported,
     managed_runtime_version, prepare_managed_runtime, start_managed_runtime_if_installed,
     using_external_ollama,
 };
 use super::types::{
-    LocalAiActionKind, LocalAiBranchReviewNote, LocalAiBranchReviewResult, LocalAiCompatibility,
+    AnalysisEngine, ExternalAiAgentCommandRequest, ExternalAiAgentConfigPreferenceRequest,
+    ExternalAiAgentEntry, ExternalAiAgentInstallRequest, ExternalAiAgentInstallResponse,
+    ExternalAiAgentSessionConfig, ExternalAiAgentSessionConfigRequest, ExternalAiAgentStatus,
+    ExternalAiCancelRequest, ExternalAiPromptRequest, ExternalAiPromptResponse, LocalAiActionKind,
+    LocalAiBranchReviewNote, LocalAiBranchReviewResult, LocalAiCompatibility,
     LocalAiCompatibilityLevel, LocalAiEntitlementStatus, LocalAiFindingSeverity,
     LocalAiMachineProfile, LocalAiModelEntry, LocalAiModelStatus, LocalAiPreferences,
     LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
     LocalAiPrepareRuntimeResponse, LocalAiReviewConfidence, LocalAiReviewLineSide,
     LocalAiRunProgress, LocalAiRunProgressState, LocalAiRunRequest, LocalAiRunResult,
-    LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus, LocalAiSetModelPreferenceRequest,
-    LocalAiSetModelWarmPreferenceRequest, LocalAiStructuredResult, LocalAiWarmModelFailure,
-    LocalAiWarmModelsResponse, LOCAL_AI_RUN_PROGRESS_EVENT,
+    LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus, LocalAiSetAnalysisEnginePreferenceRequest,
+    LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
+    LocalAiStructuredResult, LocalAiWarmModelFailure, LocalAiWarmModelsResponse,
+    LOCAL_AI_RUN_PROGRESS_EVENT,
 };
 use futures_util::{stream, StreamExt};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
@@ -45,6 +56,25 @@ pub fn ai_get_entitlement_status() -> LocalAiEntitlementStatus {
 #[tauri::command]
 pub fn ai_get_model_catalog() -> Vec<LocalAiModelEntry> {
     model_catalog()
+}
+
+#[tauri::command]
+pub fn ai_get_external_agent_catalog() -> Vec<ExternalAiAgentEntry> {
+    super::external_agents::external_agent_catalog()
+}
+
+#[tauri::command]
+pub fn ai_get_external_agent_status(agent_id: String) -> Result<ExternalAiAgentStatus, String> {
+    super::external_agents::external_agent_status(&agent_id)
+}
+
+#[tauri::command]
+pub async fn ai_get_external_agent_session_config(
+    app: AppHandle,
+    request: ExternalAiAgentSessionConfigRequest,
+) -> Result<ExternalAiAgentSessionConfig, String> {
+    ensure_entitled()?;
+    super::acp_client::get_external_agent_session_config(app, request).await
 }
 
 #[tauri::command]
@@ -69,6 +99,98 @@ pub fn ai_set_model_preference(
         request.model_id.as_deref().unwrap_or(""),
         request.action_kind,
     )
+}
+
+#[tauri::command]
+pub async fn ai_set_analysis_engine_preference(
+    request: LocalAiSetAnalysisEnginePreferenceRequest,
+) -> Result<LocalAiPreferences, String> {
+    ensure_entitled()?;
+    if let AnalysisEngine::ExternalAgent { agent_id } = &request.engine {
+        super::external_agents::external_agent_status(agent_id)?;
+    }
+    let was_local = load_preferences().analysis_engine.is_local_model();
+    let next_is_external = request.engine.is_external_agent();
+    let warm_model_ids = if was_local && next_is_external {
+        load_preferences().warm_model_ids
+    } else {
+        Vec::new()
+    };
+
+    let preferences = set_analysis_engine_preference(request.engine, request.action_kind)?;
+
+    for model_id in warm_model_ids {
+        let _ = unload_model_if_runtime_available(&model_id).await;
+    }
+
+    Ok(preferences)
+}
+
+#[tauri::command]
+pub fn ai_set_external_agent_as_default(
+    request: ExternalAiAgentCommandRequest,
+) -> Result<LocalAiPreferences, String> {
+    ensure_entitled()?;
+    super::external_agents::set_external_agent_as_default(request)
+}
+
+#[tauri::command]
+pub fn ai_set_external_agent_config_preference(
+    request: ExternalAiAgentConfigPreferenceRequest,
+) -> Result<LocalAiPreferences, String> {
+    ensure_entitled()?;
+    set_external_agent_config_preference(
+        &request.agent_id,
+        request.action_kind,
+        &request.config_id,
+        request.value.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn ai_install_external_agent(
+    app: AppHandle,
+    request: ExternalAiAgentInstallRequest,
+) -> Result<ExternalAiAgentInstallResponse, String> {
+    ensure_entitled()?;
+    super::external_agents::install_external_agent(app, request)
+}
+
+#[tauri::command]
+pub fn ai_remove_external_agent(request: ExternalAiAgentCommandRequest) -> Result<(), String> {
+    ensure_entitled()?;
+    super::external_agents::remove_external_agent(request)
+}
+
+#[tauri::command]
+pub fn ai_authenticate_external_agent(
+    request: ExternalAiAgentCommandRequest,
+) -> Result<ExternalAiAgentStatus, String> {
+    ensure_entitled()?;
+    super::external_agents::authenticate_external_agent(request)
+}
+
+#[tauri::command]
+pub fn ai_logout_external_agent(
+    request: ExternalAiAgentCommandRequest,
+) -> Result<ExternalAiAgentStatus, String> {
+    ensure_entitled()?;
+    super::external_agents::logout_external_agent(request)
+}
+
+#[tauri::command]
+pub async fn ai_run_external_agent_prompt(
+    app: AppHandle,
+    request: ExternalAiPromptRequest,
+) -> Result<ExternalAiPromptResponse, String> {
+    ensure_entitled()?;
+    super::acp_client::run_external_agent_prompt(app, request).await
+}
+
+#[tauri::command]
+pub fn ai_cancel_external_agent_run(request: ExternalAiCancelRequest) -> Result<(), String> {
+    ensure_entitled()?;
+    super::acp_client::cancel_external_agent_run(&request.run_id)
 }
 
 #[tauri::command]
@@ -326,6 +448,17 @@ async fn run_action_inner(
     request: &LocalAiRunRequest,
 ) -> Result<LocalAiRunResult, String> {
     ensure_entitled()?;
+    let stored_preferences = load_preferences();
+    if request
+        .model_id
+        .as_deref()
+        .map_or(true, |model_id| model_id.trim().is_empty())
+    {
+        if let Some(agent_id) = selected_external_agent_id(request, &stored_preferences) {
+            return run_external_agent_action(app, request, agent_id).await;
+        }
+    }
+
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
     let runtime = client.runtime_status().await;
@@ -501,6 +634,283 @@ async fn run_action_inner(
         None,
     );
     Ok(result)
+}
+
+async fn run_external_agent_action(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    agent_id: &str,
+) -> Result<LocalAiRunResult, String> {
+    let status = super::external_agents::external_agent_status(agent_id)?;
+    if !status.available {
+        return Err(status.error.unwrap_or_else(|| {
+            format!(
+                "EXTERNAL_AI_AGENT_SETUP_REQUIRED: {} is not available.",
+                agent_id
+            )
+        }));
+    }
+
+    let git_context = build_external_agent_context(app, request)?;
+    let preferences = load_preferences();
+    let external_agent_option_values = external_agent_effective_option_values(
+        &preferences,
+        agent_id,
+        request.action_kind,
+        &request.external_agent_option_overrides,
+    );
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::CheckingCache,
+        if request.force_refresh {
+            "Bypassing cached external analysis"
+        } else {
+            "Checking external agent cache"
+        },
+        None,
+    );
+
+    let agent_digest = external_agent_digest(
+        agent_id,
+        status.version.as_deref(),
+        &external_agent_option_values,
+    );
+    let cache_key = build_cache_key(
+        request.action_kind,
+        EXTERNAL_AGENT_PROMPT_VERSION,
+        &agent_digest,
+        &request.repo_path,
+        &git_context.input_digest,
+    );
+
+    if !request.force_refresh {
+        if let Some(cached) = get_cached_result(&cache_key) {
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::CacheHit,
+                "Using cached external analysis",
+                None,
+            );
+            emit_run_progress(
+                app,
+                request,
+                LocalAiRunProgressState::Completed,
+                completed_message(request.action_kind),
+                None,
+            );
+            return Ok(cached);
+        }
+    }
+
+    let run_id = request
+        .run_id
+        .clone()
+        .unwrap_or_else(|| operation_id(agent_id));
+    let prompt = build_external_agent_prompt(&git_context);
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::RunningModel,
+        "Running external agent",
+        None,
+    );
+    let response = super::acp_client::run_external_agent_prompt(
+        app.clone(),
+        ExternalAiPromptRequest {
+            agent_id: agent_id.to_string(),
+            repo_path: request.repo_path.clone(),
+            run_id,
+            action_kind: request.action_kind,
+            prompt,
+            external_agent_option_overrides: external_agent_option_values,
+        },
+    )
+    .await?;
+
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::FormattingResult,
+        formatting_message(request.action_kind),
+        None,
+    );
+    let structured = parse_structured_result(request.action_kind, &response.transcript)
+        .unwrap_or_else(|error| {
+            external_unstructured_result(request.action_kind, &response.transcript, &error)
+        });
+    let result = LocalAiRunResult {
+        action_kind: request.action_kind,
+        model_id: format!("external:{}", agent_id),
+        model_digest: agent_digest,
+        prompt_version: EXTERNAL_AGENT_PROMPT_VERSION.to_string(),
+        input_digest: git_context.input_digest,
+        from_cache: false,
+        metadata: git_context.metadata,
+        result: structured,
+    };
+
+    put_cached_result(cache_key, &result)?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::Completed,
+        completed_message(request.action_kind),
+        None,
+    );
+    Ok(result)
+}
+
+fn external_agent_digest(
+    agent_id: &str,
+    version: Option<&str>,
+    option_values: &HashMap<String, String>,
+) -> String {
+    let mut entries = option_values
+        .iter()
+        .map(|(config_id, value)| format!("{config_id}={value}"))
+        .collect::<Vec<_>>();
+    entries.sort();
+
+    let version = version.unwrap_or("unknown-version");
+    if entries.is_empty() {
+        format!("external:{agent_id}:{version}")
+    } else {
+        format!("external:{agent_id}:{version}:{}", entries.join("|"))
+    }
+}
+
+fn selected_external_agent_id<'a>(
+    request: &LocalAiRunRequest,
+    preferences: &'a LocalAiPreferences,
+) -> Option<&'a str> {
+    let action_engine = preferences.action_engines.get(request.action_kind.as_key());
+    let engine = match action_engine {
+        Some(AnalysisEngine::LocalModel { model_id })
+            if model_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|model_id| !model_id.is_empty())
+                .is_none() =>
+        {
+            &preferences.analysis_engine
+        }
+        Some(engine) => engine,
+        None => &preferences.analysis_engine,
+    };
+    match engine {
+        AnalysisEngine::ExternalAgent { agent_id } => Some(agent_id.as_str()),
+        AnalysisEngine::LocalModel { .. } => None,
+    }
+}
+
+fn build_external_agent_context(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+) -> Result<super::git_context::LocalAiGitContext, String> {
+    match request.action_kind {
+        LocalAiActionKind::CommitAnalysis => {
+            let sha = request
+                .commit_sha
+                .as_deref()
+                .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
+            build_external_agent_commit_analysis_context(&request.repo_path, sha, |step| {
+                emit_commit_context_progress(app, request, step);
+            })
+        }
+        LocalAiActionKind::BranchAnalysis | LocalAiActionKind::BranchReview => {
+            let base_ref = request
+                .base_ref
+                .as_deref()
+                .ok_or_else(|| "Base ref is required for branch AI.".to_string())?;
+            let head_ref = request
+                .head_ref
+                .as_deref()
+                .ok_or_else(|| "Head ref is required for branch AI.".to_string())?;
+            let diff_order = if request.action_kind == LocalAiActionKind::BranchReview {
+                BranchDiffOrder::ReviewPriority
+            } else {
+                BranchDiffOrder::Git
+            };
+            build_external_agent_branch_context(
+                &request.repo_path,
+                base_ref,
+                head_ref,
+                request.comparison_mode.as_deref().unwrap_or("direct"),
+                request.action_kind,
+                diff_order,
+                |step| emit_branch_context_progress(app, request, step),
+            )
+        }
+        _ => build_external_agent_git_context(request),
+    }
+}
+
+fn external_unstructured_result(
+    action_kind: LocalAiActionKind,
+    transcript: &str,
+    parse_error: &str,
+) -> LocalAiStructuredResult {
+    let summary = if transcript.trim().is_empty() {
+        format!(
+            "External agent completed, but Gitano could not parse structured output: {}",
+            parse_error
+        )
+    } else {
+        transcript.trim().to_string()
+    };
+    let note = format!(
+        "Gitano could not parse the external agent output as structured JSON: {}",
+        parse_error
+    );
+
+    match action_kind {
+        LocalAiActionKind::BranchReview => {
+            LocalAiStructuredResult::BranchReview(LocalAiBranchReviewResult {
+                summary,
+                findings: Vec::new(),
+                notes: vec![LocalAiBranchReviewNote {
+                    severity: LocalAiFindingSeverity::Medium,
+                    confidence: LocalAiReviewConfidence::Medium,
+                    title: "Unstructured external agent output".to_string(),
+                    explanation: note,
+                    recommendation:
+                        "Review the external agent transcript before treating this as complete."
+                            .to_string(),
+                    suggested_comment: None,
+                    file_path: None,
+                }],
+            })
+        }
+        LocalAiActionKind::MergeConflictSuggestions => {
+            LocalAiStructuredResult::ConflictSuggestions(
+                super::types::LocalAiConflictSuggestionsResult {
+                    summary,
+                    files: Vec::new(),
+                },
+            )
+        }
+        LocalAiActionKind::CommitMessage => {
+            LocalAiStructuredResult::CommitMessage(super::types::LocalAiCommitMessageResult {
+                message: summary,
+                alternatives: Vec::new(),
+            })
+        }
+        LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => {
+            LocalAiStructuredResult::Analysis(super::types::LocalAiAnalysisResult {
+                summary,
+                risk_assessment: Some(note),
+                changed_areas: Vec::new(),
+                behavioral_changes: Vec::new(),
+                potential_regressions: Vec::new(),
+                test_gaps: Vec::new(),
+                recommendations: Vec::new(),
+                action_items: Vec::new(),
+                findings: Vec::new(),
+            })
+        }
+    }
 }
 
 async fn run_segmented_branch_review(
@@ -892,6 +1302,13 @@ fn ensure_model_supports_action(
 }
 
 async fn warm_configured_models() -> Result<LocalAiWarmModelsResponse, String> {
+    if load_preferences().has_external_agent_engine() {
+        return Ok(LocalAiWarmModelsResponse {
+            warmed_model_ids: Vec::new(),
+            failures: Vec::new(),
+        });
+    }
+
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
     let runtime = client.runtime_status().await;
@@ -1001,6 +1418,115 @@ mod tests {
 
         preferences.keep_alive_minutes = 0;
         assert_eq!(keep_alive_duration(&preferences), "1m");
+    }
+
+    #[test]
+    fn warm_configured_models_noops_for_external_engine() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let mut preferences = super::super::models::default_preferences();
+        preferences.analysis_engine = super::super::types::AnalysisEngine::ExternalAgent {
+            agent_id: "codex-acp".to_string(),
+        };
+        preferences.warm_model_ids.push("phi4-mini".to_string());
+        super::super::models::save_preferences(&preferences).expect("save preferences");
+
+        let response =
+            tauri::async_runtime::block_on(warm_configured_models()).expect("warm no-op succeeds");
+
+        assert!(response.warmed_model_ids.is_empty());
+        assert!(response.failures.is_empty());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn selected_external_agent_id_prefers_action_engine() {
+        let mut preferences = super::super::models::default_preferences();
+        preferences.analysis_engine = AnalysisEngine::ExternalAgent {
+            agent_id: "codex-acp".to_string(),
+        };
+        preferences.action_engines.insert(
+            LocalAiActionKind::BranchAnalysis.as_key().to_string(),
+            AnalysisEngine::ExternalAgent {
+                agent_id: "gemini".to_string(),
+            },
+        );
+        let request = LocalAiRunRequest {
+            repo_path: "/repo".to_string(),
+            action_kind: LocalAiActionKind::BranchAnalysis,
+            run_id: Some("run-1".to_string()),
+            model_id: None,
+            force_refresh: false,
+            commit_sha: None,
+            base_ref: Some("main".to_string()),
+            head_ref: Some("feature".to_string()),
+            comparison_mode: None,
+            external_agent_option_overrides: HashMap::new(),
+        };
+
+        assert_eq!(
+            selected_external_agent_id(&request, &preferences),
+            Some("gemini")
+        );
+    }
+
+    #[test]
+    fn selected_external_agent_id_uses_global_external_when_action_is_unset() {
+        let mut preferences = super::super::models::default_preferences();
+        preferences.analysis_engine = AnalysisEngine::ExternalAgent {
+            agent_id: "codex-acp".to_string(),
+        };
+        preferences.action_engines.insert(
+            LocalAiActionKind::BranchReview.as_key().to_string(),
+            AnalysisEngine::LocalModel { model_id: None },
+        );
+        let request = LocalAiRunRequest {
+            repo_path: "/repo".to_string(),
+            action_kind: LocalAiActionKind::BranchReview,
+            run_id: Some("run-1".to_string()),
+            model_id: None,
+            force_refresh: false,
+            commit_sha: None,
+            base_ref: Some("main".to_string()),
+            head_ref: Some("feature".to_string()),
+            comparison_mode: None,
+            external_agent_option_overrides: HashMap::new(),
+        };
+
+        assert_eq!(
+            selected_external_agent_id(&request, &preferences),
+            Some("codex-acp")
+        );
+    }
+
+    #[test]
+    fn external_unstructured_branch_analysis_keeps_transcript() {
+        let result = external_unstructured_result(
+            LocalAiActionKind::BranchAnalysis,
+            "External summary",
+            "invalid JSON",
+        );
+
+        match result {
+            LocalAiStructuredResult::Analysis(analysis) => {
+                assert_eq!(analysis.summary, "External summary");
+                assert!(analysis
+                    .risk_assessment
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("invalid JSON"));
+            }
+            _ => panic!("expected analysis fallback"),
+        }
     }
 
     #[test]

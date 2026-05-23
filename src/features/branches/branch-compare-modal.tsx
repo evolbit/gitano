@@ -22,8 +22,10 @@ import {
   getBranchComparisonFiles,
 } from "@/shared/api/git/diffs";
 import {
+  listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   runLocalAiAction,
+  type ExternalAiRunEvent,
   type LocalAiActionKind,
   type LocalAiBranchReviewFinding,
   type LocalAiBranchReviewNote,
@@ -81,6 +83,7 @@ type BranchAiState = {
   error: string | null;
   progressRunId: string | null;
   progress: LocalAiRunProgress[];
+  externalEvents: ExternalAiRunEvent[];
 };
 type BranchAiSetupState = {
   actionKind: LocalAiActionKind;
@@ -93,6 +96,7 @@ const emptyBranchAiState = (): BranchAiState => ({
   error: null,
   progressRunId: null,
   progress: [],
+  externalEvents: [],
 });
 
 function createBranchAiRunId(action: BranchAiAction) {
@@ -409,6 +413,41 @@ export function BranchCompareModal({
   }, []);
 
   useEffect(() => {
+    const unlistenPromise = listenToExternalAiRunEvents((event) => {
+      const action = branchAiActionForKind(event.actionKind);
+      if (!action || event.runId !== activeBranchAiRunIdsRef.current[action]) {
+        return;
+      }
+
+      const setState = action === "analysis" ? setBranchAnalysis : setBranchReview;
+      setState((current) => {
+        if (current.progressRunId !== event.runId) {
+          return current;
+        }
+
+        const previous = current.externalEvents[current.externalEvents.length - 1];
+        if (
+          previous?.kind === event.kind &&
+          previous.message === event.message
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          externalEvents: [...current.externalEvents, event],
+        };
+      });
+    });
+
+    return () => {
+      void Promise.resolve(unlistenPromise)
+        .then((unlisten) => unlisten())
+        .catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
     activeBranchAiRunIdsRef.current = {
       analysis: null,
       review: null,
@@ -612,6 +651,7 @@ export function BranchCompareModal({
         error: null,
         progressRunId: runId,
         progress: [],
+        externalEvents: [],
       });
       if (action === "review") {
         setDismissedAiFindingKeys(new Set());
@@ -629,13 +669,17 @@ export function BranchCompareModal({
           forceRefresh,
         });
         if (activeBranchAiRunIdsRef.current[action] !== runId) return;
-        setState({
-          result,
-          loading: false,
-          error: null,
-          progressRunId: runId,
-          progress: [],
-        });
+        setState((current) =>
+          current.progressRunId === runId
+            ? {
+                ...current,
+                result,
+                loading: false,
+                error: null,
+                progressRunId: runId,
+              }
+            : current,
+        );
       } catch (analysisError) {
         if (activeBranchAiRunIdsRef.current[action] !== runId) return;
         const errorMessage = describeAiError(analysisError);
@@ -657,13 +701,17 @@ export function BranchCompareModal({
             reason: errorMessage,
           });
         }
-        setState({
-          result: null,
-          loading: false,
-          error: null,
-          progressRunId: runId,
-          progress: [],
-        });
+        setState((current) =>
+          current.progressRunId === runId
+            ? {
+                ...current,
+                result: null,
+                loading: false,
+                error: null,
+                progressRunId: runId,
+              }
+            : current,
+        );
       }
     },
     [comparisonReady, notifyAiError, repoPath, sourceBranch, targetBranch],
@@ -1055,6 +1103,7 @@ export function BranchCompareModal({
           loading={branchAnalysis.loading}
           error={branchAnalysis.error}
           progress={branchAnalysis.progress}
+          externalEvents={branchAnalysis.externalEvents}
           showChangedAreas={false}
           onRefresh={() => {
             void runBranchAiAction("analysis", true);
@@ -1071,6 +1120,7 @@ export function BranchCompareModal({
           loading={branchReview.loading}
           error={branchReview.error}
           progress={branchReview.progress}
+          externalEvents={branchReview.externalEvents}
           renderBranchReviewFindingActions={(finding) =>
             renderAiFindingActions(finding)
           }

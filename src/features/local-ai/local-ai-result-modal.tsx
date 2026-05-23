@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import ReactDOM from "react-dom";
-import { IconCheck, IconCircleDot, IconX } from "@/components/icons";
+import {
+  IconCheck,
+  IconChevronDown,
+  IconChevronUp,
+  IconCircleDot,
+  IconX,
+} from "@/components/icons";
 import type {
+  ExternalAiRunEvent,
   LocalAiAnalysisResult,
   LocalAiBranchReviewFinding,
   LocalAiBranchReviewResult,
@@ -18,6 +25,7 @@ type LocalAiResultModalProps = {
   loading?: boolean;
   error?: string | null;
   progress?: LocalAiRunProgress[];
+  externalEvents?: ExternalAiRunEvent[];
   showChangedAreas?: boolean;
   renderBranchReviewFindingActions?: (
     finding: LocalAiBranchReviewFinding,
@@ -55,7 +63,11 @@ function compactProgress(
 ): LocalAiRunProgress[] {
   return progress.reduce<LocalAiRunProgress[]>((items, item) => {
     const previous = items[items.length - 1];
-    if (previous?.state === item.state) {
+    if (
+      previous?.state === item.state &&
+      previous.message === item.message &&
+      previous.error === item.error
+    ) {
       return items;
     }
 
@@ -63,9 +75,20 @@ function compactProgress(
   }, []);
 }
 
-function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
+function ProgressTimeline({
+  progress,
+  external,
+  scrollContainerRef,
+}: {
+  progress: LocalAiRunProgress[];
+  external?: boolean;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+}) {
   const steps = useMemo(() => compactProgress(progress), [progress]);
   const [visibleCount, setVisibleCount] = useState(0);
+  const [expandedRows, setExpandedRows] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const visibleSteps = steps.slice(0, visibleCount);
   const latestVisibleStep = visibleSteps[visibleSteps.length - 1];
   const modelRunning =
@@ -111,6 +134,20 @@ function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
     return () => window.clearInterval(interval);
   }, [modelRunning]);
 
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef?.current;
+    if (!scrollContainer || !latestVisibleStep) return;
+
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  }, [
+    latestVisibleStep,
+    latestVisibleStep?.error,
+    latestVisibleStep?.message,
+    latestVisibleStep?.state,
+    scrollContainerRef,
+    visibleSteps.length,
+  ]);
+
   const elapsedSeconds =
     modelRunning && runningStartedAt
       ? Math.max(0, Math.floor((now - runningStartedAt) / 1000))
@@ -123,41 +160,37 @@ function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
           const current = index === visibleSteps.length - 1;
           const complete = !current || step.state === "completed";
           const failed = step.state === "failed";
+          const rowId = `${step.runId}-${step.state}-${index}`;
+          const message =
+            step.state === "runningModel" && modelRunning
+              ? `${step.message} · ${elapsedSeconds}s`
+              : step.message;
           return (
-            <div
-              key={`${step.runId}-${step.state}-${index}`}
-              className="flex items-start gap-3 text-sm"
-            >
-              <span
-                className={`mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full border ${
-                  failed
-                    ? "border-red-500/50 text-red-200"
-                    : complete
-                      ? "border-emerald-500/50 text-emerald-200"
-                      : "border-blue-400/60 text-blue-200"
-                }`}
-              >
-                {complete ? <IconCheck size={13} /> : <IconCircleDot size={12} />}
-              </span>
-              <span
-                className={
-                  failed
-                    ? "text-red-100"
-                    : current
-                      ? "text-zinc-100"
-                      : "text-zinc-400"
-                }
-              >
-                {step.state === "runningModel" && modelRunning
-                  ? `${step.message} · ${elapsedSeconds}s`
-                  : step.message}
-              </span>
-            </div>
+            <ProgressTimelineRow
+              key={rowId}
+              rowId={rowId}
+              message={message}
+              complete={complete}
+              failed={failed}
+              current={current}
+              expanded={expandedRows.has(rowId)}
+              onToggle={() => {
+                setExpandedRows((currentRows) => {
+                  const nextRows = new Set(currentRows);
+                  if (nextRows.has(rowId)) {
+                    nextRows.delete(rowId);
+                  } else {
+                    nextRows.add(rowId);
+                  }
+                  return nextRows;
+                });
+              }}
+            />
           );
         })}
       </div>
 
-      {modelRunning ? (
+      {modelRunning && !external ? (
         <div className="rounded border border-border bg-background-emphasis px-3 py-2 text-xs text-zinc-400">
           Local models can take longer the first time they wake up.
         </div>
@@ -170,6 +203,100 @@ function ProgressTimeline({ progress }: { progress: LocalAiRunProgress[] }) {
       ) : null}
     </div>
   );
+}
+
+function ProgressTimelineRow({
+  rowId,
+  message,
+  complete,
+  failed,
+  current,
+  expanded,
+  onToggle,
+}: {
+  rowId: string;
+  message: string;
+  complete: boolean;
+  failed: boolean;
+  current: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      aria-controls={`${rowId}-message`}
+      className="group grid w-full min-w-0 grid-cols-[1.25rem_minmax(0,1fr)_1.25rem] items-start gap-3 rounded text-left text-sm outline-none focus-visible:ring-1 focus-visible:ring-blue-500/60"
+      onClick={onToggle}
+    >
+      <span
+        className={`mt-0.5 inline-flex h-5 w-5 flex-none items-center justify-center rounded-full border ${
+          failed
+            ? "border-red-500/50 text-red-200"
+            : complete
+              ? "border-emerald-500/50 text-emerald-200"
+              : "border-blue-400/60 text-blue-200"
+        }`}
+      >
+        {complete ? <IconCheck size={13} /> : <IconCircleDot size={12} />}
+      </span>
+      <span
+        id={`${rowId}-message`}
+        data-testid="progress-row-message"
+        className={`min-w-0 ${
+          failed
+            ? "text-red-100"
+            : current
+              ? "text-zinc-100"
+              : "text-zinc-400"
+        }`}
+      >
+        <span
+          className={
+            expanded
+              ? "block whitespace-pre-wrap break-words"
+              : "block truncate"
+          }
+        >
+          {message}
+        </span>
+      </span>
+      <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+        {expanded ? (
+          <IconChevronUp size={14} />
+        ) : (
+          <IconChevronDown size={14} />
+        )}
+      </span>
+    </button>
+  );
+}
+
+function progressFromExternalEvents(
+  events: ExternalAiRunEvent[],
+): LocalAiRunProgress[] {
+  return events
+    .filter((event) => event.kind !== "text" && event.message.trim())
+    .map<LocalAiRunProgress>((event) => ({
+      runId: event.runId,
+      actionKind: event.actionKind,
+      state:
+        event.kind === "completed"
+          ? "completed"
+          : event.kind === "error"
+            ? "failed"
+            : "runningModel",
+      message: event.message,
+      error: event.kind === "error" ? event.message : null,
+    }));
+}
+
+function progressForDisplay(
+  progress: LocalAiRunProgress[],
+  externalEvents: ExternalAiRunEvent[],
+): LocalAiRunProgress[] {
+  return progress.length ? progress : progressFromExternalEvents(externalEvents);
 }
 
 function ListSection({
@@ -502,20 +629,29 @@ export function LocalAiResultModal({
   loading,
   error,
   progress = [],
+  externalEvents = [],
   showChangedAreas = true,
   renderBranchReviewFindingActions,
   renderBranchReviewNoteActions,
   onClose,
   onRefresh,
 }: LocalAiResultModalProps) {
-  if (!open) return null;
-
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const analysis =
     result?.result.kind === "analysis" ? result.result.data : null;
   const conflicts =
     result?.result.kind === "conflictSuggestions" ? result.result.data : null;
   const branchReview =
     result?.result.kind === "branchReview" ? result.result.data : null;
+  const engineLabel =
+    result?.modelId?.startsWith("external:") ||
+    externalEvents.length > 0 ||
+    progress.some((step) => step.message.toLowerCase().includes("external agent"))
+      ? "External Agent"
+      : "Local AI";
+  const displayProgress = progressForDisplay(progress, externalEvents);
+
+  if (!open) return null;
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10040]">
@@ -524,7 +660,7 @@ export function LocalAiResultModal({
         <div className="flex items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
           <div>
             <div className="text-xs uppercase tracking-normal text-muted-foreground">
-              Local AI
+              {engineLabel}
             </div>
             <div className="text-base font-semibold text-foreground">{title}</div>
           </div>
@@ -538,13 +674,23 @@ export function LocalAiResultModal({
           </button>
         </div>
 
-        <div className="min-h-[220px] overflow-y-auto p-5">
+        <div
+          ref={contentRef}
+          data-testid="local-ai-result-modal-body"
+          className="min-h-[220px] overflow-x-hidden overflow-y-auto break-words p-5"
+        >
           {loading ? (
-            progress.length ? (
-              <ProgressTimeline progress={progress} />
+            displayProgress.length ? (
+              <ProgressTimeline
+                progress={displayProgress}
+                external={engineLabel === "External Agent"}
+                scrollContainerRef={contentRef}
+              />
             ) : (
               <div className="flex h-44 items-center justify-center text-sm text-zinc-400">
-                Running local analysis...
+                {engineLabel === "External Agent"
+                  ? "Running external agent..."
+                  : "Running local analysis..."}
               </div>
             )
           ) : null}
@@ -578,7 +724,9 @@ export function LocalAiResultModal({
           <span>
             {result
               ? `${result.fromCache ? "Cached" : "Fresh"} · ${result.modelId}`
-              : "Local model output"}
+              : engineLabel === "External Agent"
+                ? "External agent output"
+                : "Local model output"}
           </span>
           <div className="flex gap-2">
             {onRefresh ? (

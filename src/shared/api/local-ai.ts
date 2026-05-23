@@ -3,6 +3,8 @@ import { listenToEvent } from "@/shared/platform/tauri/events";
 
 export const LOCAL_AI_PROGRESS_EVENT = "local-ai-progress";
 export const LOCAL_AI_RUN_PROGRESS_EVENT = "local-ai-run-progress";
+export const EXTERNAL_AI_AGENT_PROGRESS_EVENT = "external-ai-agent-progress";
+export const EXTERNAL_AI_RUN_EVENT = "external-ai-run-event";
 
 export type LocalAiActionKind =
   | "commitMessage"
@@ -51,9 +53,20 @@ export type LocalAiModelEntry = {
   recommendedRequirements: LocalAiModelRequirements;
 };
 
+export type AnalysisEngine =
+  | { type: "local_model"; modelId: string | null }
+  | { type: "external_agent"; agentId: string };
+
 export type LocalAiPreferences = {
   globalModelId: string;
   actionModelIds: Record<string, string>;
+  analysisEngine?: AnalysisEngine;
+  actionEngines?: Record<string, AnalysisEngine>;
+  externalAgentOptionValues?: Record<string, Record<string, string>>;
+  actionExternalAgentOptionValues?: Record<
+    string,
+    Record<string, Record<string, string>>
+  >;
   warmModelIds?: string[];
   keepAliveMinutes?: number;
 };
@@ -173,6 +186,157 @@ export type LocalAiSetModelPreferenceRequest = {
   actionKind?: LocalAiActionKind | null;
 };
 
+export type LocalAiSetAnalysisEnginePreferenceRequest = {
+  engine: AnalysisEngine;
+  actionKind?: LocalAiActionKind | null;
+};
+
+export type ExternalAiAgentInstallKind = "binary" | "npx";
+
+export type ExternalAiAgentInstallSource = {
+  kind: ExternalAiAgentInstallKind;
+  package: string | null;
+  archive: string | null;
+  command: string[];
+};
+
+export type ExternalAiAgentStatusState =
+  | "notInstalled"
+  | "ready"
+  | "unavailable"
+  | "unsupportedPlatform"
+  | "failed";
+
+export type ExternalAiAgentAuthMethod = {
+  id: string;
+  displayName: string;
+};
+
+export type ExternalAiAgentStatus = {
+  agentId: string;
+  installed: boolean;
+  authenticated: boolean;
+  available: boolean;
+  state: ExternalAiAgentStatusState;
+  version: string | null;
+  authMethods?: ExternalAiAgentAuthMethod[];
+  error: string | null;
+};
+
+export type ExternalAiAgentEntry = {
+  id: string;
+  displayName: string;
+  provider: string;
+  description: string;
+  version: string;
+  repository: string | null;
+  license: string | null;
+  installSource: ExternalAiAgentInstallSource | null;
+  status: ExternalAiAgentStatus;
+};
+
+export type ExternalAiAgentProgressState =
+  | "queued"
+  | "downloading"
+  | "installing"
+  | "completed"
+  | "failed";
+
+export type ExternalAiAgentProgress = {
+  operationId: string;
+  agentId: string;
+  state: ExternalAiAgentProgressState;
+  status: string;
+  completedBytes: number | null;
+  totalBytes: number | null;
+  percentage: number | null;
+  error: string | null;
+};
+
+export type ExternalAiAgentInstallRequest = {
+  agentId: string;
+};
+
+export type ExternalAiAgentInstallResponse = {
+  operationId: string;
+};
+
+export type ExternalAiAgentCommandRequest = {
+  agentId: string;
+};
+
+export type ExternalAiAgentSessionConfigRequest = {
+  agentId: string;
+  repoPath?: string | null;
+};
+
+export type ExternalAiAgentConfigOptionValue = {
+  value: string;
+  name: string;
+  description: string | null;
+};
+
+export type ExternalAiAgentConfigOption = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  type: string;
+  currentValue: string;
+  options: ExternalAiAgentConfigOptionValue[];
+};
+
+export type ExternalAiAgentSessionConfig = {
+  agentId: string;
+  options: ExternalAiAgentConfigOption[];
+};
+
+export type ExternalAiAgentConfigPreferenceRequest = {
+  agentId: string;
+  actionKind?: LocalAiActionKind | null;
+  configId: string;
+  value?: string | null;
+};
+
+export type ExternalAiRunEventKind =
+  | "text"
+  | "thought"
+  | "plan"
+  | "toolCall"
+  | "toolCallUpdate"
+  | "permissionDenied"
+  | "fileRead"
+  | "error"
+  | "completed";
+
+export type ExternalAiRunEvent = {
+  runId: string;
+  actionKind: LocalAiActionKind;
+  agentId: string;
+  kind: ExternalAiRunEventKind;
+  message: string;
+  raw: unknown | null;
+};
+
+export type ExternalAiPromptRequest = {
+  agentId: string;
+  repoPath: string;
+  runId: string;
+  actionKind: LocalAiActionKind;
+  prompt: string;
+  externalAgentOptionOverrides?: Record<string, string>;
+};
+
+export type ExternalAiPromptResponse = {
+  agentId: string;
+  stopReason: string;
+  transcript: string;
+};
+
+export type ExternalAiCancelRequest = {
+  runId: string;
+};
+
 export type LocalAiSetModelWarmPreferenceRequest = {
   modelId: string;
   warm: boolean;
@@ -198,6 +362,7 @@ export type LocalAiRunRequest = {
   baseRef?: string | null;
   headRef?: string | null;
   comparisonMode?: string | null;
+  externalAgentOptionOverrides?: Record<string, string>;
 };
 
 export type LocalAiFindingSeverity = "info" | "low" | "medium" | "high";
@@ -364,8 +529,32 @@ function unmarkActionModelCleared(actionKind: LocalAiActionKind) {
 function applyPreferenceOverrides(
   preferences: LocalAiPreferences,
 ): LocalAiPreferences {
+  const analysisEngine =
+    preferences.analysisEngine ??
+    ({
+      type: "local_model",
+      modelId: preferences.globalModelId || null,
+    } satisfies AnalysisEngine);
+  const actionEngines = {
+    ...Object.fromEntries(
+      Object.entries(preferences.actionModelIds ?? {}).map(
+        ([actionKind, modelId]) =>
+          [
+            actionKind,
+            { type: "local_model", modelId } satisfies AnalysisEngine,
+          ] as const,
+      ),
+    ),
+    ...(preferences.actionEngines ?? {}),
+  };
   const normalizedPreferences = {
     ...preferences,
+    analysisEngine,
+    actionEngines,
+    externalAgentOptionValues:
+      preferences.externalAgentOptionValues ?? {},
+    actionExternalAgentOptionValues:
+      preferences.actionExternalAgentOptionValues ?? {},
     warmModelIds: preferences.warmModelIds ?? [],
     keepAliveMinutes: preferences.keepAliveMinutes ?? 30,
   };
@@ -377,13 +566,16 @@ function applyPreferenceOverrides(
   }
 
   const actionModelIds = { ...normalizedPreferences.actionModelIds };
+  const nextActionEngines = { ...normalizedPreferences.actionEngines };
   clearedActionModelIds.forEach((actionKind) => {
     delete actionModelIds[actionKind];
+    delete nextActionEngines[actionKind];
   });
 
   const nextPreferences = {
     ...normalizedPreferences,
     actionModelIds,
+    actionEngines: nextActionEngines,
   };
   lastKnownLocalAiPreferences = nextPreferences;
   return nextPreferences;
@@ -402,6 +594,33 @@ export function getLocalAiEntitlementStatus() {
 
 export function getLocalAiModelCatalog() {
   return invokeCommand<LocalAiModelEntry[]>("ai_get_model_catalog");
+}
+
+export function getExternalAiAgentCatalog() {
+  return invokeCommand<ExternalAiAgentEntry[]>(
+    "ai_get_external_agent_catalog",
+  );
+}
+
+export function getExternalAiAgentStatus(agentId: string) {
+  return invokeCommand<ExternalAiAgentStatus>(
+    "ai_get_external_agent_status",
+    { agentId },
+  );
+}
+
+export function getExternalAiAgentSessionConfig(
+  request: ExternalAiAgentSessionConfigRequest,
+) {
+  return invokeCommand<ExternalAiAgentSessionConfig>(
+    "ai_get_external_agent_session_config",
+    {
+      request: {
+        agentId: request.agentId,
+        repoPath: request.repoPath ?? null,
+      },
+    },
+  );
 }
 
 export async function getLocalAiModelPreferences() {
@@ -455,6 +674,91 @@ export async function setLocalAiModelPreference(
 
     throw error;
   }
+}
+
+export async function setLocalAiAnalysisEnginePreference(
+  request: LocalAiSetAnalysisEnginePreferenceRequest,
+) {
+  const preferences = await invokeCommand<LocalAiPreferences>(
+    "ai_set_analysis_engine_preference",
+    {
+      request: {
+        engine: request.engine,
+        actionKind: request.actionKind ?? null,
+      },
+    },
+  );
+
+  return applyPreferenceOverrides(preferences);
+}
+
+export function setExternalAiAgentAsDefault(
+  request: ExternalAiAgentCommandRequest,
+) {
+  return invokeCommand<LocalAiPreferences>(
+    "ai_set_external_agent_as_default",
+    { request },
+  ).then(applyPreferenceOverrides);
+}
+
+export function setExternalAiAgentConfigPreference(
+  request: ExternalAiAgentConfigPreferenceRequest,
+) {
+  return invokeCommand<LocalAiPreferences>(
+    "ai_set_external_agent_config_preference",
+    {
+      request: {
+        agentId: request.agentId,
+        actionKind: request.actionKind ?? null,
+        configId: request.configId,
+        value: request.value ?? null,
+      },
+    },
+  ).then(applyPreferenceOverrides);
+}
+
+export function installExternalAiAgent(
+  request: ExternalAiAgentInstallRequest,
+) {
+  return invokeCommand<ExternalAiAgentInstallResponse>(
+    "ai_install_external_agent",
+    { request },
+  );
+}
+
+export function removeExternalAiAgent(
+  request: ExternalAiAgentCommandRequest,
+) {
+  return invokeCommand<void>("ai_remove_external_agent", { request });
+}
+
+export function authenticateExternalAiAgent(
+  request: ExternalAiAgentCommandRequest,
+) {
+  return invokeCommand<ExternalAiAgentStatus>(
+    "ai_authenticate_external_agent",
+    { request },
+  );
+}
+
+export function logoutExternalAiAgent(
+  request: ExternalAiAgentCommandRequest,
+) {
+  return invokeCommand<ExternalAiAgentStatus>(
+    "ai_logout_external_agent",
+    { request },
+  );
+}
+
+export function runExternalAiPrompt(request: ExternalAiPromptRequest) {
+  return invokeCommand<ExternalAiPromptResponse>(
+    "ai_run_external_agent_prompt",
+    { request },
+  );
+}
+
+export function cancelExternalAiRun(request: ExternalAiCancelRequest) {
+  return invokeCommand<void>("ai_cancel_external_agent_run", { request });
 }
 
 export async function setLocalAiModelWarmPreference(
@@ -534,6 +838,24 @@ export function listenToLocalAiRunProgress(
 ) {
   return listenToEvent<LocalAiRunProgress>(
     LOCAL_AI_RUN_PROGRESS_EVENT,
+    (event) => handler(event.payload),
+  );
+}
+
+export function listenToExternalAiAgentProgress(
+  handler: (progress: ExternalAiAgentProgress) => void,
+) {
+  return listenToEvent<ExternalAiAgentProgress>(
+    EXTERNAL_AI_AGENT_PROGRESS_EVENT,
+    (event) => handler(event.payload),
+  );
+}
+
+export function listenToExternalAiRunEvents(
+  handler: (event: ExternalAiRunEvent) => void,
+) {
+  return listenToEvent<ExternalAiRunEvent>(
+    EXTERNAL_AI_RUN_EVENT,
     (event) => handler(event.payload),
   );
 }

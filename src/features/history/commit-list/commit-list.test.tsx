@@ -8,6 +8,7 @@ const getCommitsListPaginatedMock = vi.hoisted(() => vi.fn());
 const getRemoteUrlMock = vi.hoisted(() => vi.fn());
 const getRepositoryStateMock = vi.hoisted(() => vi.fn());
 const listenToLocalAiRunProgressMock = vi.hoisted(() => vi.fn());
+const listenToExternalAiRunEventsMock = vi.hoisted(() => vi.fn());
 const runLocalAiActionMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/shared/api/git/commits", () => ({
@@ -33,6 +34,7 @@ vi.mock("@/shared/api/repositories", () => ({
 
 vi.mock("@/shared/api/local-ai", () => ({
   listenToLocalAiRunProgress: listenToLocalAiRunProgressMock,
+  listenToExternalAiRunEvents: listenToExternalAiRunEventsMock,
   runLocalAiAction: runLocalAiActionMock,
 }));
 
@@ -67,8 +69,10 @@ describe("CommitList", () => {
     getRemoteUrlMock.mockReset();
     getRepositoryStateMock.mockReset();
     listenToLocalAiRunProgressMock.mockReset();
+    listenToExternalAiRunEventsMock.mockReset();
     runLocalAiActionMock.mockReset();
     listenToLocalAiRunProgressMock.mockResolvedValue(vi.fn());
+    listenToExternalAiRunEventsMock.mockResolvedValue(vi.fn());
     getCommitsListPaginatedMock.mockResolvedValue({
       commits: [],
       has_more: false,

@@ -6,12 +6,14 @@ import { useLocalAiStore } from "./store";
 
 const apiMocks = vi.hoisted(() => ({
   getLocalAiModelCatalog: vi.fn(),
+  getExternalAiAgentCatalog: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
   getLocalAiModelCompatibility: vi.fn(),
   prepareLocalAiModel: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
+  setLocalAiAnalysisEnginePreference: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
 }));
 
@@ -39,9 +41,31 @@ const model = {
   },
 };
 
+const codexAgent = {
+  id: "codex-acp",
+  displayName: "Codex CLI",
+  provider: "OpenAI",
+  description: "ACP adapter for OpenAI's coding assistant",
+  version: "0.14.0",
+  repository: "https://github.com/zed-industries/codex-acp",
+  license: "Apache-2.0",
+  installSource: null,
+  status: {
+    agentId: "codex-acp",
+    installed: true,
+    authenticated: false,
+    available: true,
+    state: "ready",
+    version: "0.14.0",
+    authMethods: [],
+    error: null,
+  },
+};
+
 describe("LocalAiSetupModal", () => {
   beforeEach(() => {
     apiMocks.getLocalAiModelCatalog.mockResolvedValue([model]);
+    apiMocks.getExternalAiAgentCatalog.mockResolvedValue([]);
     apiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
       source: "developmentStub",
@@ -85,6 +109,12 @@ describe("LocalAiSetupModal", () => {
       globalModelId: "qwen2.5-coder:14b",
       actionModelIds: {},
     });
+    apiMocks.setLocalAiAnalysisEnginePreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:14b",
+      actionModelIds: {},
+      analysisEngine: { type: "local_model", modelId: "qwen2.5-coder:14b" },
+      actionEngines: {},
+    });
     apiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
   });
 
@@ -93,6 +123,7 @@ describe("LocalAiSetupModal", () => {
     vi.clearAllMocks();
     useLocalAiStore.setState({
       catalog: [],
+      externalAgents: [],
       entitlement: null,
       preferences: null,
       modelStatus: null,
@@ -183,10 +214,61 @@ describe("LocalAiSetupModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Local model")).toHaveValue(
-        "qwen2.5-coder:7b",
+      expect(screen.getByLabelText("Analysis engine")).toHaveValue(
+        "local:qwen2.5-coder:7b",
       );
     });
+  });
+
+  it("offers ready external agents when no action engine is selected", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onReady = vi.fn();
+    apiMocks.getExternalAiAgentCatalog.mockResolvedValue([codexAgent]);
+    apiMocks.getLocalAiModelPreferences.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:14b",
+      actionModelIds: {},
+      analysisEngine: { type: "local_model", modelId: "qwen2.5-coder:14b" },
+      actionEngines: {
+        branchReview: { type: "local_model", modelId: null },
+      },
+    });
+    apiMocks.setLocalAiAnalysisEnginePreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:14b",
+      actionModelIds: {},
+      analysisEngine: { type: "local_model", modelId: "qwen2.5-coder:14b" },
+      actionEngines: {
+        branchReview: { type: "external_agent", agentId: "codex-acp" },
+      },
+    });
+
+    render(
+      <LocalAiSetupModal
+        open
+        actionKind="branchReview"
+        setupReason="No AI model selected for Branch review"
+        onClose={onClose}
+        onReady={onReady}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Analysis engine")).toHaveValue(
+        "external:codex-acp",
+      );
+    });
+    expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ready" }));
+
+    await waitFor(() => {
+      expect(apiMocks.setLocalAiAnalysisEnginePreference).toHaveBeenCalledWith({
+        engine: { type: "external_agent", agentId: "codex-acp" },
+        actionKind: "branchReview",
+      });
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("offers to download the app-managed runtime before the model", async () => {

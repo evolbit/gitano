@@ -1,6 +1,10 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LocalAiRunProgress, LocalAiRunResult } from "@/shared/api/local-ai";
+import type {
+  ExternalAiRunEvent,
+  LocalAiRunProgress,
+  LocalAiRunResult,
+} from "@/shared/api/local-ai";
 import { LocalAiResultModal } from "./local-ai-result-modal";
 
 const baseProgress = {
@@ -8,6 +12,16 @@ const baseProgress = {
   actionKind: "commitAnalysis",
   error: null,
 } satisfies Pick<LocalAiRunProgress, "runId" | "actionKind" | "error">;
+
+const baseExternalEvent = {
+  runId: "run-1",
+  actionKind: "branchReview",
+  agentId: "codex-acp",
+  raw: null,
+} satisfies Pick<
+  ExternalAiRunEvent,
+  "runId" | "actionKind" | "agentId" | "raw"
+>;
 
 function renderModal(props: Partial<Parameters<typeof LocalAiResultModal>[0]>) {
   return render(
@@ -101,6 +115,155 @@ describe("LocalAiResultModal", () => {
     });
 
     expect(screen.getByText("Using cached analysis")).toBeInTheDocument();
+  });
+
+  it("scrolls the modal body as progress messages become visible", () => {
+    vi.useFakeTimers();
+
+    renderModal({
+      loading: true,
+      progress: [
+        {
+          ...baseProgress,
+          state: "runningModel",
+          message: "Running external agent",
+        },
+        {
+          ...baseProgress,
+          state: "runningModel",
+          message: "Reading more files",
+        },
+      ],
+    });
+
+    const body = screen.getByTestId("local-ai-result-modal-body");
+    Object.defineProperty(body, "scrollHeight", {
+      configurable: true,
+      value: 640,
+    });
+    body.scrollTop = 0;
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(body.scrollTop).toBe(640);
+    expect(screen.getByText(/Reading more files/)).toBeInTheDocument();
+  });
+
+  it("collapses long progress rows with ellipsis and wraps when expanded", () => {
+    renderModal({
+      loading: true,
+      progress: [
+        {
+          ...baseProgress,
+          state: "checkingCache",
+          message:
+            "completed {\"aggregated_output\":\"src/features/local-ai/local-ai-result-modal.tsx changed with a very long line that should not force horizontal scrolling\"}",
+        },
+      ],
+    });
+
+    const body = screen.getByTestId("local-ai-result-modal-body");
+    const rowMessage = screen.getByTestId("progress-row-message");
+    const rowButton = rowMessage.closest("button");
+
+    expect(body).toHaveClass("overflow-x-hidden");
+    expect(rowButton).toHaveAttribute("aria-expanded", "false");
+    expect(rowMessage.firstElementChild).toHaveClass("truncate");
+
+    fireEvent.click(rowButton!);
+
+    expect(rowButton).toHaveAttribute("aria-expanded", "true");
+    expect(rowMessage.firstElementChild).toHaveClass(
+      "whitespace-pre-wrap",
+      "break-words",
+    );
+  });
+
+  it("uses the progress timeline for external agent events while loading", () => {
+    vi.useFakeTimers();
+
+    renderModal({
+      loading: true,
+      progress: [
+        {
+          ...baseProgress,
+          state: "runningModel",
+          message: "Running external agent",
+        },
+        {
+          ...baseProgress,
+          state: "runningModel",
+          message: "Reading the comparison",
+        },
+        {
+          ...baseProgress,
+          state: "runningModel",
+          message: "Read src/app.ts (completed)",
+        },
+      ],
+      externalEvents: [
+        {
+          ...baseExternalEvent,
+          kind: "thought",
+          message: "Reading the comparison",
+        },
+        {
+          ...baseExternalEvent,
+          kind: "toolCall",
+          message: "Read src/app.ts (completed)",
+        },
+        {
+          ...baseExternalEvent,
+          kind: "text",
+          message: "{\"summary\":\"",
+        },
+        {
+          ...baseExternalEvent,
+          kind: "text",
+          message: "Done\"}",
+        },
+      ],
+    });
+
+    expect(screen.getByText("External Agent")).toBeInTheDocument();
+    expect(screen.getByText(/Running external agent/)).toBeInTheDocument();
+    expect(screen.queryByText("Reading the comparison")).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(screen.getByText(/Reading the comparison/)).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(screen.getByText(/Read src\/app\.ts \(completed\)/)).toBeInTheDocument();
+    expect(screen.queryByText('{"summary":"Done"}')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Local models can take longer the first time they wake up.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to external events when progress has not arrived", () => {
+    renderModal({
+      loading: true,
+      externalEvents: [
+        {
+          ...baseExternalEvent,
+          kind: "toolCall",
+          message: "git diff --stat (in_progress)",
+        },
+      ],
+    });
+
+    expect(screen.getByText("External Agent")).toBeInTheDocument();
+    expect(screen.getByText(/git diff --stat/)).toBeInTheDocument();
   });
 
   it("renders the structured result after loading finishes", () => {

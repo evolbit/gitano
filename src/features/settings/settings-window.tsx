@@ -6,19 +6,33 @@ import {
   IconX,
 } from "@/components/icons";
 import {
+  authenticateExternalAiAgent,
   deleteLocalAiModel,
+  getExternalAiAgentCatalog,
+  getExternalAiAgentSessionConfig,
   getLocalAiEntitlementStatus,
   getLocalAiMachineProfile,
   getLocalAiModelCatalog,
   getLocalAiModelPreferences,
   getLocalAiModelStatus,
   getLocalAiRuntimeStatus,
+  installExternalAiAgent,
+  listenToExternalAiAgentProgress,
   listenToLocalAiProgress,
   prepareLocalAiModel,
   prepareLocalAiRuntime,
+  removeExternalAiAgent,
+  setExternalAiAgentConfigPreference,
+  setExternalAiAgentAsDefault,
+  setLocalAiAnalysisEnginePreference,
   setLocalAiModelPreference,
   setLocalAiModelWarmPreference,
   warmConfiguredLocalAiModels,
+  type AnalysisEngine,
+  type ExternalAiAgentConfigOption,
+  type ExternalAiAgentEntry,
+  type ExternalAiAgentProgress,
+  type ExternalAiAgentSessionConfig,
   type LocalAiActionKind,
   type LocalAiDownloadProgress,
   type LocalAiEntitlementStatus,
@@ -31,11 +45,12 @@ import {
 } from "@/shared/api/local-ai";
 import { ACTION_MODEL_REQUIRED_MESSAGE } from "./constants";
 
-type SettingsPane = "runtime" | "models" | "configuration";
+type SettingsPane = "runtime" | "models" | "externalAgents" | "configuration";
 
 type SettingsWindowProps = {
   open: boolean;
   onClose: () => void;
+  repoPath?: string | null;
 };
 
 type WarmConfirmation = {
@@ -48,6 +63,7 @@ type WarmConfirmation = {
 const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
   { key: "runtime", label: "Runtime" },
   { key: "models", label: "Models" },
+  { key: "externalAgents", label: "External Agents" },
   { key: "configuration", label: "Configuration" },
 ];
 
@@ -182,6 +198,132 @@ function warmModelIdsWithToggle(
   return Array.from(new Set([...currentModelIds, modelId]));
 }
 
+function localModelEngine(modelId: string | null): AnalysisEngine {
+  return {
+    type: "local_model",
+    modelId,
+  };
+}
+
+function engineValue(engine: AnalysisEngine | null | undefined) {
+  if (!engine) return "";
+  if (engine.type === "external_agent") return `external:${engine.agentId}`;
+  return engine.modelId ? `local:${engine.modelId}` : "";
+}
+
+function engineFromValue(value: string): AnalysisEngine | null {
+  if (value.startsWith("external:")) {
+    const agentId = value.slice("external:".length);
+    return agentId ? { type: "external_agent", agentId } : null;
+  }
+
+  if (value.startsWith("local:")) {
+    const modelId = value.slice("local:".length);
+    return modelId ? localModelEngine(modelId) : null;
+  }
+
+  return null;
+}
+
+function preferenceGlobalEngine(preferences: LocalAiPreferences | null) {
+  if (!preferences) return null;
+  return (
+    preferences.analysisEngine ??
+    localModelEngine(preferences.globalModelId.trim() || null)
+  );
+}
+
+function preferenceActionEngine(
+  preferences: LocalAiPreferences | null,
+  actionKind: LocalAiActionKind,
+) {
+  if (!preferences) return null;
+  return (
+    preferences.actionEngines?.[actionKind] ??
+    (preferences.actionModelIds[actionKind]
+      ? localModelEngine(preferences.actionModelIds[actionKind])
+      : null)
+  );
+}
+
+function hasExternalEngine(preferences: LocalAiPreferences | null) {
+  if (!preferences) return false;
+  const globalEngine = preferenceGlobalEngine(preferences);
+  return (
+    globalEngine?.type === "external_agent" ||
+    Object.values(preferences.actionEngines ?? {}).some(
+      (engine) => engine.type === "external_agent",
+    )
+  );
+}
+
+const INHERIT_EXTERNAL_CONFIG_VALUE = "__gitano_inherit_external_config__";
+
+function externalAgentGlobalOptionValues(
+  preferences: LocalAiPreferences | null,
+  agentId: string,
+) {
+  return preferences?.externalAgentOptionValues?.[agentId] ?? {};
+}
+
+function externalAgentActionOptionValues(
+  preferences: LocalAiPreferences | null,
+  actionKind: LocalAiActionKind,
+  agentId: string,
+) {
+  return (
+    preferences?.actionExternalAgentOptionValues?.[actionKind]?.[agentId] ?? {}
+  );
+}
+
+function externalAgentEffectiveOptionValue(
+  preferences: LocalAiPreferences | null,
+  agentId: string,
+  actionKind: LocalAiActionKind | null,
+  option: ExternalAiAgentConfigOption,
+) {
+  const globalValue = externalAgentGlobalOptionValues(preferences, agentId)[
+    option.id
+  ];
+  const actionValue = actionKind
+    ? externalAgentActionOptionValues(preferences, actionKind, agentId)[
+        option.id
+      ]
+    : undefined;
+  return actionValue ?? globalValue ?? option.currentValue;
+}
+
+function externalAgentOptionLabel(
+  option: ExternalAiAgentConfigOption,
+  value: string,
+) {
+  return option.options.find((item) => item.value === value)?.name ?? value;
+}
+
+function selectableExternalConfigOptions(
+  config: ExternalAiAgentSessionConfig | null | undefined,
+) {
+  return (config?.options ?? []).filter(
+    (option) => option.type === "select" && option.options.length > 0,
+  );
+}
+
+function statusLabel(agent: ExternalAiAgentEntry) {
+  if (agent.status.available) return agent.status.authenticated ? "Ready" : "Ready";
+  switch (agent.status.state) {
+    case "notInstalled":
+      return "Not installed";
+    case "unsupportedPlatform":
+      return "Unsupported";
+    case "unavailable":
+      return "Unavailable";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unknown";
+  }
+}
+
 function SettingsRow({
   title,
   description,
@@ -284,7 +426,11 @@ function ValuePill({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProgressPanel({ progress }: { progress: LocalAiDownloadProgress | null }) {
+function ProgressPanel({
+  progress,
+}: {
+  progress: LocalAiDownloadProgress | ExternalAiAgentProgress | null;
+}) {
   if (!progress) return null;
 
   return (
@@ -350,9 +496,148 @@ function WarmModelCheckbox({
   );
 }
 
-export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
+function ExternalAgentConfigControls({
+  agentId,
+  scopeLabel,
+  actionKind,
+  preferences,
+  config,
+  loading,
+  error,
+  onChange,
+}: {
+  agentId: string;
+  scopeLabel: string;
+  actionKind: LocalAiActionKind | null;
+  preferences: LocalAiPreferences | null;
+  config: ExternalAiAgentSessionConfig | null | undefined;
+  loading?: boolean;
+  error?: string | null;
+  onChange: (
+    agentId: string,
+    actionKind: LocalAiActionKind | null,
+    configId: string,
+    value: string | null,
+  ) => void;
+}) {
+  if (loading && !config) {
+    return (
+      <div className="w-full text-right text-[11px] leading-4 text-zinc-500">
+        Loading agent options...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-right text-[11px] leading-4 text-amber-100">
+        {error}
+      </div>
+    );
+  }
+
+  const options = selectableExternalConfigOptions(config);
+  if (options.length === 0) {
+    return config ? (
+      <div className="w-full text-right text-[11px] leading-4 text-zinc-500">
+        No configurable agent options.
+      </div>
+    ) : null;
+  }
+
+  const globalValues = externalAgentGlobalOptionValues(preferences, agentId);
+  const actionValues = actionKind
+    ? externalAgentActionOptionValues(preferences, actionKind, agentId)
+    : {};
+
+  return (
+    <div className="w-full space-y-2 rounded border border-border bg-background-emphasis p-2">
+      {options.map((option) => {
+        const optionHasValue = (value: string | undefined) =>
+          Boolean(value && option.options.some((item) => item.value === value));
+        const fallbackValue = optionHasValue(option.currentValue)
+          ? option.currentValue
+          : option.options[0]?.value ?? "";
+        const effectiveValue = optionHasValue(
+          externalAgentEffectiveOptionValue(
+            preferences,
+            agentId,
+            actionKind,
+            option,
+          ),
+        )
+          ? externalAgentEffectiveOptionValue(
+              preferences,
+              agentId,
+              actionKind,
+              option,
+            )
+          : fallbackValue;
+        const hasActionOverride =
+          actionKind !== null &&
+          Object.prototype.hasOwnProperty.call(actionValues, option.id);
+        const savedGlobalValue = optionHasValue(globalValues[option.id])
+          ? globalValues[option.id]
+          : fallbackValue;
+        const savedActionValue = optionHasValue(actionValues[option.id])
+          ? actionValues[option.id]
+          : fallbackValue;
+        const selectedValue = actionKind
+          ? hasActionOverride
+            ? savedActionValue
+            : INHERIT_EXTERNAL_CONFIG_VALUE
+          : savedGlobalValue;
+
+        return (
+          <label
+            key={option.id}
+            className="block text-left text-[11px] font-semibold uppercase tracking-normal text-zinc-500"
+          >
+            <span>{option.name}</span>
+            <select
+              aria-label={`${scopeLabel} ${option.name}`}
+              className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs font-medium normal-case text-foreground outline-none transition-colors focus:border-blue-500/60"
+              value={selectedValue}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                onChange(
+                  agentId,
+                  actionKind,
+                  option.id,
+                  value === INHERIT_EXTERNAL_CONFIG_VALUE ? null : value,
+                );
+              }}
+            >
+              {actionKind ? (
+                <option value={INHERIT_EXTERNAL_CONFIG_VALUE}>
+                  {`Use global/default (${externalAgentOptionLabel(
+                    option,
+                    effectiveValue,
+                  )})`}
+                </option>
+              ) : null}
+              {option.options.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {option.description ? (
+              <span className="mt-1 block normal-case leading-4 text-zinc-500">
+                {option.description}
+              </span>
+            ) : null}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps) {
   const [pane, setPane] = useState<SettingsPane>("runtime");
   const [catalog, setCatalog] = useState<LocalAiModelEntry[]>([]);
+  const [externalAgents, setExternalAgents] = useState<ExternalAiAgentEntry[]>([]);
   const [preferences, setPreferences] = useState<LocalAiPreferences | null>(null);
   const [entitlement, setEntitlement] =
     useState<LocalAiEntitlementStatus | null>(null);
@@ -366,7 +651,18 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
   const [progressByOperationId, setProgressByOperationId] = useState<
     Record<string, LocalAiDownloadProgress>
   >({});
+  const [externalProgressByOperationId, setExternalProgressByOperationId] =
+    useState<Record<string, ExternalAiAgentProgress>>({});
+  const [externalConfigByAgentId, setExternalConfigByAgentId] = useState<
+    Record<string, ExternalAiAgentSessionConfig | null>
+  >({});
+  const [externalConfigLoadingByAgentId, setExternalConfigLoadingByAgentId] =
+    useState<Record<string, boolean>>({});
+  const [externalConfigErrorsByAgentId, setExternalConfigErrorsByAgentId] =
+    useState<Record<string, string>>({});
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
+  const [activeExternalOperationId, setActiveExternalOperationId] =
+    useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [warmSavingModelIds, setWarmSavingModelIds] = useState<
     Record<string, boolean>
@@ -382,10 +678,16 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
   const activeProgress = activeOperationId
     ? progressByOperationId[activeOperationId]
     : null;
+  const activeExternalProgress = activeExternalOperationId
+    ? externalProgressByOperationId[activeExternalOperationId]
+    : null;
   const setupInProgress =
-    !!activeProgress &&
-    activeProgress.state !== "completed" &&
-    activeProgress.state !== "failed";
+    (!!activeProgress &&
+      activeProgress.state !== "completed" &&
+      activeProgress.state !== "failed") ||
+    (!!activeExternalProgress &&
+      activeExternalProgress.state !== "completed" &&
+      activeExternalProgress.state !== "failed");
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -393,6 +695,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     try {
       const [
         nextCatalog,
+        nextExternalAgents,
         nextPreferences,
         nextEntitlement,
         nextRuntimeStatus,
@@ -400,6 +703,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
       ] =
         await Promise.all([
           getLocalAiModelCatalog(),
+          getExternalAiAgentCatalog(),
           getLocalAiModelPreferences(),
           getLocalAiEntitlementStatus(),
           getLocalAiRuntimeStatus(),
@@ -417,17 +721,77 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
       );
 
       setCatalog(nextCatalog);
+      setExternalAgents(nextExternalAgents);
       setPreferences(nextPreferences);
       setEntitlement(nextEntitlement);
       setRuntimeStatus(nextRuntimeStatus);
       setMachineProfile(nextMachineProfile);
       setModelStatuses(Object.fromEntries(statusEntries));
+      setExternalConfigByAgentId({});
+      setExternalConfigLoadingByAgentId({});
+      setExternalConfigErrorsByAgentId({});
     } catch (loadError) {
       showSettingsError("AI settings failed", loadError);
     } finally {
       setLoading(false);
     }
   }, [showSettingsError]);
+
+  const loadExternalAgentConfig = useCallback(
+    async (agentId: string) => {
+      if (
+        externalConfigByAgentId[agentId] ||
+        externalConfigLoadingByAgentId[agentId] ||
+        externalConfigErrorsByAgentId[agentId]
+      ) {
+        return;
+      }
+
+      setExternalConfigLoadingByAgentId((current) => ({
+        ...current,
+        [agentId]: true,
+      }));
+      setExternalConfigErrorsByAgentId((current) => {
+        const next = { ...current };
+        delete next[agentId];
+        return next;
+      });
+
+      try {
+        const config = await getExternalAiAgentSessionConfig({
+          agentId,
+          repoPath: repoPath ?? null,
+        });
+        setExternalConfigByAgentId((current) => ({
+          ...current,
+          [agentId]: config,
+        }));
+      } catch (configError) {
+        setExternalConfigErrorsByAgentId((current) => ({
+          ...current,
+          [agentId]: errorMessage(configError, "Agent config unavailable"),
+        }));
+      } finally {
+        setExternalConfigLoadingByAgentId((current) => {
+          const next = { ...current };
+          delete next[agentId];
+          return next;
+        });
+      }
+    },
+    [
+      externalConfigByAgentId,
+      externalConfigErrorsByAgentId,
+      externalConfigLoadingByAgentId,
+      repoPath,
+    ],
+  );
+
+  useEffect(() => {
+    setExternalConfigByAgentId({});
+    setExternalConfigLoadingByAgentId({});
+    setExternalConfigErrorsByAgentId({});
+  }, [repoPath]);
 
   useEffect(() => {
     if (!open) return;
@@ -441,6 +805,34 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     let unlisten: (() => void) | null = null;
     void listenToLocalAiProgress((progress) => {
       setProgressByOperationId((current) => ({
+        ...current,
+        [progress.operationId]: progress,
+      }));
+
+      if (progress.state === "completed") {
+        void loadSettings();
+      }
+    }).then((nextUnlisten) => {
+      if (mounted) {
+        unlisten = nextUnlisten;
+      } else {
+        nextUnlisten();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [loadSettings, open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+    void listenToExternalAiAgentProgress((progress) => {
+      setExternalProgressByOperationId((current) => ({
         ...current,
         [progress.operationId]: progress,
       }));
@@ -480,6 +872,34 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     () => new Map(catalog.map((model) => [model.id, model])),
     [catalog],
   );
+  const externalAgentById = useMemo(
+    () => new Map(externalAgents.map((agent) => [agent.id, agent])),
+    [externalAgents],
+  );
+  const globalEngine = preferenceGlobalEngine(preferences);
+  const externalEngineSelected = hasExternalEngine(preferences);
+  const selectedExternalAgentIds = useMemo(() => {
+    if (!preferences) return [];
+    const agentIds = new Set<string>();
+    const global = preferenceGlobalEngine(preferences);
+    if (global?.type === "external_agent") {
+      agentIds.add(global.agentId);
+    }
+    ACTIONS.forEach((action) => {
+      const engine = preferenceActionEngine(preferences, action.kind);
+      if (engine?.type === "external_agent") {
+        agentIds.add(engine.agentId);
+      }
+    });
+    return [...agentIds].sort();
+  }, [preferences]);
+
+  useEffect(() => {
+    if (!open || pane !== "configuration") return;
+    selectedExternalAgentIds.forEach((agentId) => {
+      void loadExternalAgentConfig(agentId);
+    });
+  }, [loadExternalAgentConfig, open, pane, selectedExternalAgentIds]);
 
   const warmModelIds = preferences?.warmModelIds ?? [];
   const warmSignature = useMemo(
@@ -544,8 +964,8 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     [machineProfile?.totalMemoryGb, modelById, warmMemoryTotal],
   );
 
-  const selectedModelIdForAction = (actionKind: LocalAiActionKind) =>
-    preferences?.actionModelIds[actionKind] ?? "";
+  const selectedEngineForAction = (actionKind: LocalAiActionKind) =>
+    preferenceActionEngine(preferences, actionKind);
 
   const handlePrepareRuntime = async (forceReinstall: boolean) => {
     setSettingsError(null);
@@ -608,7 +1028,62 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     }
   };
 
+  const handleInstallExternalAgent = async (agentId: string) => {
+    setSettingsError(null);
+    try {
+      const response = await installExternalAiAgent({ agentId });
+      setActiveExternalOperationId(response.operationId);
+      setExternalProgressByOperationId((current) => ({
+        ...current,
+        [response.operationId]: {
+          operationId: response.operationId,
+          agentId,
+          state: "queued",
+          status: `Starting install for ${agentId}...`,
+          completedBytes: null,
+          totalBytes: null,
+          percentage: null,
+          error: null,
+        },
+      }));
+    } catch (installError) {
+      showSettingsError("External agent install failed", installError);
+    }
+  };
+
+  const handleAuthenticateExternalAgent = async (agentId: string) => {
+    setSettingsError(null);
+    try {
+      await authenticateExternalAiAgent({ agentId });
+      await loadSettings();
+    } catch (authError) {
+      showSettingsError("External agent authentication failed", authError);
+    }
+  };
+
+  const handleRemoveExternalAgent = async (agentId: string) => {
+    setSettingsError(null);
+    try {
+      await removeExternalAiAgent({ agentId });
+      await loadSettings();
+    } catch (removeError) {
+      showSettingsError("External agent removal failed", removeError);
+    }
+  };
+
+  const handleSetExternalAgentDefault = async (agentId: string) => {
+    setSettingsError(null);
+    try {
+      const nextPreferences = await setExternalAiAgentAsDefault({ agentId });
+      setPreferences(nextPreferences);
+      await loadSettings();
+    } catch (preferenceError) {
+      showSettingsError("External agent preference failed", preferenceError);
+    }
+  };
+
   const handleWarmConfiguredModels = useCallback(async () => {
+    if (externalEngineSelected) return;
     try {
       const response = await warmConfiguredLocalAiModels();
       if (response.failures.length > 0) {
@@ -617,7 +1092,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     } catch (warmError) {
       showSettingsError("Model warmup failed", warmError);
     }
-  }, [showSettingsError]);
+  }, [externalEngineSelected, showSettingsError]);
 
   const handleSetPreference = async (
     modelId: string,
@@ -644,10 +1119,13 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
         setPreferences((current) => {
           if (!current) return current;
           const actionModelIds = { ...current.actionModelIds };
+          const actionEngines = { ...(current.actionEngines ?? {}) };
           delete actionModelIds[actionKind];
+          delete actionEngines[actionKind];
           return {
             ...current,
             actionModelIds,
+            actionEngines,
           };
         });
         return;
@@ -657,8 +1135,53 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
     }
   };
 
+  const handleSetEnginePreference = async (
+    value: string,
+    actionKind?: LocalAiActionKind | null,
+  ) => {
+    setSettingsError(null);
+    const engine = engineFromValue(value);
+
+    if (!engine && actionKind) {
+      await handleSetPreference("", actionKind);
+      return;
+    }
+    if (!engine) return;
+
+    try {
+      const nextPreferences = await setLocalAiAnalysisEnginePreference({
+        engine,
+        actionKind: actionKind ?? null,
+      });
+      setPreferences(nextPreferences);
+    } catch (preferenceError) {
+      showSettingsError("Analysis engine preference failed", preferenceError);
+    }
+  };
+
+  const handleSetExternalConfigPreference = async (
+    agentId: string,
+    actionKind: LocalAiActionKind | null,
+    configId: string,
+    value: string | null,
+  ) => {
+    setSettingsError(null);
+    try {
+      const nextPreferences = await setExternalAiAgentConfigPreference({
+        agentId,
+        actionKind,
+        configId,
+        value,
+      });
+      setPreferences(nextPreferences);
+    } catch (preferenceError) {
+      showSettingsError("External agent option failed", preferenceError);
+    }
+  };
+
   const handleSetWarmPreference = useCallback(
     async (modelId: string, warm: boolean) => {
+      if (externalEngineSelected) return;
       setSettingsError(null);
       setWarmSavingModelIds((current) => ({
         ...current,
@@ -681,7 +1204,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
         });
       }
     },
-    [showSettingsError],
+    [externalEngineSelected, showSettingsError],
   );
 
   const handleWarmToggle = useCallback(
@@ -722,7 +1245,9 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
       ? "Runtime"
       : pane === "models"
         ? "Models"
-        : "Configuration";
+        : pane === "externalAgents"
+          ? "External Agents"
+          : "Configuration";
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/65 px-4 py-6">
@@ -735,7 +1260,7 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
         <aside className="flex w-56 flex-shrink-0 flex-col border-r border-border bg-background-emphasis">
           <div className="flex h-16 flex-shrink-0 flex-col justify-center border-b border-border px-4">
             <div className="text-sm font-semibold text-foreground">Settings</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">Local AI</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">AI Engines</div>
           </div>
 
           <nav className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -802,9 +1327,9 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                 </div>
               ) : null}
 
-              {activeProgress ? (
+              {activeProgress || activeExternalProgress ? (
                 <div className="mb-4">
-                  <ProgressPanel progress={activeProgress} />
+                  <ProgressPanel progress={activeProgress ?? activeExternalProgress} />
                 </div>
               ) : null}
 
@@ -892,11 +1417,14 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                   const warmMetadataAvailable = hasWarmMetadata(model);
                   const warmChecked = warmModelIds.includes(model.id);
                   const warmDisabled =
+                    externalEngineSelected ||
                     !warmMetadataAvailable ||
                     !status?.ready ||
                     setupInProgress ||
                     Boolean(warmSavingModelIds[model.id]);
-                  const warmDisabledReason = !warmMetadataAvailable
+                  const warmDisabledReason = externalEngineSelected
+                    ? "Warmup is unavailable while an external agent is selected."
+                    : !warmMetadataAvailable
                     ? "Restart Gitano to enable warmup for this model."
                     : !status?.ready
                       ? "Download the model before keeping it warm."
@@ -952,43 +1480,171 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
               </>
             ) : null}
 
+            {pane === "externalAgents" ? (
+              <>
+                <SectionLabel>Curated Agents</SectionLabel>
+                {externalAgents.map((agent) => {
+                  const selected =
+                    globalEngine?.type === "external_agent" &&
+                    globalEngine.agentId === agent.id;
+                  const authMethods = agent.status.authMethods
+                    ?.map((method) => method.displayName)
+                    .join(", ");
+                  const installDisabled =
+                    setupInProgress ||
+                    entitlement?.entitled === false ||
+                    !agent.installSource;
+                  const setDefaultDisabled =
+                    selected ||
+                    !agent.status.available ||
+                    entitlement?.entitled === false;
+
+                  return (
+                    <SettingsRow
+                      key={agent.id}
+                      title={agent.displayName}
+                      description={`${agent.provider} - ${agent.description} - ${agent.version}${
+                        agent.license ? ` - ${agent.license}` : ""
+                      }${authMethods ? ` - Auth: ${authMethods}` : ""}`}
+                      warning={agent.status.error}
+                    >
+                      <div className="flex w-full flex-col items-end gap-2">
+                        <ValuePill>{selected ? "Selected" : statusLabel(agent)}</ValuePill>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {!agent.status.installed ? (
+                            <ActionButton
+                              disabled={installDisabled}
+                              onClick={() => {
+                                void handleInstallExternalAgent(agent.id);
+                              }}
+                            >
+                              <IconCloudDownload size={16} />
+                              Install
+                            </ActionButton>
+                          ) : (
+                            <>
+                              <ActionButton
+                                disabled={entitlement?.entitled === false}
+                                onClick={() => {
+                                  void handleAuthenticateExternalAgent(agent.id);
+                                }}
+                              >
+                                <IconCheck size={16} />
+                                Authenticate
+                              </ActionButton>
+                              <ActionButton
+                                variant="danger"
+                                disabled={setupInProgress}
+                                onClick={() => {
+                                  void handleRemoveExternalAgent(agent.id);
+                                }}
+                              >
+                                Remove
+                              </ActionButton>
+                            </>
+                          )}
+                          <ActionButton
+                            disabled={setDefaultDisabled}
+                            onClick={() => {
+                              void handleSetExternalAgentDefault(agent.id);
+                            }}
+                          >
+                            <IconCheck size={16} />
+                            Set default
+                          </ActionButton>
+                        </div>
+                      </div>
+                    </SettingsRow>
+                  );
+                })}
+              </>
+            ) : null}
+
             {pane === "configuration" ? (
               <>
-                <SectionLabel>Model Selection</SectionLabel>
+                <SectionLabel>Engine Selection</SectionLabel>
 
                 <SettingsRow
                   title="Global Default"
-                  description="Default model used by local AI actions when an action-specific model is not configured."
+                  description="Default analysis engine used when an action-specific engine is not configured."
                 >
-                  <SelectControl
-                    label="Global default model"
-                    value={preferences?.globalModelId ?? ""}
-                    disabled={!preferences || catalog.length === 0}
-                    onChange={(modelId) => {
-                      if (!modelId) return;
-                      void handleSetPreference(modelId, null);
-                    }}
-                  >
-                    {preferences?.globalModelId ? null : (
-                      <option value="">
-                        ---
-                      </option>
-                    )}
-                    {catalog.map((model) => (
-                      <option
-                        key={model.id}
-                        value={model.id}
-                      >
-                        {model.displayName}
-                      </option>
-                    ))}
-                  </SelectControl>
+                  <div className="flex w-full flex-col items-end gap-2">
+                    <SelectControl
+                      label="Global default analysis engine"
+                      value={engineValue(globalEngine)}
+                      disabled={
+                        !preferences ||
+                        (catalog.length === 0 && externalAgents.length === 0)
+                      }
+                      onChange={(value) => {
+                        void handleSetEnginePreference(value, null);
+                      }}
+                    >
+                      {engineValue(globalEngine) ? null : (
+                        <option value="">
+                          ---
+                        </option>
+                      )}
+                      <optgroup label="Local models">
+                        {catalog.map((model) => (
+                          <option
+                            key={model.id}
+                            value={`local:${model.id}`}
+                          >
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="External agents">
+                        {externalAgents.map((agent) => (
+                          <option
+                            key={agent.id}
+                            value={`external:${agent.id}`}
+                            disabled={!agent.status.available}
+                          >
+                            {agent.displayName}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </SelectControl>
+                    {globalEngine?.type === "external_agent" ? (
+                      <ExternalAgentConfigControls
+                        agentId={globalEngine.agentId}
+                        scopeLabel="Global default"
+                        actionKind={null}
+                        preferences={preferences}
+                        config={externalConfigByAgentId[globalEngine.agentId]}
+                        loading={
+                          externalConfigLoadingByAgentId[globalEngine.agentId]
+                        }
+                        error={
+                          externalConfigErrorsByAgentId[globalEngine.agentId]
+                        }
+                        onChange={(agentId, actionKind, configId, value) => {
+                          void handleSetExternalConfigPreference(
+                            agentId,
+                            actionKind,
+                            configId,
+                            value,
+                          );
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 </SettingsRow>
 
                 <SectionLabel>Actions</SectionLabel>
 
                 {ACTIONS.map((action) => {
-                  const selectedModelId = selectedModelIdForAction(action.kind);
+                  const selectedEngine = selectedEngineForAction(action.kind);
+                  const selectedModelId =
+                    selectedEngine?.type === "local_model"
+                      ? selectedEngine.modelId ?? ""
+                      : "";
+                  const selectedExternalAgent =
+                    selectedEngine?.type === "external_agent"
+                      ? externalAgentById.get(selectedEngine.agentId)
+                      : null;
                   const selectedModelStatus = selectedModelId
                     ? modelStatuses[selectedModelId]
                     : null;
@@ -997,7 +1653,11 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                     : null;
                   const warmMetadataAvailable = hasWarmMetadata(selectedModel);
                   const selectedMissing =
-                    !selectedModelId || selectedModelStatus?.ready === false;
+                    !selectedEngine ||
+                    (selectedEngine.type === "local_model" &&
+                      (!selectedModelId || selectedModelStatus?.ready === false)) ||
+                    (selectedEngine.type === "external_agent" &&
+                      !selectedExternalAgent?.status.available);
                   return (
                     <SettingsRow
                       key={action.kind}
@@ -1015,26 +1675,74 @@ export function SettingsWindow({ open, onClose }: SettingsWindowProps) {
                           </span>
                         ) : null}
                         <SelectControl
-                          label={`${action.label} model`}
-                          value={selectedModelId}
-                          disabled={!preferences || catalog.length === 0}
-                          onChange={(modelId) => {
-                            void handleSetPreference(modelId, action.kind);
+                          label={`${action.label} analysis engine`}
+                          value={engineValue(selectedEngine)}
+                          disabled={
+                            !preferences ||
+                            (catalog.length === 0 && externalAgents.length === 0)
+                          }
+                          onChange={(value) => {
+                            void handleSetEnginePreference(value, action.kind);
                           }}
                         >
                           <option value="">
                             ---
                           </option>
-                          {catalog.map((model) => (
-                            <option
-                              key={model.id}
-                              value={model.id}
-                            >
-                              {model.displayName}
-                            </option>
-                          ))}
+                          <optgroup label="Local models">
+                            {catalog.map((model) => (
+                              <option
+                                key={model.id}
+                                value={`local:${model.id}`}
+                              >
+                                {model.displayName}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="External agents">
+                            {externalAgents.map((agent) => (
+                              <option
+                                key={agent.id}
+                                value={`external:${agent.id}`}
+                                disabled={!agent.status.available}
+                              >
+                                {agent.displayName}
+                              </option>
+                            ))}
+                          </optgroup>
                         </SelectControl>
-                        {selectedModel ? (
+                        {selectedExternalAgent ? (
+                          <ValuePill>{statusLabel(selectedExternalAgent)}</ValuePill>
+                        ) : null}
+                        {selectedEngine?.type === "external_agent" ? (
+                          <ExternalAgentConfigControls
+                            agentId={selectedEngine.agentId}
+                            scopeLabel={action.label}
+                            actionKind={action.kind}
+                            preferences={preferences}
+                            config={
+                              externalConfigByAgentId[selectedEngine.agentId]
+                            }
+                            loading={
+                              externalConfigLoadingByAgentId[
+                                selectedEngine.agentId
+                              ]
+                            }
+                            error={
+                              externalConfigErrorsByAgentId[
+                                selectedEngine.agentId
+                              ]
+                            }
+                            onChange={(agentId, actionKind, configId, value) => {
+                              void handleSetExternalConfigPreference(
+                                agentId,
+                                actionKind,
+                                configId,
+                                value,
+                              );
+                            }}
+                          />
+                        ) : null}
+                        {selectedModel && !externalEngineSelected ? (
                           <WarmModelCheckbox
                             checked={warmModelIds.includes(selectedModel.id)}
                             disabled={

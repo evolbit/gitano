@@ -8,6 +8,7 @@ use super::types::{
 use serde_json::Value;
 
 pub const PROMPT_VERSION: &str = "local-ai-v4";
+pub const EXTERNAL_AGENT_PROMPT_VERSION: &str = "external-acp-v2";
 
 pub fn build_prompt(context: &LocalAiGitContext) -> String {
     match context.action_kind {
@@ -23,6 +24,53 @@ pub fn build_prompt(context: &LocalAiGitContext) -> String {
         LocalAiActionKind::BranchReview => build_branch_review_prompt(context),
         LocalAiActionKind::MergeConflictSuggestions => build_conflict_prompt(context),
     }
+}
+
+pub fn build_external_agent_prompt(context: &LocalAiGitContext) -> String {
+    let task = match context.action_kind {
+        LocalAiActionKind::CommitMessage => {
+            "Generate a Git commit message for the staged changes only."
+        }
+        LocalAiActionKind::CommitAnalysis => {
+            "Analyze this commit for correctness, risk, and maintainability."
+        }
+        LocalAiActionKind::BranchAnalysis => {
+            "Analyze this branch or PR-style diff for correctness, risk, and maintainability."
+        }
+        LocalAiActionKind::BranchReview => {
+            "Review this branch like PR review feedback and anchor inline findings to changed diff lines."
+        }
+        LocalAiActionKind::MergeConflictSuggestions => {
+            "Suggest how to resolve these merge conflicts without modifying files."
+        }
+    };
+    let output_shape = match context.action_kind {
+        LocalAiActionKind::CommitMessage => {
+            "{\"message\":\"...\",\"alternatives\":[\"...\"]}"
+        }
+        LocalAiActionKind::CommitAnalysis => {
+            "{\"summary\":\"...\",\"riskAssessment\":\"...\",\"changedAreas\":[\"...\"],\"findings\":[{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}]}"
+        }
+        LocalAiActionKind::BranchAnalysis => {
+            "{\"summary\":\"...\",\"riskAssessment\":\"...\",\"behavioralChanges\":[\"...\"],\"potentialRegressions\":[\"...\"],\"testGaps\":[\"...\"],\"recommendations\":[\"...\"],\"actionItems\":[\"...\"],\"findings\":[{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}]}"
+        }
+        LocalAiActionKind::BranchReview => {
+            "{\"summary\":\"...\",\"findings\":[{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"impact\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"...\",\"filePath\":\"path/to/file\",\"side\":\"old|new\",\"line\":123,\"endLine\":124}],\"notes\":[{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"optional\",\"filePath\":\"optional\"}]}"
+        }
+        LocalAiActionKind::MergeConflictSuggestions => {
+            "{\"summary\":\"...\",\"files\":[{\"filePath\":\"...\",\"summary\":\"...\",\"suggestion\":\"...\"}]}"
+        }
+    };
+
+    format!(
+        "You are Gitano's selected external ACP coding agent. The user explicitly selected this agent for repository analysis.\n\
+         Use the Git descriptor below to identify the exact repository scope, then inspect the code yourself with read-only repository commands such as git diff, git status, git show, git log, git ls-files, git rev-parse, and git merge-base. Do not modify files, run write/destructive commands, or submit remote feedback.\n\
+         Be specific, evidence-oriented, and concise. Do not claim certainty without file or line evidence.\n\
+         {}\n\n\
+         Return only JSON with this shape: {}\n\n\
+         Git descriptor:\n{}",
+        task, output_shape, context.prompt_context
+    )
 }
 
 fn build_commit_message_prompt(context: &LocalAiGitContext) -> String {
@@ -99,31 +147,131 @@ pub fn parse_structured_result(
     action_kind: LocalAiActionKind,
     response: &str,
 ) -> Result<LocalAiStructuredResult, String> {
-    let value: Value = serde_json::from_str(response).map_err(|e| {
-        if e.is_eof() {
-            format!(
-                "Local AI returned incomplete JSON, likely because the model output stopped before the response was finished: {}",
-                e
-            )
-        } else {
-            format!("Local AI returned invalid JSON: {}", e)
-        }
-    })?;
+    let initial_error = match serde_json::from_str::<Value>(response.trim()) {
+        Ok(value) => return parse_structured_value(action_kind, &value),
+        Err(error) if error.is_eof() => format!(
+            "Local AI returned incomplete JSON, likely because the model output stopped before the response was finished: {}",
+            error
+        ),
+        Err(error) => format!("Local AI returned invalid JSON: {}", error),
+    };
 
+    for candidate in json_object_candidates(response) {
+        let Ok(value) = serde_json::from_str::<Value>(candidate) else {
+            continue;
+        };
+        if !looks_like_structured_result(action_kind, &value) {
+            continue;
+        }
+
+        if let Ok(result) = parse_structured_value(action_kind, &value) {
+            return Ok(result);
+        }
+    }
+
+    Err(initial_error)
+}
+
+fn parse_structured_value(
+    action_kind: LocalAiActionKind,
+    value: &Value,
+) -> Result<LocalAiStructuredResult, String> {
     match action_kind {
         LocalAiActionKind::CommitMessage => Ok(LocalAiStructuredResult::CommitMessage(
-            parse_commit_message(&value)?,
+            parse_commit_message(value)?,
         )),
         LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => {
-            Ok(LocalAiStructuredResult::Analysis(parse_analysis(&value)))
+            Ok(LocalAiStructuredResult::Analysis(parse_analysis(value)))
         }
         LocalAiActionKind::BranchReview => Ok(LocalAiStructuredResult::BranchReview(
-            parse_branch_review(&value)?,
+            parse_branch_review(value)?,
         )),
         LocalAiActionKind::MergeConflictSuggestions => Ok(
-            LocalAiStructuredResult::ConflictSuggestions(parse_conflicts(&value)),
+            LocalAiStructuredResult::ConflictSuggestions(parse_conflicts(value)),
         ),
     }
+}
+
+fn looks_like_structured_result(action_kind: LocalAiActionKind, value: &Value) -> bool {
+    match action_kind {
+        LocalAiActionKind::CommitMessage => {
+            value.get("commitMessage").is_some_and(Value::is_object)
+                || string_field(
+                    value,
+                    &["message", "commitMessage", "commit_message", "subject"],
+                )
+                .is_some()
+        }
+        LocalAiActionKind::CommitAnalysis | LocalAiActionKind::BranchAnalysis => {
+            string_field(value, &["summary", "riskAssessment", "risk_assessment"]).is_some()
+                || value.get("findings").is_some_and(Value::is_array)
+                || value.get("changedAreas").is_some_and(Value::is_array)
+                || value.get("changed_areas").is_some_and(Value::is_array)
+                || value.get("behavioralChanges").is_some_and(Value::is_array)
+                || value.get("behavioral_changes").is_some_and(Value::is_array)
+        }
+        LocalAiActionKind::BranchReview => {
+            string_field(value, &["summary"]).is_some()
+                || value.get("findings").is_some_and(Value::is_array)
+                || value.get("notes").is_some_and(Value::is_array)
+        }
+        LocalAiActionKind::MergeConflictSuggestions => {
+            string_field(value, &["summary"]).is_some()
+                || value.get("files").is_some_and(Value::is_array)
+        }
+    }
+}
+
+fn json_object_candidates(response: &str) -> Vec<&str> {
+    let mut candidates = Vec::new();
+    let mut search_start = 0;
+
+    while let Some(relative_start) = response[search_start..].find('{') {
+        let start = search_start + relative_start;
+        let Some(end) = json_object_end(response, start) else {
+            search_start = start + 1;
+            continue;
+        };
+        candidates.push(&response[start..=end]);
+        search_start = end + 1;
+    }
+
+    candidates
+}
+
+fn json_object_end(response: &str, start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, character) in response[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(start + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn parse_commit_message(value: &Value) -> Result<LocalAiCommitMessageResult, String> {
@@ -614,6 +762,45 @@ mod tests {
                 );
                 assert!(review.findings.is_empty());
                 assert!(review.notes.is_empty());
+            }
+            _ => panic!("expected branch review result"),
+        }
+    }
+
+    #[test]
+    fn extracts_branch_review_json_from_external_agent_transcript() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"Context compacted {"summary":"One issue","findings":[{"severity":"high","confidence":"high","title":"Missing guard","explanation":"The new call can fail.","impact":"The UI can break.","recommendation":"Handle the error.","suggestedComment":"Please handle this error before updating state.","filePath":"src/app.ts","side":"new","line":42}],"notes":[]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::BranchReview(review) => {
+                assert_eq!(review.summary, "One issue");
+                assert_eq!(review.findings.len(), 1);
+                assert_eq!(review.findings[0].title, "Missing guard");
+            }
+            _ => panic!("expected branch review result"),
+        }
+    }
+
+    #[test]
+    fn skips_tool_metadata_json_before_structured_result() {
+        let result = parse_structured_result(
+            LocalAiActionKind::BranchReview,
+            r#"{"call_id":"call_1","aggregated_output":"debug payload"}
+{"summary":"No actionable changed-code risks were found.","findings":[],"notes":[]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::BranchReview(review) => {
+                assert_eq!(
+                    review.summary,
+                    "No actionable changed-code risks were found."
+                );
+                assert!(review.findings.is_empty());
             }
             _ => panic!("expected branch review result"),
         }

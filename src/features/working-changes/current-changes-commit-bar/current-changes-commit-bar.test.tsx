@@ -23,6 +23,7 @@ const localAiMocks = vi.hoisted(() => ({
   runLocalAiAction: vi.fn(),
   deleteLocalAiModel: vi.fn(),
   getLocalAiModelCatalog: vi.fn(),
+  getExternalAiAgentCatalog: vi.fn(),
   getLocalAiEntitlementStatus: vi.fn(),
   getLocalAiModelPreferences: vi.fn(),
   getLocalAiModelStatus: vi.fn(),
@@ -31,6 +32,7 @@ const localAiMocks = vi.hoisted(() => ({
   prepareLocalAiModel: vi.fn(),
   prepareLocalAiRuntime: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
+  setLocalAiAnalysisEnginePreference: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
 }));
 
@@ -89,6 +91,7 @@ describe("CurrentChangesCommitBar", () => {
     stashSelectedFilesMock.mockReset();
     Object.values(localAiMocks).forEach((mock) => mock.mockReset());
     localAiMocks.listenToLocalAiProgress.mockReturnValue(Promise.resolve(() => {}));
+    localAiMocks.getExternalAiAgentCatalog.mockResolvedValue([]);
     localAiMocks.getLocalAiModelPreferences.mockResolvedValue({
       globalModelId: "qwen2.5-coder:7b",
       actionModelIds: {
@@ -145,6 +148,7 @@ describe("CurrentChangesCommitBar", () => {
     cleanup();
     useLocalAiStore.setState({
       catalog: [],
+      externalAgents: [],
       entitlement: null,
       preferences: null,
       modelStatus: null,

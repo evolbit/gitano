@@ -1,13 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteLocalAiModel,
+  authenticateExternalAiAgent,
+  cancelExternalAiRun,
+  getExternalAiAgentCatalog,
+  getExternalAiAgentSessionConfig,
+  installExternalAiAgent,
   getLocalAiModelPreferences,
   getLocalAiRuntimeStatus,
   getLocalAiModelStatus,
+  listenToExternalAiAgentProgress,
+  listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   prepareLocalAiModel,
   prepareLocalAiRuntime,
+  removeExternalAiAgent,
+  runExternalAiPrompt,
   runLocalAiAction,
+  setExternalAiAgentAsDefault,
+  setExternalAiAgentConfigPreference,
+  setLocalAiAnalysisEnginePreference,
   setLocalAiModelPreference,
   setLocalAiModelWarmPreference,
   warmConfiguredLocalAiModels,
@@ -81,6 +93,44 @@ describe("local AI API", () => {
         actionKind: "branchAnalysis",
       },
     });
+  });
+
+  it("sets analysis engine preferences through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    const preferences = await setLocalAiAnalysisEnginePreference({
+      engine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+    });
+
+    expect(preferences.analysisEngine).toEqual({
+      type: "external_agent",
+      agentId: "codex-acp",
+    });
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_set_analysis_engine_preference",
+      {
+        request: {
+          engine: {
+            type: "external_agent",
+            agentId: "codex-acp",
+          },
+          actionKind: null,
+        },
+      },
+    );
   });
 
   it("clears action preferences locally when an older backend rejects the empty model", async () => {
@@ -164,6 +214,198 @@ describe("local AI API", () => {
         allowLimited: true,
       },
     });
+  });
+
+  it("loads external agent catalog through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce([]);
+
+    await getExternalAiAgentCatalog();
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_get_external_agent_catalog",
+    );
+  });
+
+  it("installs external agents through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ operationId: "agent-op" });
+
+    await installExternalAiAgent({ agentId: "codex-acp" });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_install_external_agent",
+      {
+        request: {
+          agentId: "codex-acp",
+        },
+      },
+    );
+  });
+
+  it("removes external agents through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await removeExternalAiAgent({ agentId: "codex-acp" });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_remove_external_agent",
+      {
+        request: {
+          agentId: "codex-acp",
+        },
+      },
+    );
+  });
+
+  it("sets external agents as the default analysis engine", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    await setExternalAiAgentAsDefault({ agentId: "codex-acp" });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_set_external_agent_as_default",
+      {
+        request: {
+          agentId: "codex-acp",
+        },
+      },
+    );
+  });
+
+  it("discovers external agent session config through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      agentId: "codex-acp",
+      options: [],
+    });
+
+    await getExternalAiAgentSessionConfig({
+      agentId: "codex-acp",
+      repoPath: "/repo",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_get_external_agent_session_config",
+      {
+        request: {
+          agentId: "codex-acp",
+          repoPath: "/repo",
+        },
+      },
+    );
+  });
+
+  it("persists external agent config preferences through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {},
+      externalAgentOptionValues: {},
+      actionExternalAgentOptionValues: {
+        branchReview: {
+          "codex-acp": {
+            model: "gpt-5.5",
+          },
+        },
+      },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    const preferences = await setExternalAiAgentConfigPreference({
+      agentId: "codex-acp",
+      actionKind: "branchReview",
+      configId: "model",
+      value: "gpt-5.5",
+    });
+
+    expect(
+      preferences.actionExternalAgentOptionValues?.branchReview?.[
+        "codex-acp"
+      ]?.model,
+    ).toBe("gpt-5.5");
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_set_external_agent_config_preference",
+      {
+        request: {
+          agentId: "codex-acp",
+          actionKind: "branchReview",
+          configId: "model",
+          value: "gpt-5.5",
+        },
+      },
+    );
+  });
+
+  it("authenticates external agents through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ agentId: "codex-acp" });
+
+    await authenticateExternalAiAgent({ agentId: "codex-acp" });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_authenticate_external_agent",
+      {
+        request: {
+          agentId: "codex-acp",
+        },
+      },
+    );
+  });
+
+  it("runs external agent prompts through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      agentId: "codex-acp",
+      stopReason: "end_turn",
+      transcript: "Done",
+    });
+
+    await runExternalAiPrompt({
+      agentId: "codex-acp",
+      repoPath: "/repo",
+      runId: "run-1",
+      actionKind: "branchAnalysis",
+      prompt: "Analyze this branch",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_run_external_agent_prompt",
+      {
+        request: {
+          agentId: "codex-acp",
+          repoPath: "/repo",
+          runId: "run-1",
+          actionKind: "branchAnalysis",
+          prompt: "Analyze this branch",
+        },
+      },
+    );
+  });
+
+  it("cancels external agent runs through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await cancelExternalAiRun({ runId: "run-1" });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_cancel_external_agent_run",
+      {
+        request: {
+          runId: "run-1",
+        },
+      },
+    );
   });
 
   it("sets warm model preferences through the backend command", async () => {
@@ -274,5 +516,55 @@ describe("local AI API", () => {
     listener({ payload: progress });
 
     expect(handler).toHaveBeenCalledWith(progress);
+  });
+
+  it("listens to external agent progress events", () => {
+    const handler = vi.fn();
+    const progress = {
+      operationId: "agent-op",
+      agentId: "codex-acp",
+      state: "completed",
+      status: "External agent ready",
+      completedBytes: null,
+      totalBytes: null,
+      percentage: 100,
+      error: null,
+    } as const;
+
+    listenToExternalAiAgentProgress(handler);
+
+    expect(listenToEventMock).toHaveBeenCalledWith(
+      "external-ai-agent-progress",
+      expect.any(Function),
+    );
+
+    const listener = listenToEventMock.mock.calls[0][1];
+    listener({ payload: progress });
+
+    expect(handler).toHaveBeenCalledWith(progress);
+  });
+
+  it("listens to external agent run events", () => {
+    const handler = vi.fn();
+    const runEvent = {
+      runId: "run-1",
+      actionKind: "branchAnalysis",
+      agentId: "codex-acp",
+      kind: "text",
+      message: "Analyzing",
+      raw: null,
+    } as const;
+
+    listenToExternalAiRunEvents(handler);
+
+    expect(listenToEventMock).toHaveBeenCalledWith(
+      "external-ai-run-event",
+      expect.any(Function),
+    );
+
+    const listener = listenToEventMock.mock.calls[0][1];
+    listener({ payload: runEvent });
+
+    expect(handler).toHaveBeenCalledWith(runEvent);
   });
 });

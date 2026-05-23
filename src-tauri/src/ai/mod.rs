@@ -1,7 +1,9 @@
+pub mod acp_client;
 pub mod cache;
 pub mod commands;
 pub mod context_window;
 pub mod entitlement;
+pub mod external_agents;
 pub mod git_context;
 pub mod machine;
 pub mod models;
