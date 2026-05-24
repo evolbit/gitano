@@ -729,22 +729,76 @@ mod tests {
     mod build_zed_style_commit_rows {
         use super::*;
 
-        #[test]
-        fn assigns_minimum_graph_width_and_author_metadata() {
-            let rows = build_zed_style_commit_rows(vec![RawCommitRow {
-                sha: "child".to_string(),
-                parents: vec!["parent".to_string()],
-                date: 10,
+        fn raw_commit(sha: &str, parents: &[&str], date: i64) -> RawCommitRow {
+            RawCommitRow {
+                sha: sha.to_string(),
+                parents: parents.iter().map(|parent| parent.to_string()).collect(),
+                date,
                 author: "Ada Lovelace".to_string(),
                 author_email: "ada@example.invalid".to_string(),
-                refs: vec!["main".to_string()],
-                message: "Ship it".to_string(),
-            }]);
+                refs: Vec::new(),
+                message: format!("Commit {}", sha),
+            }
+        }
+
+        #[test]
+        fn assigns_minimum_graph_width_and_author_metadata() {
+            let mut commit = raw_commit("child", &["parent"], 10);
+            commit.refs = vec!["main".to_string()];
+            commit.message = "Ship it".to_string();
+            let rows = build_zed_style_commit_rows(vec![commit]);
 
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].graph_width, MIN_GRAPH_LANES);
             assert_eq!(rows[0].author_initial, "A");
             assert!(rows[0].author_avatar_url.is_some());
+        }
+
+        #[test]
+        fn keeps_pending_merge_curve_on_separate_lane_until_second_parent() {
+            let rows = build_zed_style_commit_rows(vec![
+                raw_commit("merge", &["left", "right"], 4),
+                raw_commit("left", &["base"], 3),
+                raw_commit("right", &["base"], 2),
+                raw_commit("base", &[], 1),
+            ]);
+
+            assert_eq!(rows.len(), 4);
+            assert_eq!(
+                rows.iter().map(|row| row.graph_lane).collect::<Vec<_>>(),
+                vec![0, 0, 1, 0],
+            );
+            assert!(
+                rows.iter()
+                    .flat_map(|row| &row.graph_segments)
+                    .any(|segment| segment.control_lane.is_some()),
+                "merge topology should emit at least one curved segment",
+            );
+            assert!(
+                rows.iter()
+                    .flat_map(|row| &row.graph_segments)
+                    .any(|segment| segment.from_lane != segment.to_lane),
+                "merge topology should emit a lane transition",
+            );
+        }
+
+        #[test]
+        fn finalizes_rejoining_lines_with_finite_segment_coordinates() {
+            let rows = build_zed_style_commit_rows(vec![
+                raw_commit("merge", &["left", "right"], 4),
+                raw_commit("left", &["base"], 3),
+                raw_commit("right", &["base"], 2),
+                raw_commit("base", &[], 1),
+            ]);
+
+            for segment in rows.iter().flat_map(|row| &row.graph_segments) {
+                assert!(segment.from_lane.is_finite());
+                assert!(segment.from_y.is_finite());
+                assert!(segment.to_lane.is_finite());
+                assert!(segment.to_y.is_finite());
+                assert!(segment.control_lane.map_or(true, f32::is_finite));
+                assert!(segment.control_y.map_or(true, f32::is_finite));
+            }
         }
     }
 }

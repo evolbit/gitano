@@ -297,6 +297,11 @@ struct BranchComparisonRefs {
     from_ref: String,
 }
 
+struct BranchDiffSummary {
+    name_status: String,
+    stat: String,
+}
+
 fn resolve_branch_comparison_refs<F>(
     repo_path: &str,
     base_ref: &str,
@@ -328,6 +333,38 @@ fn is_merge_base_comparison(comparison_mode: &str) -> bool {
     comparison_mode == "mergeBase" || comparison_mode == "merge-base"
 }
 
+fn read_branch_diff_summary(
+    repo_path: &str,
+    refs: &BranchComparisonRefs,
+) -> Result<BranchDiffSummary, String> {
+    Ok(BranchDiffSummary {
+        name_status: run_git(
+            repo_path,
+            &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
+        )?,
+        stat: run_git(
+            repo_path,
+            &["diff", "--stat", &refs.from_ref, &refs.head_sha],
+        )?,
+    })
+}
+
+fn read_branch_diff_fingerprint(
+    repo_path: &str,
+    refs: &BranchComparisonRefs,
+) -> Result<String, String> {
+    run_git(
+        repo_path,
+        &[
+            "diff",
+            "--raw",
+            "--find-renames",
+            &refs.from_ref,
+            &refs.head_sha,
+        ],
+    )
+}
+
 fn branch_external_agent_context_with_progress<F>(
     repo_path: &str,
     base_ref: &str,
@@ -347,24 +384,8 @@ where
         &mut on_step,
     )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(
-        repo_path,
-        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
-    )?;
-    let stat = run_git(
-        repo_path,
-        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
-    )?;
-    let raw = run_git(
-        repo_path,
-        &[
-            "diff",
-            "--raw",
-            "--find-renames",
-            &refs.from_ref,
-            &refs.head_sha,
-        ],
-    )?;
+    let summary = read_branch_diff_summary(repo_path, &refs)?;
+    let raw = read_branch_diff_fingerprint(repo_path, &refs)?;
 
     if raw.trim().is_empty() {
         return Err("The selected branch comparison has no diff context to analyze.".to_string());
@@ -385,8 +406,8 @@ where
         refs.head_sha,
         comparison_mode,
         refs.from_ref,
-        name_status,
-        stat,
+        &summary.name_status,
+        &summary.stat,
         raw,
         refs.from_ref,
         refs.head_sha,
@@ -407,8 +428,8 @@ where
         &refs.from_ref,
         &refs.head_sha,
         comparison_mode,
-        &name_status,
-        &stat,
+        &summary.name_status,
+        &summary.stat,
         &raw,
     ]);
 
@@ -588,14 +609,7 @@ where
         &mut on_step,
     )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(
-        repo_path,
-        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
-    )?;
-    let stat = run_git(
-        repo_path,
-        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
-    )?;
+    let summary = read_branch_diff_summary(repo_path, &refs)?;
     let diff = match diff_order {
         BranchDiffOrder::Git => run_git(
             repo_path,
@@ -607,9 +621,12 @@ where
                 &refs.head_sha,
             ],
         )?,
-        BranchDiffOrder::ReviewPriority => {
-            prioritized_branch_diff(repo_path, &refs.from_ref, &refs.head_sha, &name_status)?
-        }
+        BranchDiffOrder::ReviewPriority => prioritized_branch_diff(
+            repo_path,
+            &refs.from_ref,
+            &refs.head_sha,
+            &summary.name_status,
+        )?,
     };
 
     if diff.trim().is_empty() {
@@ -625,8 +642,8 @@ where
         refs.head_sha,
         comparison_mode,
         refs.from_ref,
-        name_status,
-        stat,
+        &summary.name_status,
+        &summary.stat,
         diff
     );
     let digest = digest_parts(&[
@@ -665,15 +682,8 @@ where
         &mut on_step,
     )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(
-        repo_path,
-        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
-    )?;
-    let stat = run_git(
-        repo_path,
-        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
-    )?;
-    let file_paths = parse_name_status_paths(&name_status);
+    let summary = read_branch_diff_summary(repo_path, &refs)?;
+    let file_paths = parse_name_status_paths(&summary.name_status);
 
     if file_paths.is_empty() {
         return Err("The selected branch comparison has no diff context to analyze.".to_string());
@@ -709,8 +719,8 @@ where
             comparison_mode,
             refs.from_ref,
             file_path,
-            name_status,
-            stat,
+            &summary.name_status,
+            &summary.stat,
             diff
         );
         let digest = digest_parts(&[
@@ -757,8 +767,8 @@ where
             &refs.from_ref,
             &refs.head_sha,
             comparison_mode,
-            &name_status,
-            &stat,
+            &summary.name_status,
+            &summary.stat,
             &block_digests,
         ]),
         metadata,

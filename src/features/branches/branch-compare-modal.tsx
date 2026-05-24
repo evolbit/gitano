@@ -21,10 +21,6 @@ import type { DiffDisplayMode, DiffHunk } from "@/features/diffs/types";
 import ChangesExplorer from "@/features/working-changes/changes-explorer/changes-explorer";
 import type { ChangesExplorerViewMode } from "@/features/working-changes/changes-explorer/types";
 import {
-  getBranchComparisonFileDiff,
-  getBranchComparisonFiles,
-} from "@/shared/api/git/diffs";
-import {
   listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   runLocalAiAction,
@@ -36,7 +32,6 @@ import {
   type LocalAiRunResult,
 } from "@/shared/api/local-ai";
 import { writeClipboardText } from "@/shared/platform/clipboard";
-import type { FileChange } from "@/shared/types/git";
 import {
   appendExternalAiRunEvent,
   appendLocalAiRunProgress,
@@ -58,8 +53,12 @@ import {
   type ReviewCommentAuthor,
   type ReviewThread,
 } from "@/features/review-comments";
-import { getBranches } from "./api";
 import { BranchCompareBranchDropdown } from "./branch-compare-target-dropdown";
+import {
+  useBranchComparisonData,
+  useBranchLists,
+  useBranchReviewHunks,
+} from "./use-branch-compare-data";
 
 type BranchCompareModalProps = {
   repoPath: string;
@@ -82,6 +81,7 @@ const GITANO_AI_AUTHOR: ReviewCommentAuthor = {
   initials: "AI",
   kind: "bot",
 };
+const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
 
 type BranchAiAction = "analysis" | "review";
 
@@ -346,23 +346,14 @@ export function BranchCompareModal({
   onClose,
 }: BranchCompareModalProps) {
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
-  const [localBranches, setLocalBranches] = useState<string[]>([]);
-  const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
-  const [branchLoading, setBranchLoading] = useState(false);
-  const [branchError, setBranchError] = useState<string | null>(null);
+  const { localBranches, remoteBranches, branchLoading, branchError } =
+    useBranchLists(repoPath);
   const [sourceBranch, setSourceBranch] = useState<string | null>(
     initialSourceBranch,
   );
   const [targetBranch, setTargetBranch] = useState<string | null>(
     initialTargetBranch,
   );
-  const [files, setFiles] = useState<FileChange[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState<string | null>(null);
-  const [hunks, setHunks] = useState<DiffHunk[]>([]);
-  const [hunksLoading, setHunksLoading] = useState(false);
-  const [hunksError, setHunksError] = useState<string | null>(null);
   const [displayMode, setDisplayMode] =
     useState<DiffDisplayMode>("unified");
   const [viewMode, setViewMode] = useState<ChangesExplorerViewMode>("tree");
@@ -375,17 +366,11 @@ export function BranchCompareModal({
   const [branchReview, setBranchReview] = useState<BranchAiState>(
     emptyBranchAiState,
   );
-  const [reviewHunksByPath, setReviewHunksByPath] = useState<
-    Record<string, DiffHunk[]>
-  >({});
-  const [reviewHunksLoading, setReviewHunksLoading] = useState(false);
   const [dismissedAiFindingKeys, setDismissedAiFindingKeys] = useState<Set<string>>(
     () => new Set(),
   );
   const [branchAiSetup, setBranchAiSetup] =
     useState<BranchAiSetupState | null>(null);
-  const filesRequestId = useRef(0);
-  const hunksRequestId = useRef(0);
   const activeBranchAiRunIdsRef = useRef<
     Record<BranchAiAction, string | null>
   >({
@@ -407,6 +392,24 @@ export function BranchCompareModal({
   const comparisonReady = Boolean(
     sourceBranch && targetBranch && sourceBranch !== targetBranch,
   );
+  const {
+    files,
+    selectedPath,
+    setSelectedPath,
+    selectedFile,
+    filesLoading,
+    filesError,
+    hunks,
+    hunksLoading,
+    hunksError,
+  } = useBranchComparisonData({
+    repoPath,
+    sourceBranch,
+    targetBranch,
+    comparisonReady,
+    comparisonMode: BRANCH_COMPARE_MODE,
+    contextLines: DIFF_CONTEXT_LINES,
+  });
   const pairKey = useMemo(
     () =>
       sourceBranch && targetBranch
@@ -422,6 +425,19 @@ export function BranchCompareModal({
         ? "No changes between these branches"
         : "No changed files";
   const branchReviewData = reviewResultData(branchReview.result);
+  const {
+    reviewHunksByPath,
+    setReviewHunksByPath,
+    reviewHunksLoading,
+  } = useBranchReviewHunks({
+    repoPath,
+    sourceBranch,
+    targetBranch,
+    comparisonReady,
+    findings: branchReviewData?.findings ?? EMPTY_BRANCH_REVIEW_FINDINGS,
+    comparisonMode: BRANCH_COMPARE_MODE,
+    contextLines: DIFF_CONTEXT_LINES,
+  });
   const branchReviewAnchorIndex = useMemo(
     () => buildAnchorIndex(reviewHunksByPath),
     [reviewHunksByPath],
@@ -478,158 +494,7 @@ export function BranchCompareModal({
     setReviewHunksByPath({});
     setDismissedAiFindingKeys(new Set());
     setActiveReviewAnchor(null);
-  }, [pairKey]);
-
-  useEffect(() => {
-    if (
-      !comparisonReady ||
-      !sourceBranch ||
-      !targetBranch ||
-      !branchReviewData?.findings.length
-    ) {
-      setReviewHunksByPath({});
-      setReviewHunksLoading(false);
-      return;
-    }
-
-    const filePaths = [...new Set(branchReviewData.findings.map((finding) => finding.filePath))];
-    let cancelled = false;
-    setReviewHunksLoading(true);
-
-    Promise.all(
-      filePaths.map(async (filePath) => {
-        const fileHunks = await getBranchComparisonFileDiff({
-          path: repoPath,
-          baseRef: targetBranch,
-          headRef: sourceBranch,
-          filePath,
-          context: DIFF_CONTEXT_LINES,
-          comparisonMode: BRANCH_COMPARE_MODE,
-        });
-        return [filePath, fileHunks] as const;
-      }),
-    )
-      .then((entries) => {
-        if (!cancelled) {
-          setReviewHunksByPath(Object.fromEntries(entries));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setReviewHunksByPath({});
-      })
-      .finally(() => {
-        if (!cancelled) setReviewHunksLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [branchReviewData, comparisonReady, repoPath, sourceBranch, targetBranch]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setBranchLoading(true);
-    setBranchError(null);
-
-    Promise.all([getBranches(repoPath, "local"), getBranches(repoPath, "remote")])
-      .then(([local, remote]) => {
-        if (cancelled) return;
-        setLocalBranches(local);
-        setRemoteBranches(remote);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setBranchError(String(error));
-      })
-      .finally(() => {
-        if (!cancelled) setBranchLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [repoPath]);
-
-  useEffect(() => {
-    if (!comparisonReady || !sourceBranch || !targetBranch) {
-      filesRequestId.current += 1;
-      hunksRequestId.current += 1;
-      setFiles([]);
-      setSelectedPath(null);
-      setHunks([]);
-      setHunksLoading(false);
-      setHunksError(null);
-      setFilesLoading(false);
-      setFilesError(null);
-      return;
-    }
-
-    const requestId = filesRequestId.current + 1;
-    filesRequestId.current = requestId;
-    hunksRequestId.current += 1;
-    setFilesLoading(true);
-    setFilesError(null);
-    setFiles([]);
-    setSelectedPath(null);
-    setHunks([]);
-
-    getBranchComparisonFiles({
-      path: repoPath,
-      baseRef: targetBranch,
-      headRef: sourceBranch,
-      comparisonMode: BRANCH_COMPARE_MODE,
-    })
-      .then((nextFiles) => {
-        if (requestId !== filesRequestId.current) return;
-        setFiles(nextFiles);
-        setSelectedPath(nextFiles[0]?.path ?? null);
-      })
-      .catch((error) => {
-        if (requestId === filesRequestId.current) setFilesError(String(error));
-      })
-      .finally(() => {
-        if (requestId === filesRequestId.current) setFilesLoading(false);
-      });
-  }, [comparisonReady, repoPath, sourceBranch, targetBranch]);
-
-  useEffect(() => {
-    if (!comparisonReady || !sourceBranch || !targetBranch || !selectedPath) {
-      hunksRequestId.current += 1;
-      setHunks([]);
-      setHunksLoading(false);
-      setHunksError(null);
-      return;
-    }
-
-    const requestId = hunksRequestId.current + 1;
-    hunksRequestId.current = requestId;
-    setHunksLoading(true);
-    setHunksError(null);
-    setHunks([]);
-
-    getBranchComparisonFileDiff({
-      path: repoPath,
-      baseRef: targetBranch,
-      headRef: sourceBranch,
-      filePath: selectedPath,
-      context: DIFF_CONTEXT_LINES,
-      comparisonMode: BRANCH_COMPARE_MODE,
-    })
-      .then((nextHunks) => {
-        if (requestId === hunksRequestId.current) setHunks(nextHunks);
-      })
-      .catch((error) => {
-        if (requestId === hunksRequestId.current) setHunksError(String(error));
-      })
-      .finally(() => {
-        if (requestId === hunksRequestId.current) setHunksLoading(false);
-      });
-  }, [comparisonReady, repoPath, selectedPath, sourceBranch, targetBranch]);
-
-  const selectedFile = useMemo(
-    () => files.find((file) => file.path === selectedPath) ?? null,
-    [files, selectedPath],
-  );
+  }, [pairKey, setReviewHunksByPath]);
 
   const notifyAiError = useCallback(
     (title: string, analysisError: unknown, expanded = false) => {
@@ -735,7 +600,14 @@ export function BranchCompareModal({
         );
       }
     },
-    [comparisonReady, notifyAiError, repoPath, sourceBranch, targetBranch],
+    [
+      comparisonReady,
+      notifyAiError,
+      repoPath,
+      setReviewHunksByPath,
+      sourceBranch,
+      targetBranch,
+    ],
   );
 
   const applyAiFinding = useCallback(
