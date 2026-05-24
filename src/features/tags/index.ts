@@ -1,2 +1,2 @@
-export { TagsPanel } from "./tags-panel";
+export { TagsPanel } from "./components/tags-panel/tags-panel";
 

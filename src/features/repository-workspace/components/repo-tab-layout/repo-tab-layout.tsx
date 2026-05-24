@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { APP_EVENTS } from "@/shared/config/events";
 import { REPO_LAYOUT } from "@/shared/config/layout";
 import { classNames } from "@/shared/ui";
-import { useFileHunksStore } from "@/features/diffs/stores/file-hunks-store";
+import { useFileHunksStore } from "@/features/diffs";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
@@ -12,8 +12,8 @@ import {
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
 import { BranchList } from "@/features/branches";
-import { IconArrowFork, IconGitBranch, IconStack2, IconTag } from "@/components/icons";
-import TopToolbar from "@/components/top-toolbar/top-toolbar";
+import { IconArrowFork, IconGitBranch, IconStack2, IconTag } from "@/shared/components/icons/icons";
+import TopToolbar from "../top-toolbar/top-toolbar";
 import { StashesPanel } from "@/features/stashes";
 import { TagsPanel } from "@/features/tags";
 import { WorkspacesPanel } from "@/features/worktrees";

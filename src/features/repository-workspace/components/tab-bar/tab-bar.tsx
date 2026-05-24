@@ -7,7 +7,7 @@ import {
   IconHome,
   IconPlus,
   IconX,
-} from "@/components/icons";
+} from "@/shared/components/icons/icons";
 import type { TabBarProps } from "./types";
 
 const branchIcon = (

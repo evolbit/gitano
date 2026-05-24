@@ -7,7 +7,7 @@ import {
 import {
   rehydrateWorkspaceUiStore,
   useWorkspaceUiStore,
-} from "@/features/repository-workspace/stores/workspace-ui-store";
+} from "@/features/repository-workspace";
 
 export async function applyWindowConstraints() {
   try {

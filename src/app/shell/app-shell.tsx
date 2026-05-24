@@ -1,11 +1,11 @@
 import { Tabs } from "@mantine/core";
-import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState, type MouseEvent } from "react";
-import HomePage from "@/components/home-page/home-page";
+import HomePage from "./home-page/home-page";
 import { useRepoRealtimeEvents } from "@/app/hooks/use-repo-realtime-events";
 import { SettingsWindow } from "@/features/settings";
 import { RepoTabLayout, TabBar } from "@/features/repository-workspace";
-import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
+import { useRepoStore } from "@/features/repository-workspace";
+import { listenToEvent } from "@/shared/platform/tauri/events";
 
 const HOME_TAB = {
   id: "home",
@@ -44,7 +44,7 @@ export function AppShell() {
   }, [activeTab, tabs, setActiveTab]);
 
   useEffect(() => {
-    const unlisten = listen<string>("menu-event", (event) => {
+    const unlisten = listenToEvent<string>("menu-event", (event) => {
       switch (event.payload) {
         case "new_tab":
           break;

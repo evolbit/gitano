@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
+import { useRepoStore } from "@/features/repository-workspace";
 import { APP_EVENTS } from "@/shared/config/events";
 import { useRepoRealtimeEvents } from "./use-repo-realtime-events";
 import type { RepoChangedEventPayload } from "@/shared/api/git/realtime";

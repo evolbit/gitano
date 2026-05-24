@@ -1,0 +1,85 @@
+import { getFileName, getParentPath } from "@/shared/lib/path";
+import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import { memo } from "react";
+import { ChangesExplorerStatusIcon } from "../changes-explorer-status-icon/changes-explorer-status-icon";
+import { FileSelectionCheckbox } from "../file-selection-checkbox/file-selection-checkbox";
+import { ChangesExplorerCheckboxState, isUntrackedFile } from "../../utils";
+
+type FileRowProps = {
+  file: ChangesExplorerFile;
+  selectedPath: string | null;
+  showFileCheckboxes: boolean;
+  checkboxState: ChangesExplorerCheckboxState;
+  onSelectFile: (file: ChangesExplorerFile) => void;
+  onOpenFileContextMenu: (
+    file: ChangesExplorerFile,
+    x: number,
+    y: number,
+  ) => void;
+  onToggleFileSelection: (file: ChangesExplorerFile) => void;
+  alignCountColumnWithHeaderActions?: boolean;
+};
+
+export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
+  file,
+  selectedPath,
+  showFileCheckboxes,
+  checkboxState,
+  onSelectFile,
+  onOpenFileContextMenu,
+  onToggleFileSelection,
+  alignCountColumnWithHeaderActions = false,
+}: FileRowProps) {
+  const isSelected = selectedPath === file.path;
+  const fileName = getFileName(file.path);
+  const parentPath = getParentPath(file.path);
+
+  return (
+    <button
+      type="button"
+      data-file-path={file.path}
+      className={`flex h-7 w-full items-center gap-1.5 overflow-hidden border-b border-transparent px-2 text-left text-sm transition-colors ${
+        isSelected
+          ? "bg-blue-500/15 text-blue-200 ring-1 ring-inset ring-blue-400"
+          : "text-zinc-400 hover:bg-background-emphasis"
+      }`}
+      onClick={() => onSelectFile(file)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelectFile(file);
+        onOpenFileContextMenu(file, e.clientX, e.clientY);
+      }}
+    >
+      <ChangesExplorerStatusIcon file={file} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="truncate">{fileName}</span>
+          {parentPath ? (
+            <span className="truncate text-zinc-400">{parentPath}</span>
+          ) : null}
+        </div>
+      </div>
+      {!isUntrackedFile(file) ? (
+        <div
+          className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
+            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+          }`}
+        >
+          <span className="min-w-0 text-right text-lime-400">
+            +{file.insertions}
+          </span>
+          <span className="min-w-0 text-right text-rose-400">
+            -{file.deletions}
+          </span>
+        </div>
+      ) : null}
+      {showFileCheckboxes ? (
+        <FileSelectionCheckbox
+          checkboxState={checkboxState}
+          onToggle={() => onToggleFileSelection(file)}
+        />
+      ) : null}
+    </button>
+  );
+});

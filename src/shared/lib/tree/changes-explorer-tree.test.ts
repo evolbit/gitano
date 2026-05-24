@@ -20,8 +20,8 @@ describe("changes explorer tree helpers", () => {
   it("builds compressed folder trees with folders before files", () => {
     const files = [
       file("README.md"),
-      file("src/components/button.tsx"),
-      file("src/components/input.tsx"),
+      file("src/shared/ui/button.tsx"),
+      file("src/shared/ui/input.tsx"),
       file("docs/guides/install.md"),
     ];
 
@@ -29,17 +29,17 @@ describe("changes explorer tree helpers", () => {
 
     expect(tree.map((node) => node.name)).toEqual([
       "docs/guides",
-      "src/components",
+      "src/shared/ui",
       "README.md",
     ]);
     expect(Array.from(collectFolderPaths(tree))).toEqual([
       "docs/guides",
-      "src/components",
+      "src/shared/ui",
     ]);
     expect(collectFilesFromTree(tree).map((entry) => entry.path)).toEqual([
       "docs/guides/install.md",
-      "src/components/button.tsx",
-      "src/components/input.tsx",
+      "src/shared/ui/button.tsx",
+      "src/shared/ui/input.tsx",
       "README.md",
     ]);
   });

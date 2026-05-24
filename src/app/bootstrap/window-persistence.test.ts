@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useWorkspaceUiStore } from "@/features/repository-workspace/stores/workspace-ui-store";
+import { useWorkspaceUiStore } from "@/features/repository-workspace";
 import { REPO_LAYOUT } from "@/shared/config/layout";
 import { applyWindowConstraints } from "./window-persistence";
 

@@ -1,5 +1,5 @@
-export { MarkdownComposer } from "./markdown-composer";
-export { MarkdownRenderer } from "./markdown-renderer";
+export { MarkdownComposer } from "./components/markdown-composer/markdown-composer";
+export { MarkdownRenderer } from "./components/markdown-renderer/markdown-renderer";
 export {
   addReviewThreadReply,
   commentsForReviewAnchor,
@@ -13,6 +13,6 @@ export {
   toReviewThreadAnchor,
   updateReviewThreadComment,
   upsertReviewThreadComment,
-} from "./review-thread-state";
-export { ReviewThreadView } from "./review-thread";
+} from "./utils/review-thread-state";
+export { ReviewThreadView } from "./components/review-thread/review-thread";
 export type * from "./types";

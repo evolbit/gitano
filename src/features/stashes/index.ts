@@ -1,2 +1,2 @@
-export { default as StashesPanel } from "./stashes-panel";
+export { default as StashesPanel } from "./components/stashes-panel/stashes-panel";
 

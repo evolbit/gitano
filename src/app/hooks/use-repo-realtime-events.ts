@@ -6,7 +6,7 @@ import {
 } from "@/shared/api/git/realtime";
 import { APP_EVENTS } from "@/shared/config/events";
 import { listenToEvent } from "@/shared/platform/tauri/events";
-import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
+import { useRepoStore } from "@/features/repository-workspace";
 
 const DEDUPE_WINDOW_MS = 150;
 
