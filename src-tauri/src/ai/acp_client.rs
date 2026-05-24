@@ -471,53 +471,75 @@ impl AcpProcessClient {
     }
 
     fn handle_message(&mut self, message: RpcMessage) -> Result<(), String> {
-        match (message.id, message.method.as_deref(), message.params) {
-            (None, Some("session/update"), Some(params)) => {
-                if let Some(event) = normalize_session_update(&self.request, &params) {
-                    if event.kind == ExternalAiRunEventKind::Text {
-                        self.transcript.push_str(&event.message);
-                    }
-                    let kind = event.kind;
-                    let message = event.message.clone();
-                    let _ = self.app.emit(EXTERNAL_AI_RUN_EVENT, event);
-                    emit_compatible_run_progress(&self.app, &self.request, kind, message);
-                }
-                Ok(())
+        match (message.id, message.method, message.params) {
+            (None, Some(method), params) => self.handle_notification(&method, params),
+            (Some(id), Some(method), params) => self.handle_client_request(id, &method, params),
+            _ => Ok(()),
+        }
+    }
+
+    fn handle_notification(&mut self, method: &str, params: Option<Value>) -> Result<(), String> {
+        if method != "session/update" {
+            return Ok(());
+        }
+
+        let Some(params) = params else {
+            return Ok(());
+        };
+        self.emit_session_update(&params);
+        Ok(())
+    }
+
+    fn emit_session_update(&mut self, params: &Value) {
+        if let Some(event) = normalize_session_update(&self.request, params) {
+            if event.kind == ExternalAiRunEventKind::Text {
+                self.transcript.push_str(&event.message);
             }
-            (Some(id), Some("fs/read_text_file"), Some(params)) => {
-                self.handle_read_text_file(id, params)
-            }
-            (Some(id), Some("fs/write_text_file"), params) => {
-                self.emit_event(
-                    ExternalAiRunEventKind::PermissionDenied,
-                    "External agent file writes are disabled.".to_string(),
-                    params,
-                );
-                self.respond_error(
-                    id,
-                    -32000,
-                    "Gitano does not allow external agents to modify repository files.",
-                )
-            }
-            (Some(id), Some("session/request_permission"), Some(params)) => {
+            let kind = event.kind;
+            let message = event.message.clone();
+            let _ = self.app.emit(EXTERNAL_AI_RUN_EVENT, event);
+            emit_compatible_run_progress(&self.app, &self.request, kind, message);
+        }
+    }
+
+    fn handle_client_request(
+        &mut self,
+        id: Value,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), String> {
+        match (method, params) {
+            ("fs/read_text_file", Some(params)) => self.handle_read_text_file(id, params),
+            ("fs/write_text_file", params) => self.deny_file_write(id, params),
+            ("session/request_permission", Some(params)) => {
                 self.handle_permission_request(id, params)
             }
-            (Some(id), Some("terminal/create"), Some(params)) => {
-                self.handle_terminal_create(id, params)
+            (method, params) if method.starts_with("terminal/") => {
+                self.handle_terminal_request(id, method, params)
             }
-            (Some(id), Some("terminal/output"), Some(params)) => {
-                self.handle_terminal_output(id, params)
-            }
-            (Some(id), Some("terminal/wait_for_exit"), Some(params)) => {
+            (method, _) => self.respond_error(
+                id,
+                -32601,
+                &format!("Unsupported ACP client method: {}", method),
+            ),
+        }
+    }
+
+    fn handle_terminal_request(
+        &mut self,
+        id: Value,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), String> {
+        match (method, params) {
+            ("terminal/create", Some(params)) => self.handle_terminal_create(id, params),
+            ("terminal/output", Some(params)) => self.handle_terminal_output(id, params),
+            ("terminal/wait_for_exit", Some(params)) => {
                 self.handle_terminal_wait_for_exit(id, params)
             }
-            (Some(id), Some("terminal/kill"), Some(params)) => {
-                self.handle_terminal_kill(id, params)
-            }
-            (Some(id), Some("terminal/release"), Some(params)) => {
-                self.handle_terminal_release(id, params)
-            }
-            (Some(id), Some(method), params) if method.starts_with("terminal/") => {
+            ("terminal/kill", Some(params)) => self.handle_terminal_kill(id, params),
+            ("terminal/release", Some(params)) => self.handle_terminal_release(id, params),
+            (method, params) => {
                 self.emit_event(
                     ExternalAiRunEventKind::PermissionDenied,
                     format!("External agent terminal request unsupported: {}", method),
@@ -529,13 +551,20 @@ impl AcpProcessClient {
                     &format!("Unsupported ACP terminal method: {}", method),
                 )
             }
-            (Some(id), Some(method), _) => self.respond_error(
-                id,
-                -32601,
-                &format!("Unsupported ACP client method: {}", method),
-            ),
-            _ => Ok(()),
         }
+    }
+
+    fn deny_file_write(&mut self, id: Value, params: Option<Value>) -> Result<(), String> {
+        self.emit_event(
+            ExternalAiRunEventKind::PermissionDenied,
+            "External agent file writes are disabled.".to_string(),
+            params,
+        );
+        self.respond_error(
+            id,
+            -32000,
+            "Gitano does not allow external agents to modify repository files.",
+        )
     }
 
     fn handle_read_text_file(&mut self, id: Value, params: Value) -> Result<(), String> {
@@ -617,53 +646,22 @@ impl AcpProcessClient {
             );
         };
 
-        let mut terminal_command = Command::new(&prepared_command.program);
-        terminal_command
-            .args(&prepared_command.args)
-            .current_dir(&request.cwd)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        terminal_command
-            .env_remove("GIT_EXTERNAL_DIFF")
-            .env_remove("GIT_DIFF_OPTS")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", empty_git_config_path())
-            .env("GIT_PAGER", "cat")
-            .env("NO_COLOR", "1");
-
-        let mut child = terminal_command
-            .spawn()
-            .map_err(|e| format!("Could not start external agent terminal command: {}", e))?;
         let terminal_id = self.next_terminal_id();
-        let output = Arc::new(Mutex::new(TerminalOutput::default()));
-        let display = prepared_command.display;
-
-        if let Some(stdout) = child.stdout.take() {
-            spawn_terminal_reader(
-                stdout,
-                output.clone(),
-                request.output_limit,
-                self.app.clone(),
-                self.request.clone(),
-                terminal_id.clone(),
-                "stdout",
-            );
-        }
-        if let Some(stderr) = child.stderr.take() {
-            spawn_terminal_reader(
-                stderr,
-                output.clone(),
-                request.output_limit,
-                self.app.clone(),
-                self.request.clone(),
-                terminal_id.clone(),
-                "stderr",
-            );
-        }
+        let terminal_session = spawn_terminal_session(
+            &request,
+            &prepared_command,
+            self.app.clone(),
+            self.request.clone(),
+            &terminal_id,
+        )?;
 
         self.emit_event(
             ExternalAiRunEventKind::ToolCall,
-            format!("{}\n{}", request.cwd.to_string_lossy(), display),
+            format!(
+                "{}\n{}",
+                request.cwd.to_string_lossy(),
+                prepared_command.display
+            ),
             Some(json!({
                 "terminalId": terminal_id,
                 "command": prepared_command.program,
@@ -671,8 +669,7 @@ impl AcpProcessClient {
                 "cwd": request.cwd.to_string_lossy(),
             })),
         );
-        self.terminals
-            .insert(terminal_id.clone(), TerminalSession { child, output });
+        self.terminals.insert(terminal_id.clone(), terminal_session);
         self.respond_result(id, json!({ "terminalId": terminal_id }))
     }
 
@@ -973,6 +970,58 @@ fn parse_terminal_create_request(
         cwd,
         output_limit,
     })
+}
+
+fn spawn_terminal_session(
+    request: &TerminalCreateRequest,
+    prepared_command: &PreparedTerminalCommand,
+    app: AppHandle,
+    prompt_request: ExternalAiPromptRequest,
+    terminal_id: &str,
+) -> Result<TerminalSession, String> {
+    let mut terminal_command = Command::new(&prepared_command.program);
+    terminal_command
+        .args(&prepared_command.args)
+        .current_dir(&request.cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    terminal_command
+        .env_remove("GIT_EXTERNAL_DIFF")
+        .env_remove("GIT_DIFF_OPTS")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", empty_git_config_path())
+        .env("GIT_PAGER", "cat")
+        .env("NO_COLOR", "1");
+
+    let mut child = terminal_command
+        .spawn()
+        .map_err(|e| format!("Could not start external agent terminal command: {}", e))?;
+    let output = Arc::new(Mutex::new(TerminalOutput::default()));
+
+    if let Some(stdout) = child.stdout.take() {
+        spawn_terminal_reader(
+            stdout,
+            output.clone(),
+            request.output_limit,
+            app.clone(),
+            prompt_request.clone(),
+            terminal_id.to_string(),
+            "stdout",
+        );
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_terminal_reader(
+            stderr,
+            output.clone(),
+            request.output_limit,
+            app,
+            prompt_request,
+            terminal_id.to_string(),
+            "stderr",
+        );
+    }
+
+    Ok(TerminalSession { child, output })
 }
 
 fn spawn_terminal_reader<R>(

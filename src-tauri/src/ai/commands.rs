@@ -49,6 +49,24 @@ use tauri::{AppHandle, Emitter};
 
 const BRANCH_REVIEW_PARALLEL_CALLS: usize = 5;
 
+struct LocalAiRunEnvironment {
+    client: OllamaClient,
+    preferences: LocalAiPreferences,
+    model_id: String,
+    model: LocalAiModelEntry,
+    model_digest: String,
+}
+
+struct RunCacheRequest<'a> {
+    prompt_version: &'a str,
+    model_digest: &'a str,
+    prompt_instruction: &'a str,
+    input_digest: &'a str,
+    force_refresh_message: &'a str,
+    cached_lookup_message: &'a str,
+    cache_hit_message: &'a str,
+}
+
 #[tauri::command]
 pub fn ai_get_entitlement_status() -> LocalAiEntitlementStatus {
     entitlement_status()
@@ -457,17 +475,47 @@ async fn run_action_inner(
     request: &LocalAiRunRequest,
 ) -> Result<LocalAiRunResult, String> {
     ensure_entitled()?;
-    let stored_preferences = load_preferences();
-    if request
-        .model_id
-        .as_deref()
-        .map_or(true, |model_id| model_id.trim().is_empty())
-    {
+    if request_prefers_configured_engine(request) {
+        let stored_preferences = load_preferences();
         if let Some(agent_id) = selected_external_agent_id(request, &stored_preferences) {
             return run_external_agent_action(app, request, agent_id).await;
         }
     }
 
+    let local_run = prepare_local_run_environment(request).await?;
+    if request.action_kind == LocalAiActionKind::BranchReview {
+        let LocalAiRunEnvironment {
+            client,
+            preferences,
+            model_id,
+            model,
+            model_digest,
+        } = local_run;
+        return run_segmented_branch_review(
+            app,
+            request,
+            client,
+            model_id,
+            &model,
+            model_digest,
+            &preferences,
+        )
+        .await;
+    }
+
+    run_local_model_action(app, request, local_run).await
+}
+
+fn request_prefers_configured_engine(request: &LocalAiRunRequest) -> bool {
+    request
+        .model_id
+        .as_deref()
+        .map_or(true, |model_id| model_id.trim().is_empty())
+}
+
+async fn prepare_local_run_environment(
+    request: &LocalAiRunRequest,
+) -> Result<LocalAiRunEnvironment, String> {
     start_managed_runtime_if_installed().await?;
     let client = OllamaClient::from_env();
     let runtime = client.runtime_status().await;
@@ -508,32 +556,103 @@ async fn run_action_inner(
         .clone()
         .unwrap_or_else(|| format!("{}:unknown-digest", model_id));
 
-    if request.action_kind == LocalAiActionKind::BranchReview {
-        return run_segmented_branch_review(
-            app,
-            request,
-            client,
-            model_id,
-            &model,
-            model_digest,
-            &preferences,
-        )
-        .await;
+    Ok(LocalAiRunEnvironment {
+        client,
+        preferences,
+        model_id,
+        model,
+        model_digest,
+    })
+}
+
+async fn run_local_model_action(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    local_run: LocalAiRunEnvironment,
+) -> Result<LocalAiRunResult, String> {
+    let effective_context =
+        effective_context_window(request.action_kind, local_run.model.context_window);
+    let git_context = build_local_action_context(app, request, effective_context)?;
+    let prompt_instruction =
+        effective_prompt_instruction(&local_run.preferences, request.action_kind);
+    let (cache_key, cached) = prepare_run_cache(
+        app,
+        request,
+        RunCacheRequest {
+            prompt_version: PROMPT_VERSION,
+            model_digest: &local_run.model_digest,
+            prompt_instruction: prompt_instruction.as_ref(),
+            input_digest: &git_context.input_digest,
+            force_refresh_message: "Bypassing cached analysis",
+            cached_lookup_message: "Checking cache",
+            cache_hit_message: "Using cached analysis",
+        },
+    );
+    if let Some(cached) = cached {
+        return Ok(cached);
     }
 
-    let effective_context = effective_context_window(request.action_kind, model.context_window);
-    let git_context = match request.action_kind {
-        super::types::LocalAiActionKind::CommitAnalysis => {
+    let prompt = build_prompt_with_instruction(&git_context, &prompt_instruction);
+    let generation_context = generation_context_window_for_prompt(
+        request.action_kind,
+        local_run.model.context_window,
+        prompt.len(),
+    );
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::RunningModel,
+        "Running local model",
+        None,
+    );
+    let raw_response = local_run
+        .client
+        .generate_json(
+            &local_run.model_id,
+            &prompt,
+            request.action_kind,
+            generation_context,
+            &keep_alive_duration(&local_run.preferences),
+        )
+        .await?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::FormattingResult,
+        formatting_message(request.action_kind),
+        None,
+    );
+    let structured = parse_structured_result(request.action_kind, &raw_response)?;
+    let result = LocalAiRunResult {
+        action_kind: request.action_kind,
+        model_id: local_run.model_id,
+        model_digest: local_run.model_digest,
+        prompt_version: PROMPT_VERSION.to_string(),
+        input_digest: git_context.input_digest,
+        from_cache: false,
+        metadata: git_context.metadata,
+        result: structured,
+    };
+
+    complete_run(app, request, Some(cache_key), result)
+}
+
+fn build_local_action_context(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    effective_context: usize,
+) -> Result<super::git_context::LocalAiGitContext, String> {
+    match request.action_kind {
+        LocalAiActionKind::CommitAnalysis => {
             let sha = request
                 .commit_sha
                 .as_deref()
                 .ok_or_else(|| "Commit SHA is required for commit analysis.".to_string())?;
             build_commit_analysis_context(&request.repo_path, sha, effective_context, |step| {
                 emit_commit_context_progress(app, request, step);
-            })?
+            })
         }
-        super::types::LocalAiActionKind::BranchAnalysis
-        | super::types::LocalAiActionKind::BranchReview => {
+        LocalAiActionKind::BranchAnalysis | LocalAiActionKind::BranchReview => {
             let base_ref = request
                 .base_ref
                 .as_deref()
@@ -550,75 +669,10 @@ async fn run_action_inner(
                 request.action_kind,
                 effective_context,
                 |step| emit_branch_context_progress(app, request, step),
-            )?
+            )
         }
-        _ => build_git_context(request, effective_context)?,
-    };
-    let prompt_instruction = effective_prompt_instruction(&preferences, request.action_kind);
-    emit_cache_check_progress(app, request, "Bypassing cached analysis", "Checking cache");
-    let cache_key = build_cache_key(
-        request.action_kind,
-        PROMPT_VERSION,
-        &model_digest,
-        &prompt_instruction,
-        &request.repo_path,
-        &git_context.input_digest,
-    );
-
-    if let Some(cached) = cached_run_result(app, request, &cache_key, "Using cached analysis") {
-        return Ok(cached);
+        _ => build_git_context(request, effective_context),
     }
-
-    let prompt = build_prompt_with_instruction(&git_context, &prompt_instruction);
-    let generation_context = generation_context_window_for_prompt(
-        request.action_kind,
-        model.context_window,
-        prompt.len(),
-    );
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::RunningModel,
-        "Running local model",
-        None,
-    );
-    let raw_response = client
-        .generate_json(
-            &model_id,
-            &prompt,
-            request.action_kind,
-            generation_context,
-            &keep_alive_duration(&preferences),
-        )
-        .await?;
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::FormattingResult,
-        formatting_message(request.action_kind),
-        None,
-    );
-    let structured = parse_structured_result(request.action_kind, &raw_response)?;
-    let result = LocalAiRunResult {
-        action_kind: request.action_kind,
-        model_id,
-        model_digest,
-        prompt_version: PROMPT_VERSION.to_string(),
-        input_digest: git_context.input_digest,
-        from_cache: false,
-        metadata: git_context.metadata,
-        result: structured,
-    };
-
-    put_cached_result(cache_key, &result)?;
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::Completed,
-        completed_message(request.action_kind),
-        None,
-    );
-    Ok(result)
 }
 
 async fn run_external_agent_action(
@@ -644,31 +698,26 @@ async fn run_external_agent_action(
         request.action_kind,
         &request.external_agent_option_overrides,
     );
-    emit_cache_check_progress(
-        app,
-        request,
-        "Bypassing cached external analysis",
-        "Checking external agent cache",
-    );
-
     let agent_digest = external_agent_digest(
         agent_id,
         status.version.as_deref(),
         &external_agent_option_values,
     );
     let prompt_instruction = effective_prompt_instruction(&preferences, request.action_kind);
-    let cache_key = build_cache_key(
-        request.action_kind,
-        EXTERNAL_AGENT_PROMPT_VERSION,
-        &agent_digest,
-        &prompt_instruction,
-        &request.repo_path,
-        &git_context.input_digest,
+    let (cache_key, cached) = prepare_run_cache(
+        app,
+        request,
+        RunCacheRequest {
+            prompt_version: EXTERNAL_AGENT_PROMPT_VERSION,
+            model_digest: &agent_digest,
+            prompt_instruction: prompt_instruction.as_ref(),
+            input_digest: &git_context.input_digest,
+            force_refresh_message: "Bypassing cached external analysis",
+            cached_lookup_message: "Checking external agent cache",
+            cache_hit_message: "Using cached external analysis",
+        },
     );
-
-    if let Some(cached) =
-        cached_run_result(app, request, &cache_key, "Using cached external analysis")
-    {
+    if let Some(cached) = cached {
         return Ok(cached);
     }
 
@@ -719,15 +768,7 @@ async fn run_external_agent_action(
         result: structured,
     };
 
-    put_cached_result(cache_key, &result)?;
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::Completed,
-        completed_message(request.action_kind),
-        None,
-    );
-    Ok(result)
+    complete_run(app, request, Some(cache_key), result)
 }
 
 fn emit_cache_check_progress(
@@ -749,6 +790,29 @@ fn emit_cache_check_progress(
         message,
         None,
     );
+}
+
+fn prepare_run_cache(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    cache: RunCacheRequest<'_>,
+) -> (String, Option<LocalAiRunResult>) {
+    emit_cache_check_progress(
+        app,
+        request,
+        cache.force_refresh_message,
+        cache.cached_lookup_message,
+    );
+    let cache_key = build_cache_key(
+        request.action_kind,
+        cache.prompt_version,
+        cache.model_digest,
+        cache.prompt_instruction,
+        &request.repo_path,
+        cache.input_digest,
+    );
+    let cached = cached_run_result(app, request, &cache_key, cache.cache_hit_message);
+    (cache_key, cached)
 }
 
 fn cached_run_result(
@@ -777,6 +841,25 @@ fn cached_run_result(
         None,
     );
     Some(cached)
+}
+
+fn complete_run(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    cache_key: Option<String>,
+    result: LocalAiRunResult,
+) -> Result<LocalAiRunResult, String> {
+    if let Some(cache_key) = cache_key {
+        put_cached_result(cache_key, &result)?;
+    }
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::Completed,
+        completed_message(request.action_kind),
+        None,
+    );
+    Ok(result)
 }
 
 fn external_agent_digest(
@@ -952,17 +1035,20 @@ async fn run_segmented_branch_review(
     )?;
     let prompt_instruction =
         effective_prompt_instruction(preferences, LocalAiActionKind::BranchReview).into_owned();
-    emit_cache_check_progress(app, request, "Bypassing cached review", "Checking cache");
-    let cache_key = build_cache_key(
-        request.action_kind,
-        PROMPT_VERSION,
-        &model_digest,
-        &prompt_instruction,
-        &request.repo_path,
-        &file_contexts.input_digest,
+    let (cache_key, cached) = prepare_run_cache(
+        app,
+        request,
+        RunCacheRequest {
+            prompt_version: PROMPT_VERSION,
+            model_digest: &model_digest,
+            prompt_instruction: prompt_instruction.as_str(),
+            input_digest: &file_contexts.input_digest,
+            force_refresh_message: "Bypassing cached review",
+            cached_lookup_message: "Checking cache",
+            cache_hit_message: "Using cached review",
+        },
     );
-
-    if let Some(cached) = cached_run_result(app, request, &cache_key, "Using cached review") {
+    if let Some(cached) = cached {
         return Ok(cached);
     }
 
@@ -1064,17 +1150,7 @@ async fn run_segmented_branch_review(
         result: structured,
     };
 
-    if !had_failures {
-        put_cached_result(cache_key, &result)?;
-    }
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::Completed,
-        completed_message(request.action_kind),
-        None,
-    );
-    Ok(result)
+    complete_run(app, request, (!had_failures).then_some(cache_key), result)
 }
 
 fn merge_branch_review_blocks(
