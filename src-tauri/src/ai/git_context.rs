@@ -1,8 +1,16 @@
 use super::context_window::prompt_context_budget_chars;
 use super::types::{LocalAiActionKind, LocalAiRunMetadata, LocalAiRunRequest};
 use sha2::{Digest, Sha256};
-use std::fs;
 use std::process::Command;
+
+mod branch_refs;
+mod conflicts;
+mod review_order;
+use branch_refs::{
+    read_branch_diff_fingerprint, read_branch_diff_summary, resolve_branch_comparison_refs,
+};
+use conflicts::{conflict_context, conflict_external_agent_context};
+use review_order::{parse_name_status_paths, prioritized_branch_diff};
 
 const DIFF_CONTEXT_LINES: usize = 3;
 const COMMIT_MESSAGE_DIFF_CONTEXT_LINES: usize = 1;
@@ -289,80 +297,6 @@ where
         input_digest: digest,
         metadata: empty_metadata(),
     })
-}
-
-struct BranchComparisonRefs {
-    base_sha: String,
-    head_sha: String,
-    from_ref: String,
-}
-
-struct BranchDiffSummary {
-    name_status: String,
-    stat: String,
-}
-
-fn resolve_branch_comparison_refs<F>(
-    repo_path: &str,
-    base_ref: &str,
-    head_ref: &str,
-    comparison_mode: &str,
-    on_step: &mut F,
-) -> Result<BranchComparisonRefs, String>
-where
-    F: FnMut(LocalAiBranchContextStep),
-{
-    on_step(LocalAiBranchContextStep::ResolvingRefs);
-    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
-    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
-    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
-    let from_ref = if is_merge_base_comparison(comparison_mode) {
-        run_git(repo_path, &["merge-base", base_ref, head_ref])?
-    } else {
-        base_sha.clone()
-    };
-
-    Ok(BranchComparisonRefs {
-        base_sha,
-        head_sha: head_sha.trim().to_string(),
-        from_ref: from_ref.trim().to_string(),
-    })
-}
-
-fn is_merge_base_comparison(comparison_mode: &str) -> bool {
-    comparison_mode == "mergeBase" || comparison_mode == "merge-base"
-}
-
-fn read_branch_diff_summary(
-    repo_path: &str,
-    refs: &BranchComparisonRefs,
-) -> Result<BranchDiffSummary, String> {
-    Ok(BranchDiffSummary {
-        name_status: run_git(
-            repo_path,
-            &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
-        )?,
-        stat: run_git(
-            repo_path,
-            &["diff", "--stat", &refs.from_ref, &refs.head_sha],
-        )?,
-    })
-}
-
-fn read_branch_diff_fingerprint(
-    repo_path: &str,
-    refs: &BranchComparisonRefs,
-) -> Result<String, String> {
-    run_git(
-        repo_path,
-        &[
-            "diff",
-            "--raw",
-            "--find-renames",
-            &refs.from_ref,
-            &refs.head_sha,
-        ],
-    )
 }
 
 fn branch_external_agent_context_with_progress<F>(
@@ -776,138 +710,6 @@ where
     })
 }
 
-fn parse_name_status_paths(name_status: &str) -> Vec<String> {
-    name_status
-        .lines()
-        .filter_map(|line| line.split('\t').next_back())
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(ToString::to_string)
-        .collect()
-}
-
-fn prioritized_branch_diff(
-    repo_path: &str,
-    from_ref: &str,
-    head_sha: &str,
-    name_status: &str,
-) -> Result<String, String> {
-    let mut file_paths = parse_name_status_paths(name_status)
-        .into_iter()
-        .enumerate()
-        .collect::<Vec<_>>();
-    file_paths.sort_by_key(|(index, path)| (review_path_priority(path), *index));
-
-    let mut diffs = Vec::new();
-    for (_, file_path) in file_paths {
-        let diff = run_git(
-            repo_path,
-            &[
-                "diff",
-                "--find-renames",
-                &format!("-U{}", DIFF_CONTEXT_LINES),
-                from_ref,
-                head_sha,
-                "--",
-                &file_path,
-            ],
-        )?;
-
-        if !diff.trim().is_empty() {
-            diffs.push(diff);
-        }
-    }
-
-    Ok(diffs.join("\n"))
-}
-
-fn review_path_priority(path: &str) -> u8 {
-    let lower = path.to_ascii_lowercase();
-
-    if is_test_path(&lower) {
-        return 1;
-    }
-
-    if is_source_path(&lower) {
-        return 0;
-    }
-
-    if is_documentation_path(&lower) {
-        return 4;
-    }
-
-    if is_config_path(&lower) {
-        return 2;
-    }
-
-    3
-}
-
-fn is_source_path(path: &str) -> bool {
-    let extension = path.rsplit('.').next().unwrap_or_default();
-    path.starts_with("src/")
-        || path.contains("/src/")
-        || matches!(
-            extension,
-            "c" | "cc"
-                | "cpp"
-                | "cs"
-                | "ex"
-                | "exs"
-                | "go"
-                | "h"
-                | "hpp"
-                | "java"
-                | "js"
-                | "jsx"
-                | "kt"
-                | "php"
-                | "py"
-                | "rb"
-                | "rs"
-                | "scala"
-                | "swift"
-                | "ts"
-                | "tsx"
-                | "vue"
-                | "svelte"
-        )
-}
-
-fn is_test_path(path: &str) -> bool {
-    path.contains("__tests__/")
-        || path.contains("/tests/")
-        || path.starts_with("tests/")
-        || path.contains(".test.")
-        || path.contains(".spec.")
-}
-
-fn is_config_path(path: &str) -> bool {
-    matches!(
-        path,
-        "cargo.toml"
-            | "cargo.lock"
-            | "package.json"
-            | "package-lock.json"
-            | "pnpm-lock.yaml"
-            | "yarn.lock"
-            | "tsconfig.json"
-            | "vite.config.ts"
-            | "vite.config.js"
-    ) || matches!(
-        path.rsplit('.').next().unwrap_or_default(),
-        "json" | "toml" | "yaml" | "yml"
-    )
-}
-
-fn is_documentation_path(path: &str) -> bool {
-    path.starts_with("docs/")
-        || path.starts_with("openspec/")
-        || path.ends_with(".md")
-        || path.ends_with(".mdx")
-        || path.ends_with(".txt")
-}
-
 fn branch_action_label(action_kind: LocalAiActionKind) -> &'static str {
     match action_kind {
         LocalAiActionKind::BranchReview => {
@@ -915,85 +717,6 @@ fn branch_action_label(action_kind: LocalAiActionKind) -> &'static str {
         }
         _ => "Action: Analyze a branch or PR-style comparison",
     }
-}
-
-fn conflict_external_agent_context(repo_path: &str) -> Result<LocalAiGitContext, String> {
-    let files = run_git(repo_path, &["diff", "--name-only", "--diff-filter=U"])?;
-    let file_paths: Vec<String> = files
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
-        .collect();
-
-    if file_paths.is_empty() {
-        return Err("No merge conflicts are available for AI suggestions.".to_string());
-    }
-
-    let unmerged_index = run_git(repo_path, &["ls-files", "-u"])?;
-    let content = format!(
-        "Action: Suggest merge conflict resolutions\nRepository: {}\n\nConflicted files:\n{}\n\nUnmerged index fingerprint:\n{}\n\nInspect conflicts yourself with read-only commands such as:\n- git diff --name-only --diff-filter=U\n- git ls-files -u\n- git show :1:<path>\n- git show :2:<path>\n- git show :3:<path>\nYou may also read conflicted worktree files through ACP file reads. Do not modify files.",
-        repo_path,
-        file_paths.join("\n"),
-        unmerged_index
-    );
-    let digest = digest_parts(&[
-        "externalMergeConflictSuggestions",
-        &file_paths.join("\0"),
-        &unmerged_index,
-    ]);
-
-    Ok(LocalAiGitContext {
-        action_kind: LocalAiActionKind::MergeConflictSuggestions,
-        title: "merge conflicts".to_string(),
-        prompt_context: content,
-        input_digest: digest,
-        metadata: empty_metadata(),
-    })
-}
-
-fn conflict_context(repo_path: &str) -> Result<LocalAiGitContext, String> {
-    let files = run_git(repo_path, &["diff", "--name-only", "--diff-filter=U"])?;
-    let file_paths: Vec<String> = files
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
-        .collect();
-
-    if file_paths.is_empty() {
-        return Err("No merge conflicts are available for AI suggestions.".to_string());
-    }
-
-    let mut sections = Vec::new();
-    for file_path in &file_paths {
-        let base = run_git(repo_path, &["show", &format!(":1:{}", file_path)]).unwrap_or_default();
-        let ours = run_git(repo_path, &["show", &format!(":2:{}", file_path)]).unwrap_or_default();
-        let theirs =
-            run_git(repo_path, &["show", &format!(":3:{}", file_path)]).unwrap_or_default();
-        let worktree =
-            fs::read_to_string(format!("{}/{}", repo_path, file_path)).unwrap_or_default();
-
-        sections.push(format!(
-            "File: {}\n\nBase version:\n{}\n\nOurs version:\n{}\n\nTheirs version:\n{}\n\nCurrent conflicted worktree file:\n{}",
-            file_path, base, ours, theirs, worktree
-        ));
-    }
-
-    let context = format!(
-        "Action: Suggest merge conflict resolutions\nConflicted files:\n{}\n\n{}",
-        file_paths.join("\n"),
-        sections.join("\n\n---\n\n")
-    );
-    let digest = digest_parts(&["mergeConflictSuggestions", &file_paths.join("\0"), &context]);
-
-    Ok(LocalAiGitContext {
-        action_kind: LocalAiActionKind::MergeConflictSuggestions,
-        title: "merge conflicts".to_string(),
-        prompt_context: context,
-        input_digest: digest,
-        metadata: empty_metadata(),
-    })
 }
 
 fn apply_context_budget(context: LocalAiGitContext, max_chars: usize) -> LocalAiGitContext {
@@ -1158,13 +881,6 @@ mod tests {
         );
         assert_eq!(context.action_kind, LocalAiActionKind::BranchReview);
         assert!(context.prompt_context.contains("Review changed code"));
-    }
-
-    #[test]
-    fn parses_name_status_paths_with_renames() {
-        let paths = parse_name_status_paths("M\tsrc/app.ts\nR100\tsrc/old.ts\tsrc/new.ts\n");
-
-        assert_eq!(paths, vec!["src/app.ts", "src/new.ts"]);
     }
 
     #[test]
