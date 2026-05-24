@@ -7,6 +7,7 @@ import {
   type DiffLineAnchor,
 } from "./diff-interaction-context";
 import type {
+  DiffDisplayMode,
   DiffHunkProps,
   DiffLine,
   SplitCell,
@@ -51,6 +52,8 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
   const renderLineAccessory = diffInteraction.renderLineAccessory;
   const renderLineBelow = diffInteraction.renderLineBelow;
   const renderLineBelowFullWidth = diffInteraction.renderLineBelowFullWidth;
+  const canExpandContext =
+    !hunk.is_new_file && canStage && !!handleExpandContext;
 
   return (
     <div
@@ -69,55 +72,33 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
         </span>
       </div>
 
-      {!hunk.is_new_file && canStage && handleExpandContext && (
+      {canExpandContext ? (
         <>
-          <div className="flex justify-center py-1">
-            <button
-              className="text-xs text-blue-400 hover:underline"
-              onClick={() => handleExpandContext(hunkIdx, "Above", 10)}
-            >
-              Show 10 lines above
-            </button>
-          </div>
-          {extraContext?.above?.map((line, i) =>
-            displayMode === "split" ? (
-              <SplitContextRow key={`above-${i}`} line={line} />
-            ) : (
-              <UnifiedLineRow
-                key={`above-${i}`}
-                line={line}
-                showHunkGutter={false}
-                showLineGutter={false}
-              />
-            ),
-          )}
+          <ExpandContextButton
+            onClick={() => handleExpandContext?.(hunkIdx, "Above", 10)}
+          >
+            Show 10 lines above
+          </ExpandContextButton>
+          <ContextRows
+            displayMode={displayMode}
+            lines={extraContext?.above ?? []}
+            keyPrefix="above"
+          />
         </>
-      )}
+      ) : null}
 
       {displayMode === "split"
         ? splitRows.map((row) => {
-            const rowStageCount = row.lineIdxs.filter((idx) =>
-              stagedSet.has(idx),
-            ).length;
-            const isRowChecked =
-              row.lineIdxs.length > 0 &&
-              (wholeFileStaged || rowStageCount === row.lineIdxs.length);
-            const isRowIndeterminate =
-              !wholeFileStaged &&
-              rowStageCount > 0 &&
-              rowStageCount < row.lineIdxs.length;
-            const blockStageCount = row.block
-              ? row.block.lineIdxs.filter((idx) => stagedSet.has(idx)).length
-              : 0;
-            const isBlockFullyStaged =
-              !!row.block &&
-              row.block.lineIdxs.length > 0 &&
-              (wholeFileStaged || blockStageCount === row.block.lineIdxs.length);
-            const isBlockPartiallyStaged =
-              !wholeFileStaged &&
-              !!row.block &&
-              blockStageCount > 0 &&
-              blockStageCount < row.block.lineIdxs.length;
+            const rowStageState = getStageState(
+              row.lineIdxs,
+              stagedSet,
+              wholeFileStaged,
+            );
+            const blockStageState = getBlockStageState(
+              row.block,
+              stagedSet,
+              wholeFileStaged,
+            );
 
             return (
               <SplitDiffRow
@@ -126,10 +107,10 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                 filePath={filePath}
                 hunkIdx={hunkIdx}
                 canStage={canRenderGutters}
-                isBlockFullyStaged={isBlockFullyStaged}
-                isBlockPartiallyStaged={isBlockPartiallyStaged}
-                isRowChecked={isRowChecked}
-                isRowIndeterminate={isRowIndeterminate}
+                isBlockFullyStaged={blockStageState.isFullyStaged}
+                isBlockPartiallyStaged={blockStageState.isPartiallyStaged}
+                isRowChecked={rowStageState.isFullyStaged}
+                isRowIndeterminate={rowStageState.isPartiallyStaged}
                 renderLineAccessory={renderLineAccessory}
                 renderLineBelow={renderLineBelow}
                 renderLineBelowFullWidth={renderLineBelowFullWidth}
@@ -208,18 +189,11 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
               isStageable && (wholeFileStaged || stagedSet.has(lineIdx));
             const block = blockByLineIdx.get(lineIdx);
             const isBlockStart = block?.startLineIdx === lineIdx;
-            const blockStagedCount = block
-              ? block.lineIdxs.filter((idx) => stagedSet.has(idx)).length
-              : 0;
-            const isBlockFullyStaged =
-              !!block &&
-              block.lineIdxs.length > 0 &&
-              (wholeFileStaged || blockStagedCount === block.lineIdxs.length);
-            const isBlockPartiallyStaged =
-              !wholeFileStaged &&
-              !!block &&
-              blockStagedCount > 0 &&
-              blockStagedCount < block.lineIdxs.length;
+            const blockStageState = getBlockStageState(
+              block,
+              stagedSet,
+              wholeFileStaged,
+            );
             const anchor = createDiffLineAnchor({
               filePath,
               hunkIdx,
@@ -237,8 +211,8 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
                 showHunkGutter={canRenderGutters}
                 showLineGutter={canRenderGutters && isStageable}
                 isBlockStart={isBlockStart}
-                isBlockFullyStaged={isBlockFullyStaged}
-                isBlockPartiallyStaged={isBlockPartiallyStaged}
+                isBlockFullyStaged={blockStageState.isFullyStaged}
+                isBlockPartiallyStaged={blockStageState.isPartiallyStaged}
                 onBlockMouseDown={
                   block && canRenderGutters && handleStageBlock
                     ? (event) => {
@@ -267,30 +241,20 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             );
           })}
 
-      {!hunk.is_new_file && canStage && handleExpandContext && (
+      {canExpandContext ? (
         <>
-          {extraContext?.below?.map((line, i) =>
-            displayMode === "split" ? (
-              <SplitContextRow key={`below-${i}`} line={line} />
-            ) : (
-              <UnifiedLineRow
-                key={`below-${i}`}
-                line={line}
-                showHunkGutter={false}
-                showLineGutter={false}
-              />
-            ),
-          )}
-          <div className="flex justify-center py-1">
-            <button
-              className="text-xs text-blue-400 hover:underline"
-              onClick={() => handleExpandContext(hunkIdx, "Below", 10)}
-            >
-              Show 10 lines below
-            </button>
-          </div>
+          <ContextRows
+            displayMode={displayMode}
+            lines={extraContext?.below ?? []}
+            keyPrefix="below"
+          />
+          <ExpandContextButton
+            onClick={() => handleExpandContext?.(hunkIdx, "Below", 10)}
+          >
+            Show 10 lines below
+          </ExpandContextButton>
         </>
-      )}
+      ) : null}
     </div>
   );
 };
@@ -298,6 +262,72 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
 const EMPTY_SET = new Set<number>();
 const SOURCE_WRAP_CLASS = "min-w-0 whitespace-pre-wrap break-words";
 const SOURCE_WRAP_STYLE: React.CSSProperties = { overflowWrap: "anywhere" };
+
+type StageState = {
+  isFullyStaged: boolean;
+  isPartiallyStaged: boolean;
+};
+
+function getStageState(
+  lineIdxs: number[],
+  stagedSet: ReadonlySet<number>,
+  wholeFileStaged: boolean,
+): StageState {
+  const stagedCount = lineIdxs.filter((idx) => stagedSet.has(idx)).length;
+
+  return {
+    isFullyStaged:
+      lineIdxs.length > 0 &&
+      (wholeFileStaged || stagedCount === lineIdxs.length),
+    isPartiallyStaged:
+      !wholeFileStaged && stagedCount > 0 && stagedCount < lineIdxs.length,
+  };
+}
+
+function getBlockStageState(
+  block: StageableBlock | undefined,
+  stagedSet: ReadonlySet<number>,
+  wholeFileStaged: boolean,
+): StageState {
+  return block
+    ? getStageState(block.lineIdxs, stagedSet, wholeFileStaged)
+    : { isFullyStaged: false, isPartiallyStaged: false };
+}
+
+const ExpandContextButton: React.FC<{
+  children: React.ReactNode;
+  onClick: () => void;
+}> = ({ children, onClick }) => (
+  <div className="flex justify-center py-1">
+    <button
+      className="text-xs text-blue-400 hover:underline"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  </div>
+);
+
+const ContextRows: React.FC<{
+  displayMode: DiffDisplayMode;
+  lines: DiffLine[];
+  keyPrefix: string;
+}> = ({ displayMode, lines, keyPrefix }) => (
+  <>
+    {lines.map((line, index) =>
+      displayMode === "split" ? (
+        <SplitContextRow key={`${keyPrefix}-${index}`} line={line} />
+      ) : (
+        <UnifiedLineRow
+          key={`${keyPrefix}-${index}`}
+          line={line}
+          showHunkGutter={false}
+          showLineGutter={false}
+        />
+      ),
+    )}
+  </>
+);
 
 function getStageableBlocks(lines: DiffLine[]): StageableBlock[] {
   const blocks: StageableBlock[] = [];
@@ -336,10 +366,13 @@ function getStageableBlocks(lines: DiffLine[]): StageableBlock[] {
 
 function buildSplitRows(lines: DiffLine[], blocks: StageableBlock[]): SplitRow[] {
   const rows: SplitRow[] = [];
+  const blockByStartLineIdx = new Map(
+    blocks.map((block) => [block.startLineIdx, block]),
+  );
   let idx = 0;
 
   while (idx < lines.length) {
-    const block = blocks.find((candidate) => candidate.startLineIdx === idx);
+    const block = blockByStartLineIdx.get(idx);
 
     if (!block) {
       const line = lines[idx];
@@ -419,12 +452,7 @@ const UnifiedLineRow: React.FC<{
   onMouseEnter,
 }) => {
   const baseColor = getLineTone(line);
-  const contentTone =
-    line.kind === "Add"
-      ? "bg-green-900/20"
-      : line.kind === "Del"
-        ? "bg-red-900/20"
-        : "bg-transparent";
+  const contentTone = getLineContentTone(line);
 
   return (
     <div>
@@ -565,7 +593,6 @@ const SplitDiffRow: React.FC<{
         <SplitSideCell
           cell={row.left}
           tone={leftTone}
-          anchor={leftAnchor}
           lineAccessory={
             leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
           }
@@ -599,7 +626,6 @@ const SplitDiffRow: React.FC<{
         <SplitSideCell
           cell={row.right}
           tone={rightTone}
-          anchor={rightAnchor}
           lineAccessory={
             rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
           }
@@ -650,7 +676,6 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
 const SplitSideCell: React.FC<{
   cell?: SplitCell;
   tone: string;
-  anchor?: DiffLineAnchor;
   lineAccessory?: React.ReactNode;
   lineBelow?: React.ReactNode;
   onMouseDown?: (e: React.MouseEvent) => void;
@@ -700,15 +725,11 @@ const CenterBlockGutter: React.FC<{
   className = "",
 }) => (
   <span
-    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${
-      show
-        ? onMouseDown
-          ? isBlockFullyStaged || isBlockPartiallyStaged
-            ? "bg-blue-600 text-white"
-            : "bg-zinc-600/30 text-zinc-400"
-          : "bg-zinc-800 text-zinc-500"
-        : "bg-zinc-800 text-zinc-500"
-    } ${className}`}
+    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${getBlockGutterTone(
+      show,
+      !!onMouseDown,
+      isBlockFullyStaged || isBlockPartiallyStaged,
+    )} ${className}`}
   >
     {show ? (
       <button
@@ -736,13 +757,10 @@ const CenterLineGutter: React.FC<{
   onMouseDown?: (e: React.MouseEvent) => void;
 }> = ({ show, isChecked, isIndeterminate, onMouseDown }) => (
   <span
-    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${
-      show
-        ? isChecked || isIndeterminate
-          ? "bg-blue-600 text-white"
-          : "bg-zinc-600/30 text-zinc-500"
-        : "bg-zinc-800 text-zinc-500"
-    }`}
+    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${getLineGutterTone(
+      show,
+      isChecked || isIndeterminate,
+    )}`}
   >
     {show ? (
       <button
@@ -760,10 +778,32 @@ const CenterLineGutter: React.FC<{
   </span>
 );
 
+function getBlockGutterTone(
+  show: boolean,
+  hasMouseHandler: boolean,
+  hasStagedLines: boolean,
+) {
+  if (!show || !hasMouseHandler) return "bg-zinc-800 text-zinc-500";
+  if (hasStagedLines) return "bg-blue-600 text-white";
+  return "bg-zinc-600/30 text-zinc-400";
+}
+
+function getLineGutterTone(show: boolean, hasStagedLines: boolean) {
+  if (!show) return "bg-zinc-800 text-zinc-500";
+  if (hasStagedLines) return "bg-blue-600 text-white";
+  return "bg-zinc-600/30 text-zinc-500";
+}
+
 function getLineTone(line: DiffLine) {
   if (line.kind === "Add") return "text-green-400 bg-green-900/20";
   if (line.kind === "Del") return "text-red-400 bg-red-900/20";
   return "text-zinc-200";
+}
+
+function getLineContentTone(line: DiffLine) {
+  if (line.kind === "Add") return "bg-green-900/20";
+  if (line.kind === "Del") return "bg-red-900/20";
+  return "bg-transparent";
 }
 
 export default React.memo(DiffHunk);

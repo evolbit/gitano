@@ -4,7 +4,7 @@ use super::entitlement::{ensure_entitled, entitlement_status};
 use super::git_context::{
     build_branch_context, build_branch_review_file_contexts, build_commit_analysis_context,
     build_external_agent_branch_context, build_external_agent_commit_analysis_context,
-    build_external_agent_git_context, build_git_context, BranchDiffOrder, LocalAiBranchContextStep,
+    build_external_agent_git_context, build_git_context, LocalAiBranchContextStep,
     LocalAiCommitAnalysisContextStep,
 };
 use super::machine::{compatibility_for_model, machine_profile};
@@ -555,17 +555,7 @@ async fn run_action_inner(
         _ => build_git_context(request, effective_context)?,
     };
     let prompt_instruction = effective_prompt_instruction(&preferences, request.action_kind);
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::CheckingCache,
-        if request.force_refresh {
-            "Bypassing cached analysis"
-        } else {
-            "Checking cache"
-        },
-        None,
-    );
+    emit_cache_check_progress(app, request, "Bypassing cached analysis", "Checking cache");
     let cache_key = build_cache_key(
         request.action_kind,
         PROMPT_VERSION,
@@ -575,24 +565,8 @@ async fn run_action_inner(
         &git_context.input_digest,
     );
 
-    if !request.force_refresh {
-        if let Some(cached) = get_cached_result(&cache_key) {
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::CacheHit,
-                "Using cached analysis",
-                None,
-            );
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::Completed,
-                completed_message(request.action_kind),
-                None,
-            );
-            return Ok(cached);
-        }
+    if let Some(cached) = cached_run_result(app, request, &cache_key, "Using cached analysis") {
+        return Ok(cached);
     }
 
     let prompt = build_prompt_with_instruction(&git_context, &prompt_instruction);
@@ -670,16 +644,11 @@ async fn run_external_agent_action(
         request.action_kind,
         &request.external_agent_option_overrides,
     );
-    emit_run_progress(
+    emit_cache_check_progress(
         app,
         request,
-        LocalAiRunProgressState::CheckingCache,
-        if request.force_refresh {
-            "Bypassing cached external analysis"
-        } else {
-            "Checking external agent cache"
-        },
-        None,
+        "Bypassing cached external analysis",
+        "Checking external agent cache",
     );
 
     let agent_digest = external_agent_digest(
@@ -697,24 +666,10 @@ async fn run_external_agent_action(
         &git_context.input_digest,
     );
 
-    if !request.force_refresh {
-        if let Some(cached) = get_cached_result(&cache_key) {
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::CacheHit,
-                "Using cached external analysis",
-                None,
-            );
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::Completed,
-                completed_message(request.action_kind),
-                None,
-            );
-            return Ok(cached);
-        }
+    if let Some(cached) =
+        cached_run_result(app, request, &cache_key, "Using cached external analysis")
+    {
+        return Ok(cached);
     }
 
     let run_id = request
@@ -773,6 +728,55 @@ async fn run_external_agent_action(
         None,
     );
     Ok(result)
+}
+
+fn emit_cache_check_progress(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    force_refresh_message: &str,
+    cached_lookup_message: &str,
+) {
+    let message = if request.force_refresh {
+        force_refresh_message
+    } else {
+        cached_lookup_message
+    };
+
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::CheckingCache,
+        message,
+        None,
+    );
+}
+
+fn cached_run_result(
+    app: &AppHandle,
+    request: &LocalAiRunRequest,
+    cache_key: &str,
+    cache_hit_message: &str,
+) -> Option<LocalAiRunResult> {
+    if request.force_refresh {
+        return None;
+    }
+
+    let cached = get_cached_result(cache_key)?;
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::CacheHit,
+        cache_hit_message,
+        None,
+    );
+    emit_run_progress(
+        app,
+        request,
+        LocalAiRunProgressState::Completed,
+        completed_message(request.action_kind),
+        None,
+    );
+    Some(cached)
 }
 
 fn external_agent_digest(
@@ -841,18 +845,12 @@ fn build_external_agent_context(
                 .head_ref
                 .as_deref()
                 .ok_or_else(|| "Head ref is required for branch AI.".to_string())?;
-            let diff_order = if request.action_kind == LocalAiActionKind::BranchReview {
-                BranchDiffOrder::ReviewPriority
-            } else {
-                BranchDiffOrder::Git
-            };
             build_external_agent_branch_context(
                 &request.repo_path,
                 base_ref,
                 head_ref,
                 request.comparison_mode.as_deref().unwrap_or("direct"),
                 request.action_kind,
-                diff_order,
                 |step| emit_branch_context_progress(app, request, step),
             )
         }
@@ -954,17 +952,7 @@ async fn run_segmented_branch_review(
     )?;
     let prompt_instruction =
         effective_prompt_instruction(preferences, LocalAiActionKind::BranchReview).into_owned();
-    emit_run_progress(
-        app,
-        request,
-        LocalAiRunProgressState::CheckingCache,
-        if request.force_refresh {
-            "Bypassing cached review"
-        } else {
-            "Checking cache"
-        },
-        None,
-    );
+    emit_cache_check_progress(app, request, "Bypassing cached review", "Checking cache");
     let cache_key = build_cache_key(
         request.action_kind,
         PROMPT_VERSION,
@@ -974,24 +962,8 @@ async fn run_segmented_branch_review(
         &file_contexts.input_digest,
     );
 
-    if !request.force_refresh {
-        if let Some(cached) = get_cached_result(&cache_key) {
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::CacheHit,
-                "Using cached review",
-                None,
-            );
-            emit_run_progress(
-                app,
-                request,
-                LocalAiRunProgressState::Completed,
-                completed_message(request.action_kind),
-                None,
-            );
-            return Ok(cached);
-        }
+    if let Some(cached) = cached_run_result(app, request, &cache_key, "Using cached review") {
+        return Ok(cached);
     }
 
     let input_digest = file_contexts.input_digest;

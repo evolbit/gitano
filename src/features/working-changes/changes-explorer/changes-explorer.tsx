@@ -29,15 +29,48 @@ import { ChangesExplorerSection } from "./changes-explorer-section";
 import { ChangesExplorerTreeNodes } from "./changes-explorer-tree-nodes";
 import { ChangesExplorerMenu } from "./menu";
 import { useChangesExplorerBehavior } from "./use-changes-explorer-behavior";
-import {
-  ChangesExplorerProps,
-} from "./types";
+import type { ChangesExplorerProps } from "./types";
 import {
   IconBinaryTree2,
   IconDotsVertical,
   IconLayoutList,
   IconSearch,
 } from "@/components/icons";
+
+const VIEW_MODE_OPTIONS = [
+  {
+    mode: "flat",
+    label: "Flat View",
+    Icon: IconLayoutList,
+  },
+  {
+    mode: "tree",
+    label: "Tree View",
+    Icon: IconBinaryTree2,
+  },
+] as const;
+
+type PathMutation = (repoPath: string, path: string) => Promise<unknown>;
+
+function uniqueFilesByPath(files: ChangesExplorerFile[]) {
+  return Array.from(new Map(files.map((file) => [file.path, file])).values());
+}
+
+function hasDiffHunks(file: ChangesExplorerFile) {
+  return "hunks" in file && file.hunks.length > 0;
+}
+
+function serializeAllStageableLines(file: ChangesExplorerFile) {
+  const allStageableLines = buildAllStageableLineMap(file);
+  const stagedLineSets = Object.fromEntries(
+    Object.entries(allStageableLines).map(([hunkIdx, lineIdxs]) => [
+      Number(hunkIdx),
+      new Set(lineIdxs),
+    ]),
+  ) as Record<number, Set<number>>;
+
+  return serializeLineSelection(stagedLineSets);
+}
 
 function ChangesExplorer({
   files,
@@ -161,6 +194,50 @@ function ChangesExplorer({
     normalizedFiles.length > 0 &&
     normalizedFiles.every((file) => getCheckboxState(file) === "checked");
 
+  const runStagedLinesMutation = useCallback(
+    async (mutation: () => Promise<void>) => {
+      setActionError(null);
+      const previousStagedLines = cloneStagedLinesState(
+        useStagedLinesStore.getState().stagedLines,
+      );
+
+      try {
+        await mutation();
+        scheduleImmediateStageRefresh(onImmediateStageChange);
+      } catch (error) {
+        useStagedLinesStore.setState({ stagedLines: previousStagedLines });
+        setActionError(String(error));
+      }
+    },
+    [onImmediateStageChange, scheduleImmediateStageRefresh, setActionError],
+  );
+
+  const runPathMutation = useCallback(
+    async (
+      targetPath: string,
+      filesToClear: ChangesExplorerFile[],
+      mutation: PathMutation,
+    ) => {
+      if (!repoPath) return;
+      setActionError(null);
+
+      try {
+        filesToClear.forEach((file) => clearStagedLinesForFile(file.path));
+        await mutation(repoPath, targetPath);
+        scheduleImmediateStageRefresh(onImmediateStageChange);
+      } catch (error) {
+        setActionError(String(error));
+      }
+    },
+    [
+      clearStagedLinesForFile,
+      onImmediateStageChange,
+      repoPath,
+      scheduleImmediateStageRefresh,
+      setActionError,
+    ],
+  );
+
   const applyStageAllOptimistic = useCallback(
     (targetFiles: ChangesExplorerFile[]) => {
       targetFiles.forEach((file) => {
@@ -188,13 +265,8 @@ function ChangesExplorer({
   const toggleAllFilesSelection = useCallback(async () => {
     if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0)
       return;
-    setActionError(null);
 
-    const previousStagedLines = cloneStagedLinesState(
-      useStagedLinesStore.getState().stagedLines,
-    );
-
-    try {
+    await runStagedLinesMutation(async () => {
       if (areAllFilesFullySelected) {
         applyUnstageAllOptimistic(normalizedFiles);
         await unstageAll(repoPath);
@@ -202,33 +274,22 @@ function ChangesExplorer({
         applyStageAllOptimistic(normalizedFiles);
         await stageAll(repoPath);
       }
-
-      scheduleImmediateStageRefresh(onImmediateStageChange);
-    } catch (error) {
-      useStagedLinesStore.setState({ stagedLines: previousStagedLines });
-      setActionError(String(error));
-    }
+    });
   }, [
     areAllFilesFullySelected,
     applyStageAllOptimistic,
     applyUnstageAllOptimistic,
     normalizedFiles,
-    onImmediateStageChange,
     repoPath,
+    runStagedLinesMutation,
     showFileCheckboxes,
-    scheduleImmediateStageRefresh,
-    setActionError,
   ]);
 
   const toggleFileSelection = useCallback(
     async (file: ChangesExplorerFile) => {
       if (!repoPath) return;
-      setActionError(null);
-      const previousStagedLines = cloneStagedLinesState(
-        useStagedLinesStore.getState().stagedLines,
-      );
 
-      try {
+      await runStagedLinesMutation(async () => {
         const checkboxState = getCheckboxState(file);
 
         if (isUntrackedFile(file)) {
@@ -239,7 +300,6 @@ function ChangesExplorer({
             setStagedNewFile(file.path, true);
             await stageFile(repoPath, file.path);
           }
-          scheduleImmediateStageRefresh(onImmediateStageChange);
           return;
         }
 
@@ -252,52 +312,32 @@ function ChangesExplorer({
             setWholeFileStaged(file.path, true);
             await stageFile(repoPath, file.path);
           }
-          scheduleImmediateStageRefresh(onImmediateStageChange);
           return;
         }
 
         if (checkboxState === "checked") {
           clearStagedLinesForFile(file.path);
-          if ("hunks" in file && file.hunks.length > 0) {
+          if (hasDiffHunks(file)) {
             await stageLines(repoPath, file.path, {});
           } else {
             await unstageFile(repoPath, file.path);
           }
-          scheduleImmediateStageRefresh(onImmediateStageChange);
           return;
         }
 
-        const nextSelection = buildAllStageableLineMap(file);
         setWholeFileStaged(file.path, true);
         setLineSelectionForFile(file.path, {});
-        await stageLines(
-          repoPath,
-          file.path,
-          serializeLineSelection(
-            Object.fromEntries(
-              Object.entries(nextSelection).map(([hunkIdx, lineIdxs]) => [
-                Number(hunkIdx),
-                new Set(lineIdxs),
-              ]),
-            ) as Record<number, Set<number>>,
-          ),
-        );
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        useStagedLinesStore.setState({ stagedLines: previousStagedLines });
-        setActionError(String(error));
-      }
+        await stageLines(repoPath, file.path, serializeAllStageableLines(file));
+      });
     },
     [
       clearStagedLinesForFile,
       getCheckboxState,
-      onImmediateStageChange,
       repoPath,
+      runStagedLinesMutation,
       setLineSelectionForFile,
       setStagedNewFile,
       setWholeFileStaged,
-      scheduleImmediateStageRefresh,
-      setActionError,
     ],
   );
 
@@ -310,15 +350,9 @@ function ChangesExplorer({
   const toggleFolderSelection = useCallback(
     async (_folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
       if (!repoPath || filesInFolder.length === 0) return;
-      setActionError(null);
-      const previousStagedLines = cloneStagedLinesState(
-        useStagedLinesStore.getState().stagedLines,
-      );
-      const uniqueFilesInFolder = Array.from(
-        new Map(filesInFolder.map((file) => [file.path, file])).values(),
-      );
+      const uniqueFilesInFolder = uniqueFilesByPath(filesInFolder);
 
-      try {
+      await runStagedLinesMutation(async () => {
         if (getFolderCheckboxState(uniqueFilesInFolder) === "checked") {
           for (const file of uniqueFilesInFolder) {
             clearStagedLinesForFile(file.path);
@@ -336,88 +370,45 @@ function ChangesExplorer({
             await stageFile(repoPath, file.path);
           }
         }
-
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        useStagedLinesStore.setState({ stagedLines: previousStagedLines });
-        setActionError(String(error));
-      }
+      });
     },
     [
       clearStagedLinesForFile,
       getFolderCheckboxState,
-      onImmediateStageChange,
       repoPath,
+      runStagedLinesMutation,
       setLineSelectionForFile,
       setStagedNewFile,
       setWholeFileStaged,
-      scheduleImmediateStageRefresh,
-      setActionError,
     ],
   );
 
   const handleDiscardTrackedFolder = useCallback(
     async (folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
-      if (!repoPath) return;
-      setActionError(null);
-
-      try {
-        filesInFolder.forEach((file) => clearStagedLinesForFile(file.path));
-        await discardFileChanges(repoPath, folderPath);
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        setActionError(String(error));
-      }
+      await runPathMutation(folderPath, filesInFolder, discardFileChanges);
     },
-    [clearStagedLinesForFile, onImmediateStageChange, repoPath, scheduleImmediateStageRefresh, setActionError],
+    [runPathMutation],
   );
 
   const handleTrashUntrackedFolder = useCallback(
     async (folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
-      if (!repoPath) return;
-      setActionError(null);
-
-      try {
-        filesInFolder.forEach((file) => clearStagedLinesForFile(file.path));
-        await trashUntrackedFile(repoPath, folderPath);
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        setActionError(String(error));
-      }
+      await runPathMutation(folderPath, filesInFolder, trashUntrackedFile);
     },
-    [clearStagedLinesForFile, onImmediateStageChange, repoPath, scheduleImmediateStageRefresh, setActionError],
+    [runPathMutation],
   );
 
   const handleDiscardTrackedFile = useCallback(
     async (file: ChangesExplorerFile) => {
-      if (!repoPath) return;
-      setActionError(null);
-
-      try {
-        clearStagedLinesForFile(file.path);
-        await discardFileChanges(repoPath, file.path);
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        setActionError(String(error));
-      }
+      await runPathMutation(file.path, [file], discardFileChanges);
     },
-    [clearStagedLinesForFile, onImmediateStageChange, repoPath, scheduleImmediateStageRefresh, setActionError],
+    [runPathMutation],
   );
 
   const handleTrashUntrackedFile = useCallback(
     async (file: ChangesExplorerFile) => {
-      if (!repoPath) return;
-      setActionError(null);
-
-      try {
-        clearStagedLinesForFile(file.path);
-        await trashUntrackedFile(repoPath, file.path);
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        setActionError(String(error));
-      }
+      await runPathMutation(file.path, [file], trashUntrackedFile);
     },
-    [clearStagedLinesForFile, onImmediateStageChange, repoPath, scheduleImmediateStageRefresh, setActionError],
+    [runPathMutation],
   );
 
   return (
@@ -481,21 +472,9 @@ function ChangesExplorer({
           </div>
           {surface === "main" ? (
             <div className="flex items-center overflow-hidden rounded border border-border bg-background">
-              {(
-                [
-                  {
-                    mode: "flat" as const,
-                    label: "Flat View",
-                    icon: <IconLayoutList size={15} />,
-                  },
-                  {
-                    mode: "tree" as const,
-                    label: "Tree View",
-                    icon: <IconBinaryTree2 size={15} />,
-                  },
-                ] as const
-              ).map((option) => {
+              {VIEW_MODE_OPTIONS.map((option) => {
                 const active = viewMode === option.mode;
+                const Icon = option.Icon;
                 return (
                   <button
                     key={option.mode}
@@ -509,7 +488,7 @@ function ChangesExplorer({
                     aria-label={option.label}
                     title={option.label}
                   >
-                    {option.icon}
+                    <Icon size={15} />
                   </button>
                 );
               })}

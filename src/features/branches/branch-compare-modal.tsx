@@ -1,6 +1,9 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import ReactDOM from "react-dom";
 import {
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
@@ -34,7 +37,12 @@ import {
 } from "@/shared/api/local-ai";
 import { writeClipboardText } from "@/shared/platform/clipboard";
 import type { FileChange } from "@/shared/types/git";
-import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
+import {
+  appendExternalAiRunEvent,
+  appendLocalAiRunProgress,
+  LocalAiResultModal,
+  LocalAiSetupModal,
+} from "@/features/local-ai";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import {
   addReviewThreadReply,
@@ -89,6 +97,14 @@ type BranchAiSetupState = {
   actionKind: LocalAiActionKind;
   reason: string;
 };
+type BranchAiStateSetter = Dispatch<SetStateAction<BranchAiState>>;
+type BranchAiRunEvent = Pick<
+  LocalAiRunProgress | ExternalAiRunEvent,
+  "actionKind" | "runId"
+>;
+type BranchAiRunListener<TEvent extends BranchAiRunEvent> = (
+  handler: (event: TEvent) => void,
+) => Promise<() => void> | (() => void);
 
 const emptyBranchAiState = (): BranchAiState => ({
   result: null,
@@ -236,6 +252,93 @@ function branchAiFailureTitle(action: BranchAiAction, errorMessage: string) {
   return `Local AI ${actionLabel} failed: ${errorMessage}`;
 }
 
+function branchAiSetter(
+  action: BranchAiAction,
+  setBranchAnalysis: BranchAiStateSetter,
+  setBranchReview: BranchAiStateSetter,
+) {
+  return action === "analysis" ? setBranchAnalysis : setBranchReview;
+}
+
+function useBranchAiRunEvents<TEvent extends BranchAiRunEvent>({
+  activeRunIdsRef,
+  listen,
+  updateState,
+  appendEvent,
+}: {
+  activeRunIdsRef: MutableRefObject<Record<BranchAiAction, string | null>>;
+  listen: BranchAiRunListener<TEvent>;
+  updateState: (
+    action: BranchAiAction,
+    updater: SetStateAction<BranchAiState>,
+  ) => void;
+  appendEvent: (current: BranchAiState, event: TEvent) => BranchAiState;
+}) {
+  useEffect(() => {
+    const unlistenPromise = listen((event) => {
+      const action = branchAiActionForKind(event.actionKind);
+      if (!action || event.runId !== activeRunIdsRef.current[action]) {
+        return;
+      }
+
+      updateState(action, (current) => appendEvent(current, event));
+    });
+
+    return () => {
+      void Promise.resolve(unlistenPromise)
+        .then((unlisten) => unlisten())
+        .catch(() => undefined);
+    };
+  }, [activeRunIdsRef, appendEvent, listen, updateState]);
+}
+
+function visibleBranchReviewResult(
+  result: LocalAiRunResult | null,
+  anchorIndex: Map<string, DiffLineAnchor>,
+  dismissedFindingKeys: Set<string>,
+  reviewHunksLoading: boolean,
+): LocalAiRunResult | null {
+  if (!result || result.result.kind !== "branchReview") {
+    return result;
+  }
+
+  const data = result.result.data;
+  const notes = [...data.notes];
+  const findings = data.findings.filter((finding) => {
+    if (dismissedFindingKeys.has(findingKey(finding))) {
+      return false;
+    }
+
+    const anchor = anchorIndex.get(findingAnchorKey(finding));
+    if (!anchor && !reviewHunksLoading) {
+      notes.push({
+        severity: finding.severity,
+        confidence: finding.confidence,
+        title: finding.title,
+        explanation: finding.explanation,
+        recommendation: finding.recommendation,
+        suggestedComment: finding.suggestedComment,
+        filePath: finding.filePath,
+      });
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    ...result,
+    result: {
+      kind: "branchReview",
+      data: {
+        ...data,
+        findings,
+        notes,
+      },
+    },
+  };
+}
+
 export function BranchCompareModal({
   repoPath,
   initialSourceBranch,
@@ -289,6 +392,12 @@ export function BranchCompareModal({
     analysis: null,
     review: null,
   });
+  const updateBranchAiState = useCallback(
+    (action: BranchAiAction, updater: SetStateAction<BranchAiState>) => {
+      branchAiSetter(action, setBranchAnalysis, setBranchReview)(updater);
+    },
+    [],
+  );
 
   useEffect(() => {
     setSourceBranch(initialSourceBranch);
@@ -318,52 +427,21 @@ export function BranchCompareModal({
     [reviewHunksByPath],
   );
 
-  const visibleBranchReviewResult = useMemo<LocalAiRunResult | null>(() => {
-    if (!branchReview.result || branchReview.result.result.kind !== "branchReview") {
-      return branchReview.result;
-    }
-
-    const data = branchReview.result.result.data;
-    const notes = [...data.notes];
-    const findings = data.findings.filter((finding) => {
-      if (dismissedAiFindingKeys.has(findingKey(finding))) {
-        return false;
-      }
-
-      const anchor = branchReviewAnchorIndex.get(findingAnchorKey(finding));
-      if (!anchor && !reviewHunksLoading) {
-        notes.push({
-          severity: finding.severity,
-          confidence: finding.confidence,
-          title: finding.title,
-          explanation: finding.explanation,
-          recommendation: finding.recommendation,
-          suggestedComment: finding.suggestedComment,
-          filePath: finding.filePath,
-        });
-        return false;
-      }
-
-      return true;
-    });
-
-    return {
-      ...branchReview.result,
-      result: {
-        kind: "branchReview",
-        data: {
-          ...data,
-          findings,
-          notes,
-        },
-      },
-    };
-  }, [
-    branchReview.result,
-    branchReviewAnchorIndex,
-    dismissedAiFindingKeys,
-    reviewHunksLoading,
-  ]);
+  const visibleReviewResult = useMemo(
+    () =>
+      visibleBranchReviewResult(
+        branchReview.result,
+        branchReviewAnchorIndex,
+        dismissedAiFindingKeys,
+        reviewHunksLoading,
+      ),
+    [
+      branchReview.result,
+      branchReviewAnchorIndex,
+      dismissedAiFindingKeys,
+      reviewHunksLoading,
+    ],
+  );
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -376,76 +454,19 @@ export function BranchCompareModal({
     return () => window.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
-  useEffect(() => {
-    const unlistenPromise = listenToLocalAiRunProgress((progress) => {
-      const action = branchAiActionForKind(progress.actionKind);
-      if (!action || progress.runId !== activeBranchAiRunIdsRef.current[action]) {
-        return;
-      }
+  useBranchAiRunEvents({
+    activeRunIdsRef: activeBranchAiRunIdsRef,
+    listen: listenToLocalAiRunProgress,
+    updateState: updateBranchAiState,
+    appendEvent: appendLocalAiRunProgress,
+  });
 
-      const setState = action === "analysis" ? setBranchAnalysis : setBranchReview;
-      setState((current) => {
-        if (current.progressRunId !== progress.runId) {
-          return current;
-        }
-
-        const previous = current.progress[current.progress.length - 1];
-        if (
-          previous?.state === progress.state &&
-          previous.message === progress.message &&
-          previous.error === progress.error
-        ) {
-          return current;
-        }
-
-        return {
-          ...current,
-          progress: [...current.progress, progress],
-        };
-      });
-    });
-
-    return () => {
-      void Promise.resolve(unlistenPromise)
-        .then((unlisten) => unlisten())
-        .catch(() => undefined);
-    };
-  }, []);
-
-  useEffect(() => {
-    const unlistenPromise = listenToExternalAiRunEvents((event) => {
-      const action = branchAiActionForKind(event.actionKind);
-      if (!action || event.runId !== activeBranchAiRunIdsRef.current[action]) {
-        return;
-      }
-
-      const setState = action === "analysis" ? setBranchAnalysis : setBranchReview;
-      setState((current) => {
-        if (current.progressRunId !== event.runId) {
-          return current;
-        }
-
-        const previous = current.externalEvents[current.externalEvents.length - 1];
-        if (
-          previous?.kind === event.kind &&
-          previous.message === event.message
-        ) {
-          return current;
-        }
-
-        return {
-          ...current,
-          externalEvents: [...current.externalEvents, event],
-        };
-      });
-    });
-
-    return () => {
-      void Promise.resolve(unlistenPromise)
-        .then((unlisten) => unlisten())
-        .catch(() => undefined);
-    };
-  }, []);
+  useBranchAiRunEvents({
+    activeRunIdsRef: activeBranchAiRunIdsRef,
+    listen: listenToExternalAiRunEvents,
+    updateState: updateBranchAiState,
+    appendEvent: appendExternalAiRunEvent,
+  });
 
   useEffect(() => {
     activeBranchAiRunIdsRef.current = {
@@ -644,7 +665,7 @@ export function BranchCompareModal({
       const actionKind = branchAiActionKind(action);
       const runId = createBranchAiRunId(action);
       activeBranchAiRunIdsRef.current[action] = runId;
-      const setState = action === "analysis" ? setBranchAnalysis : setBranchReview;
+      const setState = branchAiSetter(action, setBranchAnalysis, setBranchReview);
       setState({
         result: null,
         loading: true,
@@ -1114,9 +1135,9 @@ export function BranchCompareModal({
           }}
         />
         <LocalAiResultModal
-          open={Boolean(visibleBranchReviewResult) || branchReview.loading}
+          open={Boolean(visibleReviewResult) || branchReview.loading}
           title={`Review ${comparisonTitle}`}
-          result={visibleBranchReviewResult}
+          result={visibleReviewResult}
           loading={branchReview.loading}
           error={branchReview.error}
           progress={branchReview.progress}

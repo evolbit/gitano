@@ -92,6 +92,13 @@ struct PreparedTerminalCommand {
     display: String,
 }
 
+struct TerminalCreateRequest {
+    command: String,
+    args: Vec<String>,
+    cwd: PathBuf,
+    output_limit: usize,
+}
+
 struct AcpSession {
     session_id: String,
     config_options: Vec<ExternalAiAgentConfigOption>,
@@ -580,32 +587,9 @@ impl AcpProcessClient {
     }
 
     fn handle_terminal_create(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let command = params
-            .get("command")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                "External agent terminal request did not include a command.".to_string()
-            })?;
-        let args = params
-            .get("args")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let cwd = params
-            .get("cwd")
-            .and_then(Value::as_str)
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.repo_root.clone());
-        let cwd =
-            fs::canonicalize(&cwd).map_err(|e| format!("Could not resolve terminal cwd: {}", e))?;
+        let request = parse_terminal_create_request(&params, &self.repo_root)?;
 
-        if !cwd.starts_with(&self.repo_root) {
+        if !request.cwd.starts_with(&self.repo_root) {
             self.emit_event(
                 ExternalAiRunEventKind::PermissionDenied,
                 "External agent terminal cwd is outside the active repository.".to_string(),
@@ -618,8 +602,9 @@ impl AcpProcessClient {
             );
         }
 
-        let Some(prepared_command) = prepare_terminal_command(command, &args) else {
-            let display = terminal_command_display(command, &args);
+        let Some(prepared_command) = prepare_terminal_command(&request.command, &request.args)
+        else {
+            let display = terminal_command_display(&request.command, &request.args);
             self.emit_event(
                 ExternalAiRunEventKind::PermissionDenied,
                 format!("Blocked terminal command: {}", display),
@@ -632,15 +617,10 @@ impl AcpProcessClient {
             );
         };
 
-        let output_limit = params
-            .get("outputByteLimit")
-            .and_then(Value::as_u64)
-            .map(|value| (value as usize).clamp(1, MAX_TERMINAL_OUTPUT_LIMIT))
-            .unwrap_or(DEFAULT_TERMINAL_OUTPUT_LIMIT);
         let mut terminal_command = Command::new(&prepared_command.program);
         terminal_command
             .args(&prepared_command.args)
-            .current_dir(&cwd)
+            .current_dir(&request.cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         terminal_command
@@ -662,7 +642,7 @@ impl AcpProcessClient {
             spawn_terminal_reader(
                 stdout,
                 output.clone(),
-                output_limit,
+                request.output_limit,
                 self.app.clone(),
                 self.request.clone(),
                 terminal_id.clone(),
@@ -673,7 +653,7 @@ impl AcpProcessClient {
             spawn_terminal_reader(
                 stderr,
                 output.clone(),
-                output_limit,
+                request.output_limit,
                 self.app.clone(),
                 self.request.clone(),
                 terminal_id.clone(),
@@ -683,12 +663,12 @@ impl AcpProcessClient {
 
         self.emit_event(
             ExternalAiRunEventKind::ToolCall,
-            format!("{}\n{}", cwd.to_string_lossy(), display),
+            format!("{}\n{}", request.cwd.to_string_lossy(), display),
             Some(json!({
                 "terminalId": terminal_id,
                 "command": prepared_command.program,
                 "args": prepared_command.args,
-                "cwd": cwd.to_string_lossy(),
+                "cwd": request.cwd.to_string_lossy(),
             })),
         );
         self.terminals
@@ -952,6 +932,47 @@ fn terminal_output_snapshot(output: &Arc<Mutex<TerminalOutput>>) -> TerminalOutp
         text: output.text.clone(),
         truncated: output.truncated,
     }
+}
+
+fn parse_terminal_create_request(
+    params: &Value,
+    repo_root: &Path,
+) -> Result<TerminalCreateRequest, String> {
+    let command = params
+        .get("command")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "External agent terminal request did not include a command.".to_string())?
+        .to_string();
+    let args = params
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let cwd = params
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root.to_path_buf());
+    let cwd =
+        fs::canonicalize(&cwd).map_err(|e| format!("Could not resolve terminal cwd: {}", e))?;
+    let output_limit = params
+        .get("outputByteLimit")
+        .and_then(Value::as_u64)
+        .map(|value| (value as usize).clamp(1, MAX_TERMINAL_OUTPUT_LIMIT))
+        .unwrap_or(DEFAULT_TERMINAL_OUTPUT_LIMIT);
+
+    Ok(TerminalCreateRequest {
+        command,
+        args,
+        cwd,
+        output_limit,
+    })
 }
 
 fn spawn_terminal_reader<R>(

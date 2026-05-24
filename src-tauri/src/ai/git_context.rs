@@ -179,7 +179,6 @@ pub fn build_external_agent_branch_context<F>(
     head_ref: &str,
     comparison_mode: &str,
     action_kind: LocalAiActionKind,
-    _diff_order: BranchDiffOrder,
     on_step: F,
 ) -> Result<LocalAiGitContext, String>
 where
@@ -292,6 +291,43 @@ where
     })
 }
 
+struct BranchComparisonRefs {
+    base_sha: String,
+    head_sha: String,
+    from_ref: String,
+}
+
+fn resolve_branch_comparison_refs<F>(
+    repo_path: &str,
+    base_ref: &str,
+    head_ref: &str,
+    comparison_mode: &str,
+    on_step: &mut F,
+) -> Result<BranchComparisonRefs, String>
+where
+    F: FnMut(LocalAiBranchContextStep),
+{
+    on_step(LocalAiBranchContextStep::ResolvingRefs);
+    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
+    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
+    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
+    let from_ref = if is_merge_base_comparison(comparison_mode) {
+        run_git(repo_path, &["merge-base", base_ref, head_ref])?
+    } else {
+        base_sha.clone()
+    };
+
+    Ok(BranchComparisonRefs {
+        base_sha,
+        head_sha: head_sha.trim().to_string(),
+        from_ref: from_ref.trim().to_string(),
+    })
+}
+
+fn is_merge_base_comparison(comparison_mode: &str) -> bool {
+    comparison_mode == "mergeBase" || comparison_mode == "merge-base"
+}
+
 fn branch_external_agent_context_with_progress<F>(
     repo_path: &str,
     base_ref: &str,
@@ -303,23 +339,31 @@ fn branch_external_agent_context_with_progress<F>(
 where
     F: FnMut(LocalAiBranchContextStep),
 {
-    on_step(LocalAiBranchContextStep::ResolvingRefs);
-    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
-    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
-    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
-    let from_ref = if comparison_mode == "mergeBase" || comparison_mode == "merge-base" {
-        run_git(repo_path, &["merge-base", base_ref, head_ref])?
-    } else {
-        base_sha.clone()
-    };
-    let from_ref = from_ref.trim().to_string();
-    let head_sha = head_sha.trim().to_string();
+    let refs = resolve_branch_comparison_refs(
+        repo_path,
+        base_ref,
+        head_ref,
+        comparison_mode,
+        &mut on_step,
+    )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(repo_path, &["diff", "--name-status", &from_ref, &head_sha])?;
-    let stat = run_git(repo_path, &["diff", "--stat", &from_ref, &head_sha])?;
+    let name_status = run_git(
+        repo_path,
+        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
+    )?;
+    let stat = run_git(
+        repo_path,
+        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
+    )?;
     let raw = run_git(
         repo_path,
-        &["diff", "--raw", "--find-renames", &from_ref, &head_sha],
+        &[
+            "diff",
+            "--raw",
+            "--find-renames",
+            &refs.from_ref,
+            &refs.head_sha,
+        ],
     )?;
 
     if raw.trim().is_empty() {
@@ -336,22 +380,22 @@ where
         branch_action_label(action_kind),
         repo_path,
         base_ref,
-        base_sha.trim(),
+        refs.base_sha.trim(),
         head_ref,
-        head_sha,
+        refs.head_sha,
         comparison_mode,
-        from_ref,
+        refs.from_ref,
         name_status,
         stat,
         raw,
-        from_ref,
-        head_sha,
-        from_ref,
-        head_sha,
-        from_ref,
-        head_sha,
-        from_ref,
-        head_sha,
+        refs.from_ref,
+        refs.head_sha,
+        refs.from_ref,
+        refs.head_sha,
+        refs.from_ref,
+        refs.head_sha,
+        refs.from_ref,
+        refs.head_sha,
         review_instruction
     );
     let digest = digest_parts(&[
@@ -359,9 +403,9 @@ where
         action_kind.as_key(),
         base_ref,
         head_ref,
-        &base_sha,
-        &from_ref,
-        &head_sha,
+        &refs.base_sha,
+        &refs.from_ref,
+        &refs.head_sha,
         comparison_mode,
         &name_status,
         &stat,
@@ -536,20 +580,22 @@ fn branch_context_with_progress_and_order<F>(
 where
     F: FnMut(LocalAiBranchContextStep),
 {
-    on_step(LocalAiBranchContextStep::ResolvingRefs);
-    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
-    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
-    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
-    let from_ref = if comparison_mode == "mergeBase" || comparison_mode == "merge-base" {
-        run_git(repo_path, &["merge-base", base_ref, head_ref])?
-    } else {
-        base_sha.clone()
-    };
-    let from_ref = from_ref.trim().to_string();
-    let head_sha = head_sha.trim().to_string();
+    let refs = resolve_branch_comparison_refs(
+        repo_path,
+        base_ref,
+        head_ref,
+        comparison_mode,
+        &mut on_step,
+    )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(repo_path, &["diff", "--name-status", &from_ref, &head_sha])?;
-    let stat = run_git(repo_path, &["diff", "--stat", &from_ref, &head_sha])?;
+    let name_status = run_git(
+        repo_path,
+        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
+    )?;
+    let stat = run_git(
+        repo_path,
+        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
+    )?;
     let diff = match diff_order {
         BranchDiffOrder::Git => run_git(
             repo_path,
@@ -557,12 +603,12 @@ where
                 "diff",
                 "--find-renames",
                 &format!("-U{}", DIFF_CONTEXT_LINES),
-                &from_ref,
-                &head_sha,
+                &refs.from_ref,
+                &refs.head_sha,
             ],
         )?,
         BranchDiffOrder::ReviewPriority => {
-            prioritized_branch_diff(repo_path, &from_ref, &head_sha, &name_status)?
+            prioritized_branch_diff(repo_path, &refs.from_ref, &refs.head_sha, &name_status)?
         }
     };
 
@@ -574,19 +620,19 @@ where
         "{}\nBase ref: {} ({})\nHead ref: {} ({})\nComparison mode: {}\nEffective diff base: {}\n\nChanged files:\n{}\n\nChanged file summary:\n{}\n\nComparison diff:\n{}",
         branch_action_label(action_kind),
         base_ref,
-        base_sha.trim(),
+        refs.base_sha.trim(),
         head_ref,
-        head_sha,
+        refs.head_sha,
         comparison_mode,
-        from_ref,
+        refs.from_ref,
         name_status,
         stat,
         diff
     );
     let digest = digest_parts(&[
         action_kind.as_key(),
-        &from_ref,
-        &head_sha,
+        &refs.from_ref,
+        &refs.head_sha,
         comparison_mode,
         &diff,
     ]);
@@ -611,20 +657,22 @@ fn build_branch_review_file_contexts_with_progress<F>(
 where
     F: FnMut(LocalAiBranchContextStep),
 {
-    on_step(LocalAiBranchContextStep::ResolvingRefs);
-    let base_sha = run_git(repo_path, &["rev-parse", base_ref])?;
-    let head_sha = run_git(repo_path, &["rev-parse", head_ref])?;
-    on_step(LocalAiBranchContextStep::DeterminingDiffBase);
-    let from_ref = if comparison_mode == "mergeBase" || comparison_mode == "merge-base" {
-        run_git(repo_path, &["merge-base", base_ref, head_ref])?
-    } else {
-        base_sha.clone()
-    };
-    let from_ref = from_ref.trim().to_string();
-    let head_sha = head_sha.trim().to_string();
+    let refs = resolve_branch_comparison_refs(
+        repo_path,
+        base_ref,
+        head_ref,
+        comparison_mode,
+        &mut on_step,
+    )?;
     on_step(LocalAiBranchContextStep::ReadingComparisonDiff);
-    let name_status = run_git(repo_path, &["diff", "--name-status", &from_ref, &head_sha])?;
-    let stat = run_git(repo_path, &["diff", "--stat", &from_ref, &head_sha])?;
+    let name_status = run_git(
+        repo_path,
+        &["diff", "--name-status", &refs.from_ref, &refs.head_sha],
+    )?;
+    let stat = run_git(
+        repo_path,
+        &["diff", "--stat", &refs.from_ref, &refs.head_sha],
+    )?;
     let file_paths = parse_name_status_paths(&name_status);
 
     if file_paths.is_empty() {
@@ -641,8 +689,8 @@ where
                 "diff",
                 "--find-renames",
                 &format!("-U{}", DIFF_CONTEXT_LINES),
-                &from_ref,
-                &head_sha,
+                &refs.from_ref,
+                &refs.head_sha,
                 "--",
                 file_path,
             ],
@@ -655,11 +703,11 @@ where
         let content = format!(
             "Action: Review changed code in one segmented branch-review file block\nBase ref: {} ({})\nHead ref: {} ({})\nComparison mode: {}\nEffective diff base: {}\nReview scope: file-level block\nCurrent review file: {}\n\nAll changed files in this comparison:\n{}\n\nChanged file summary:\n{}\n\nFile diff block:\n{}",
             base_ref,
-            base_sha.trim(),
+            refs.base_sha.trim(),
             head_ref,
-            head_sha,
+            refs.head_sha,
             comparison_mode,
-            from_ref,
+            refs.from_ref,
             file_path,
             name_status,
             stat,
@@ -667,8 +715,8 @@ where
         );
         let digest = digest_parts(&[
             "branchReviewFileBlock",
-            &from_ref,
-            &head_sha,
+            &refs.from_ref,
+            &refs.head_sha,
             comparison_mode,
             file_path,
             &diff,
@@ -706,8 +754,8 @@ where
     Ok(LocalAiBranchReviewFileContexts {
         input_digest: digest_parts(&[
             "branchReviewFileBlocks",
-            &from_ref,
-            &head_sha,
+            &refs.from_ref,
+            &refs.head_sha,
             comparison_mode,
             &name_status,
             &stat,
@@ -1145,7 +1193,6 @@ mod tests {
             "feature",
             "direct",
             LocalAiActionKind::BranchReview,
-            BranchDiffOrder::ReviewPriority,
             |_| {},
         )
         .unwrap();
@@ -1187,7 +1234,6 @@ mod tests {
             "feature",
             "direct",
             LocalAiActionKind::BranchReview,
-            BranchDiffOrder::ReviewPriority,
             |_| {},
         )
         .unwrap();

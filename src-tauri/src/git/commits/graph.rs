@@ -66,6 +66,8 @@ const ZED_LANE_WIDTH: f32 = 16.0;
 const ZED_COMMIT_CIRCLE_RADIUS: f32 = 3.5;
 const ZED_COMMIT_CIRCLE_STROKE_WIDTH: f32 = 1.5;
 const COMMIT_GRAPH_ROW_HEIGHT: f32 = 30.0;
+const DESIRED_CURVE_HEIGHT: f32 = 1.0 / 3.0;
+const DESIRED_CURVE_WIDTH: f32 = 1.0 / 3.0;
 const MIN_GRAPH_LANES: usize = 6;
 
 impl LaneState {
@@ -97,93 +99,37 @@ impl LaneState {
         let final_destination = destination_column.unwrap_or(parent_column);
         let final_color = color.unwrap_or(parent_color);
 
-        match segments.last_mut() {
-            Some(ZedCommitLineSegment::Straight { to_row }) if *to_row == usize::MAX => {
-                if final_destination != lane_column {
-                    *to_row = ending_row.saturating_sub(1);
-
-                    let curved_line = ZedCommitLineSegment::Curve {
-                        to_column: final_destination,
-                        on_row: ending_row,
-                        curve_kind: CurveKind::Checkout,
-                    };
-
-                    if *to_row == starting_row {
-                        let last_index = segments.len() - 1;
-                        segments[last_index] = curved_line;
-                    } else {
-                        segments.push(curved_line);
-                    }
-                } else {
-                    *to_row = ending_row;
-                }
+        match segments.last().copied() {
+            Some(ZedCommitLineSegment::Straight { to_row }) if to_row == usize::MAX => {
+                finish_unbounded_straight(
+                    &mut segments,
+                    starting_row,
+                    ending_row,
+                    lane_column,
+                    final_destination,
+                );
             }
             Some(ZedCommitLineSegment::Curve {
-                on_row,
-                to_column,
-                curve_kind,
-            }) if *on_row == usize::MAX => {
-                if *to_column == usize::MAX {
-                    *to_column = final_destination;
-                }
-
-                if matches!(curve_kind, CurveKind::Merge) {
-                    *on_row = starting_row + 1;
-                    if *on_row < ending_row {
-                        if *to_column != final_destination {
-                            segments.push(ZedCommitLineSegment::Straight {
-                                to_row: ending_row.saturating_sub(1),
-                            });
-                            segments.push(ZedCommitLineSegment::Curve {
-                                to_column: final_destination,
-                                on_row: ending_row,
-                                curve_kind: CurveKind::Checkout,
-                            });
-                        } else {
-                            segments.push(ZedCommitLineSegment::Straight { to_row: ending_row });
-                        }
-                    } else if *to_column != final_destination {
-                        segments.push(ZedCommitLineSegment::Curve {
-                            to_column: final_destination,
-                            on_row: ending_row,
-                            curve_kind: CurveKind::Checkout,
-                        });
-                    }
-                } else {
-                    *on_row = ending_row;
-                    if *to_column != final_destination {
-                        segments.push(ZedCommitLineSegment::Straight { to_row: ending_row });
-                        segments.push(ZedCommitLineSegment::Curve {
-                            to_column: final_destination,
-                            on_row: ending_row,
-                            curve_kind: CurveKind::Checkout,
-                        });
-                    }
-                }
+                on_row, curve_kind, ..
+            }) if on_row == usize::MAX => {
+                finish_unbounded_curve(
+                    &mut segments,
+                    curve_kind,
+                    starting_row,
+                    ending_row,
+                    final_destination,
+                );
             }
             Some(ZedCommitLineSegment::Curve {
                 on_row, to_column, ..
             }) => {
-                if *on_row < ending_row {
-                    if *to_column != final_destination {
-                        segments.push(ZedCommitLineSegment::Straight {
-                            to_row: ending_row.saturating_sub(1),
-                        });
-                        segments.push(ZedCommitLineSegment::Curve {
-                            to_column: final_destination,
-                            on_row: ending_row,
-                            curve_kind: CurveKind::Checkout,
-                        });
-                    } else {
-                        segments.push(ZedCommitLineSegment::Straight { to_row: ending_row });
-                    }
-                } else if *to_column != final_destination {
-                    segments.push(ZedCommitLineSegment::Curve {
-                        to_column: final_destination,
-                        on_row: ending_row,
-                        curve_kind: CurveKind::Checkout,
-                    });
-                }
+                finish_curve_to_destination(
+                    &mut segments,
+                    on_row,
+                    to_column,
+                    ending_row,
+                    final_destination,
+                );
             }
             _ => {}
         }
@@ -194,6 +140,109 @@ impl LaneState {
             color_idx: final_color,
             segments,
         })
+    }
+}
+
+fn finish_unbounded_straight(
+    segments: &mut Vec<ZedCommitLineSegment>,
+    starting_row: usize,
+    ending_row: usize,
+    lane_column: usize,
+    final_destination: usize,
+) {
+    if final_destination == lane_column {
+        if let Some(ZedCommitLineSegment::Straight { to_row }) = segments.last_mut() {
+            *to_row = ending_row;
+        }
+        return;
+    }
+
+    let straight_end_row = ending_row.saturating_sub(1);
+    if let Some(ZedCommitLineSegment::Straight { to_row }) = segments.last_mut() {
+        *to_row = straight_end_row;
+    }
+
+    let checkout_curve = checkout_curve(final_destination, ending_row);
+    if straight_end_row == starting_row {
+        let last_index = segments.len() - 1;
+        segments[last_index] = checkout_curve;
+    } else {
+        segments.push(checkout_curve);
+    }
+}
+
+fn finish_unbounded_curve(
+    segments: &mut Vec<ZedCommitLineSegment>,
+    curve_kind: CurveKind,
+    starting_row: usize,
+    ending_row: usize,
+    final_destination: usize,
+) {
+    let curve_to_column = {
+        let Some(ZedCommitLineSegment::Curve {
+            on_row, to_column, ..
+        }) = segments.last_mut()
+        else {
+            return;
+        };
+
+        if *to_column == usize::MAX {
+            *to_column = final_destination;
+        }
+
+        match curve_kind {
+            CurveKind::Merge => *on_row = starting_row + 1,
+            CurveKind::Checkout => *on_row = ending_row,
+        }
+
+        *to_column
+    };
+
+    match curve_kind {
+        CurveKind::Merge => {
+            finish_curve_to_destination(
+                segments,
+                starting_row + 1,
+                curve_to_column,
+                ending_row,
+                final_destination,
+            );
+        }
+        CurveKind::Checkout => {
+            if curve_to_column != final_destination {
+                segments.push(ZedCommitLineSegment::Straight { to_row: ending_row });
+                segments.push(checkout_curve(final_destination, ending_row));
+            }
+        }
+    }
+}
+
+fn finish_curve_to_destination(
+    segments: &mut Vec<ZedCommitLineSegment>,
+    on_row: usize,
+    to_column: usize,
+    ending_row: usize,
+    final_destination: usize,
+) {
+    if on_row < ending_row {
+        if to_column != final_destination {
+            segments.push(ZedCommitLineSegment::Straight {
+                to_row: ending_row.saturating_sub(1),
+            });
+            segments.push(checkout_curve(final_destination, ending_row));
+        } else {
+            segments.push(ZedCommitLineSegment::Straight { to_row: ending_row });
+        }
+    } else if to_column != final_destination {
+        segments.push(checkout_curve(final_destination, ending_row));
+    }
+}
+
+fn checkout_curve(to_column: usize, on_row: usize) -> ZedCommitLineSegment {
+    ZedCommitLineSegment::Curve {
+        to_column,
+        on_row,
+        curve_kind: CurveKind::Checkout,
     }
 }
 
@@ -388,9 +437,6 @@ pub(super) fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec
 
 fn append_line_segments(line: &ZedCommitLine, row_segments: &mut [Vec<CommitGraphSegment>]) {
     let radius_row = ZED_COMMIT_CIRCLE_RADIUS / COMMIT_GRAPH_ROW_HEIGHT;
-    let radius_lane = (ZED_COMMIT_CIRCLE_RADIUS + ZED_COMMIT_CIRCLE_STROKE_WIDTH) / ZED_LANE_WIDTH;
-    let desired_curve_height: f32 = 1.0 / 3.0;
-    let desired_curve_width: f32 = 1.0 / 3.0;
 
     let mut current_row = line.full_interval.start as f32 + 0.5 + radius_row;
     let mut current_lane = line.child_column as f32;
@@ -419,110 +465,169 @@ fn append_line_segments(line: &ZedCommitLine, row_segments: &mut [Vec<CommitGrap
                 on_row,
                 curve_kind,
             } => {
-                let mut to_lane = *to_column as f32;
-                let mut to_row = *on_row as f32 + 0.5;
-                let going_right = to_lane > current_lane;
-                let column_shift = if going_right {
-                    radius_lane
-                } else {
-                    -radius_lane
-                };
+                let (next_lane, next_row) = append_curve_segments(
+                    row_segments,
+                    line.color_idx,
+                    current_lane,
+                    current_row,
+                    *to_column as f32,
+                    *on_row as f32 + 0.5,
+                    *curve_kind,
+                    is_last,
+                );
 
-                match curve_kind {
-                    CurveKind::Checkout => {
-                        if is_last {
-                            to_lane -= column_shift;
-                        }
-
-                        let available_curve_width = (to_lane - current_lane).abs();
-                        let available_curve_height = (to_row - current_row).abs();
-                        let curve_width = desired_curve_width.min(available_curve_width);
-                        let curve_height = desired_curve_height.min(available_curve_height);
-                        let signed_curve_width = if going_right {
-                            curve_width
-                        } else {
-                            -curve_width
-                        };
-                        let curve_start_y = to_row - curve_height;
-                        let curve_end_lane = current_lane + signed_curve_width;
-
-                        push_vertical_segments(
-                            row_segments,
-                            line.color_idx,
-                            current_lane,
-                            current_row,
-                            curve_start_y,
-                        );
-                        push_curve_segment(
-                            row_segments,
-                            line.color_idx,
-                            current_lane,
-                            curve_start_y,
-                            curve_end_lane,
-                            to_row,
-                            current_lane,
-                            to_row,
-                        );
-                        push_line_segment(
-                            row_segments,
-                            line.color_idx,
-                            curve_end_lane,
-                            to_row,
-                            to_lane,
-                            to_row,
-                        );
-                    }
-                    CurveKind::Merge => {
-                        if is_last {
-                            to_row -= radius_row;
-                        }
-
-                        let merge_start_lane = current_lane + column_shift;
-                        let merge_start_y = current_row - radius_row;
-                        let available_curve_width = (to_lane - merge_start_lane).abs();
-                        let available_curve_height = (to_row - merge_start_y).abs();
-                        let curve_width = desired_curve_width.min(available_curve_width);
-                        let curve_height = desired_curve_height.min(available_curve_height);
-                        let signed_curve_width = if going_right {
-                            curve_width
-                        } else {
-                            -curve_width
-                        };
-                        let curve_start_lane = to_lane - signed_curve_width;
-                        let curve_end_y = merge_start_y + curve_height;
-
-                        push_line_segment(
-                            row_segments,
-                            line.color_idx,
-                            merge_start_lane,
-                            merge_start_y,
-                            curve_start_lane,
-                            merge_start_y,
-                        );
-                        push_curve_segment(
-                            row_segments,
-                            line.color_idx,
-                            curve_start_lane,
-                            merge_start_y,
-                            to_lane,
-                            curve_end_y,
-                            to_lane,
-                            merge_start_y,
-                        );
-                        push_vertical_segments(
-                            row_segments,
-                            line.color_idx,
-                            to_lane,
-                            curve_end_y,
-                            to_row,
-                        );
-                    }
-                }
-
-                current_row = to_row;
-                current_lane = to_lane;
+                current_row = next_row;
+                current_lane = next_lane;
             }
         }
+    }
+}
+
+fn append_curve_segments(
+    row_segments: &mut [Vec<CommitGraphSegment>],
+    color_idx: usize,
+    current_lane: f32,
+    current_row: f32,
+    to_lane: f32,
+    to_row: f32,
+    curve_kind: CurveKind,
+    is_last: bool,
+) -> (f32, f32) {
+    match curve_kind {
+        CurveKind::Checkout => append_checkout_curve_segments(
+            row_segments,
+            color_idx,
+            current_lane,
+            current_row,
+            to_lane,
+            to_row,
+            is_last,
+        ),
+        CurveKind::Merge => append_merge_curve_segments(
+            row_segments,
+            color_idx,
+            current_lane,
+            current_row,
+            to_lane,
+            to_row,
+            is_last,
+        ),
+    }
+}
+
+fn append_checkout_curve_segments(
+    row_segments: &mut [Vec<CommitGraphSegment>],
+    color_idx: usize,
+    current_lane: f32,
+    current_row: f32,
+    mut to_lane: f32,
+    to_row: f32,
+    is_last: bool,
+) -> (f32, f32) {
+    let going_right = to_lane > current_lane;
+    let column_shift = curve_column_shift(going_right);
+
+    if is_last {
+        to_lane -= column_shift;
+    }
+
+    let curve_width = DESIRED_CURVE_WIDTH.min((to_lane - current_lane).abs());
+    let curve_height = DESIRED_CURVE_HEIGHT.min((to_row - current_row).abs());
+    let signed_curve_width = signed_curve_width(curve_width, going_right);
+    let curve_start_y = to_row - curve_height;
+    let curve_end_lane = current_lane + signed_curve_width;
+
+    push_vertical_segments(
+        row_segments,
+        color_idx,
+        current_lane,
+        current_row,
+        curve_start_y,
+    );
+    push_curve_segment(
+        row_segments,
+        color_idx,
+        current_lane,
+        curve_start_y,
+        curve_end_lane,
+        to_row,
+        current_lane,
+        to_row,
+    );
+    push_line_segment(
+        row_segments,
+        color_idx,
+        curve_end_lane,
+        to_row,
+        to_lane,
+        to_row,
+    );
+
+    (to_lane, to_row)
+}
+
+fn append_merge_curve_segments(
+    row_segments: &mut [Vec<CommitGraphSegment>],
+    color_idx: usize,
+    current_lane: f32,
+    current_row: f32,
+    to_lane: f32,
+    mut to_row: f32,
+    is_last: bool,
+) -> (f32, f32) {
+    let radius_row = ZED_COMMIT_CIRCLE_RADIUS / COMMIT_GRAPH_ROW_HEIGHT;
+    let going_right = to_lane > current_lane;
+    let column_shift = curve_column_shift(going_right);
+
+    if is_last {
+        to_row -= radius_row;
+    }
+
+    let merge_start_lane = current_lane + column_shift;
+    let merge_start_y = current_row - radius_row;
+    let curve_width = DESIRED_CURVE_WIDTH.min((to_lane - merge_start_lane).abs());
+    let curve_height = DESIRED_CURVE_HEIGHT.min((to_row - merge_start_y).abs());
+    let signed_curve_width = signed_curve_width(curve_width, going_right);
+    let curve_start_lane = to_lane - signed_curve_width;
+    let curve_end_y = merge_start_y + curve_height;
+
+    push_line_segment(
+        row_segments,
+        color_idx,
+        merge_start_lane,
+        merge_start_y,
+        curve_start_lane,
+        merge_start_y,
+    );
+    push_curve_segment(
+        row_segments,
+        color_idx,
+        curve_start_lane,
+        merge_start_y,
+        to_lane,
+        curve_end_y,
+        to_lane,
+        merge_start_y,
+    );
+    push_vertical_segments(row_segments, color_idx, to_lane, curve_end_y, to_row);
+
+    (to_lane, to_row)
+}
+
+fn curve_column_shift(going_right: bool) -> f32 {
+    let radius_lane = (ZED_COMMIT_CIRCLE_RADIUS + ZED_COMMIT_CIRCLE_STROKE_WIDTH) / ZED_LANE_WIDTH;
+    if going_right {
+        radius_lane
+    } else {
+        -radius_lane
+    }
+}
+
+fn signed_curve_width(curve_width: f32, going_right: bool) -> f32 {
+    if going_right {
+        curve_width
+    } else {
+        -curve_width
     }
 }
 

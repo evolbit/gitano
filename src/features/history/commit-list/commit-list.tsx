@@ -1,5 +1,7 @@
 import { Tooltip } from "@mantine/core";
 import {
+  type Dispatch,
+  type SetStateAction,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -42,7 +44,12 @@ import TableVirtualResizable, {
   type TableColumn,
 } from "@/components/tables/table-virtual-resizable";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
-import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
+import {
+  appendExternalAiRunEvent,
+  appendLocalAiRunProgress,
+  LocalAiResultModal,
+  LocalAiSetupModal,
+} from "@/features/local-ai";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { buildDefaultWorktreeFolder } from "@/features/worktrees/utils/worktree-defaults";
 import type { CommitListItem } from "@/shared/types/git";
@@ -96,6 +103,244 @@ type CommitDialogState = {
   kind: "branch" | "tag" | "worktree" | "cherryPick" | "revert";
   commit: CommitListItem;
 };
+
+const COMMIT_DIALOG_COPY: Record<
+  CommitDialogState["kind"],
+  { title: string; confirmLabel: string; loadingLabel: string }
+> = {
+  branch: {
+    title: "Create Branch From Commit",
+    confirmLabel: "Create Branch",
+    loadingLabel: "Creating...",
+  },
+  tag: {
+    title: "Create Tag At Commit",
+    confirmLabel: "Create Tag",
+    loadingLabel: "Creating...",
+  },
+  worktree: {
+    title: "Create Worktree From Commit",
+    confirmLabel: "Create Worktree",
+    loadingLabel: "Creating...",
+  },
+  cherryPick: {
+    title: "Cherry-pick Commit",
+    confirmLabel: "Cherry-pick Commit",
+    loadingLabel: "Cherry-picking...",
+  },
+  revert: {
+    title: "Revert Commit",
+    confirmLabel: "Revert Commit",
+    loadingLabel: "Reverting...",
+  },
+};
+const COMMIT_DIALOG_INPUT_CLASS =
+  "h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60";
+const COMMIT_DIALOG_TEXTAREA_CLASS =
+  "min-h-20 w-full resize-none rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-500/60";
+
+function commitActionFailureTitle(kind: CommitDialogState["kind"]) {
+  switch (kind) {
+    case "cherryPick":
+      return "Cherry-pick failed";
+    case "revert":
+      return "Revert failed";
+    default:
+      return "Commit action failed";
+  }
+}
+
+function isBranchMutationDialog(kind: CommitDialogState["kind"]) {
+  return kind === "cherryPick" || kind === "revert";
+}
+
+function commitDialogConfirmDisabled(
+  dialog: CommitDialogState | null,
+  branchName: string,
+  tagName: string,
+  worktreeBranch: string,
+  worktreePath: string,
+) {
+  if (!dialog) return true;
+
+  switch (dialog.kind) {
+    case "branch":
+      return !branchName.trim();
+    case "tag":
+      return !tagName.trim();
+    case "worktree":
+      return !worktreeBranch.trim() || !worktreePath.trim();
+    default:
+      return false;
+  }
+}
+
+function commitDialogDescription(
+  dialog: CommitDialogState | null,
+  dialogConfirmLabel: string,
+  selectedBranch: string | null | undefined,
+  dialogCommitLabel: string,
+) {
+  if (!dialog) return null;
+
+  const actionLabel = isBranchMutationDialog(dialog.kind)
+    ? `${dialogConfirmLabel} on ${selectedBranch ?? "current branch"}`
+    : dialogConfirmLabel;
+
+  return (
+    <span>
+      {actionLabel}{" "}
+      <span className="font-mono text-blue-200">{dialogCommitLabel}</span>
+    </span>
+  );
+}
+
+function CommitDialogDetails({
+  dialog,
+  dialogLoading,
+  dialogError,
+  branchName,
+  setBranchName,
+  tagName,
+  setTagName,
+  tagAnnotated,
+  setTagAnnotated,
+  tagDescription,
+  setTagDescription,
+  worktreeBranch,
+  setWorktreeBranch,
+  worktreePath,
+  setWorktreePath,
+  repoPath,
+}: {
+  dialog: CommitDialogState | null;
+  dialogLoading: boolean;
+  dialogError: string | null;
+  branchName: string;
+  setBranchName: Dispatch<SetStateAction<string>>;
+  tagName: string;
+  setTagName: Dispatch<SetStateAction<string>>;
+  tagAnnotated: boolean;
+  setTagAnnotated: Dispatch<SetStateAction<boolean>>;
+  tagDescription: string;
+  setTagDescription: Dispatch<SetStateAction<string>>;
+  worktreeBranch: string;
+  setWorktreeBranch: Dispatch<SetStateAction<string>>;
+  worktreePath: string;
+  setWorktreePath: Dispatch<SetStateAction<string>>;
+  repoPath?: string | null;
+}) {
+  if (!dialog) return null;
+
+  return (
+    <div className="space-y-3">
+      {dialog.kind === "branch" ? (
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-zinc-300">
+            Branch name
+          </span>
+          <input
+            type="text"
+            className={COMMIT_DIALOG_INPUT_CLASS}
+            value={branchName}
+            disabled={dialogLoading}
+            onChange={(event) => setBranchName(event.target.value)}
+            autoFocus
+          />
+        </label>
+      ) : null}
+      {dialog.kind === "tag" ? (
+        <>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-zinc-300">
+              Tag name
+            </span>
+            <input
+              type="text"
+              className={COMMIT_DIALOG_INPUT_CLASS}
+              value={tagName}
+              disabled={dialogLoading}
+              onChange={(event) => setTagName(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border bg-background"
+              checked={tagAnnotated}
+              disabled={dialogLoading}
+              onChange={(event) => setTagAnnotated(event.target.checked)}
+            />
+            Annotated tag
+          </label>
+          {tagAnnotated ? (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-zinc-300">
+                Description
+              </span>
+              <textarea
+                className={COMMIT_DIALOG_TEXTAREA_CLASS}
+                value={tagDescription}
+                disabled={dialogLoading}
+                onChange={(event) => setTagDescription(event.target.value)}
+              />
+            </label>
+          ) : null}
+        </>
+      ) : null}
+      {dialog.kind === "worktree" ? (
+        <>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-zinc-300">
+              Branch
+            </span>
+            <input
+              type="text"
+              className={COMMIT_DIALOG_INPUT_CLASS}
+              value={worktreeBranch}
+              disabled={dialogLoading}
+              onChange={(event) => {
+                const nextBranch = event.target.value;
+                setWorktreeBranch(nextBranch);
+                if (repoPath) {
+                  setWorktreePath(buildDefaultWorktreeFolder(repoPath, nextBranch));
+                }
+              }}
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-zinc-300">
+              Path
+            </span>
+            <input
+              type="text"
+              className={COMMIT_DIALOG_INPUT_CLASS}
+              value={worktreePath}
+              disabled={dialogLoading}
+              onChange={(event) => setWorktreePath(event.target.value)}
+            />
+          </label>
+        </>
+      ) : null}
+      {isBranchMutationDialog(dialog.kind) ? (
+        <span>
+          This runs{" "}
+          <span className="font-mono">
+            git {dialog.kind === "cherryPick" ? "cherry-pick" : "revert"}
+          </span>{" "}
+          against the current branch. Git may stop for conflicts.
+        </span>
+      ) : null}
+      {dialogError ? (
+        <div className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
+          {dialogError}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type CommitCompareState = {
   mode: CommitCompareMode;
@@ -283,25 +528,9 @@ export default function CommitList() {
         return;
       }
 
-      setCommitAiAnalysis((current) => {
-        if (!current || current.progressRunId !== progress.runId) {
-          return current;
-        }
-
-        const previous = current.progress[current.progress.length - 1];
-        if (
-          previous?.state === progress.state &&
-          previous.message === progress.message &&
-          previous.error === progress.error
-        ) {
-          return current;
-        }
-
-        return {
-          ...current,
-          progress: [...current.progress, progress],
-        };
-      });
+      setCommitAiAnalysis((current) =>
+        current ? appendLocalAiRunProgress(current, progress) : current,
+      );
     });
 
     return () => {
@@ -320,24 +549,9 @@ export default function CommitList() {
         return;
       }
 
-      setCommitAiAnalysis((current) => {
-        if (!current || current.progressRunId !== event.runId) {
-          return current;
-        }
-
-        const previous = current.externalEvents[current.externalEvents.length - 1];
-        if (
-          previous?.kind === event.kind &&
-          previous.message === event.message
-        ) {
-          return current;
-        }
-
-        return {
-          ...current,
-          externalEvents: [...current.externalEvents, event],
-        };
-      });
+      setCommitAiAnalysis((current) =>
+        current ? appendExternalAiRunEvent(current, event) : current,
+      );
     });
 
     return () => {
@@ -1004,46 +1218,55 @@ export default function CommitList() {
     setDialogError(null);
 
     try {
-      if (dialog.kind === "branch") {
-        const nextBranchName = branchName.trim();
-        await createGitBranch(repoPath, nextBranchName, commit.sha);
-        notifySuccess(
-          "Created branch",
-          `Created ${nextBranchName} from ${commit.sha.slice(0, 12)}.`,
-        );
-      } else if (dialog.kind === "tag") {
-        const nextTagName = tagName.trim();
-        await createTag(
-          repoPath,
-          nextTagName,
-          commit.sha,
-          tagAnnotated,
-          tagAnnotated ? tagDescription.trim() : null,
-        );
-        notifySuccess(
-          "Created tag",
-          `Created ${nextTagName} at ${commit.sha.slice(0, 12)}.`,
-        );
-      } else if (dialog.kind === "worktree") {
-        const nextBranch = worktreeBranch.trim();
-        const nextPath = worktreePath.trim();
-        await createGitWorktree(repoPath, nextPath, nextBranch, commit.sha);
-        notifySuccess(
-          "Created worktree",
-          `Created ${nextBranch} from ${commit.sha.slice(0, 12)} at ${nextPath}.`,
-        );
-      } else if (dialog.kind === "cherryPick") {
-        await cherryPickCommit(repoPath, commit.sha);
-        notifySuccess(
-          "Cherry-pick succeeded",
-          `Cherry-picked ${commit.sha.slice(0, 12)} onto ${selectedBranch}.`,
-        );
-      } else if (dialog.kind === "revert") {
-        await revertCommit(repoPath, commit.sha);
-        notifySuccess(
-          "Revert succeeded",
-          `Reverted ${commit.sha.slice(0, 12)} on ${selectedBranch}.`,
-        );
+      switch (dialog.kind) {
+        case "branch": {
+          const nextBranchName = branchName.trim();
+          await createGitBranch(repoPath, nextBranchName, commit.sha);
+          notifySuccess(
+            "Created branch",
+            `Created ${nextBranchName} from ${commit.sha.slice(0, 12)}.`,
+          );
+          break;
+        }
+        case "tag": {
+          const nextTagName = tagName.trim();
+          await createTag(
+            repoPath,
+            nextTagName,
+            commit.sha,
+            tagAnnotated,
+            tagAnnotated ? tagDescription.trim() : null,
+          );
+          notifySuccess(
+            "Created tag",
+            `Created ${nextTagName} at ${commit.sha.slice(0, 12)}.`,
+          );
+          break;
+        }
+        case "worktree": {
+          const nextBranch = worktreeBranch.trim();
+          const nextPath = worktreePath.trim();
+          await createGitWorktree(repoPath, nextPath, nextBranch, commit.sha);
+          notifySuccess(
+            "Created worktree",
+            `Created ${nextBranch} from ${commit.sha.slice(0, 12)} at ${nextPath}.`,
+          );
+          break;
+        }
+        case "cherryPick":
+          await cherryPickCommit(repoPath, commit.sha);
+          notifySuccess(
+            "Cherry-pick succeeded",
+            `Cherry-picked ${commit.sha.slice(0, 12)} onto ${selectedBranch}.`,
+          );
+          break;
+        case "revert":
+          await revertCommit(repoPath, commit.sha);
+          notifySuccess(
+            "Revert succeeded",
+            `Reverted ${commit.sha.slice(0, 12)} on ${selectedBranch}.`,
+          );
+          break;
       }
 
       setDialog(null);
@@ -1054,14 +1277,7 @@ export default function CommitList() {
           ? operationError.message
           : String(operationError || "Unknown error");
       setDialogError(details);
-      notifyError(
-        dialog.kind === "cherryPick"
-          ? "Cherry-pick failed"
-          : dialog.kind === "revert"
-            ? "Revert failed"
-            : "Commit action failed",
-        operationError,
-      );
+      notifyError(commitActionFailureTitle(dialog.kind), operationError);
 
       if (dialog.kind === "cherryPick" || dialog.kind === "revert") {
         refreshRepositorySurfaces();
@@ -1155,45 +1371,17 @@ export default function CommitList() {
   const dialogCommitLabel = dialog
     ? `${dialog.commit.sha.slice(0, 7)} · ${dialog.commit.message || "Untitled commit"}`
     : "";
-  const dialogTitle = dialog
-    ? dialog.kind === "branch"
-      ? "Create Branch From Commit"
-      : dialog.kind === "tag"
-        ? "Create Tag At Commit"
-        : dialog.kind === "worktree"
-          ? "Create Worktree From Commit"
-          : dialog.kind === "cherryPick"
-            ? "Cherry-pick Commit"
-            : "Revert Commit"
-    : "";
-  const dialogConfirmLabel = dialog
-    ? dialog.kind === "branch"
-      ? "Create Branch"
-      : dialog.kind === "tag"
-        ? "Create Tag"
-        : dialog.kind === "worktree"
-          ? "Create Worktree"
-          : dialog.kind === "cherryPick"
-            ? "Cherry-pick Commit"
-            : "Revert Commit"
-    : "Confirm";
-  const dialogLoadingLabel = dialog
-    ? dialog.kind === "branch"
-      ? "Creating..."
-      : dialog.kind === "tag"
-        ? "Creating..."
-        : dialog.kind === "worktree"
-          ? "Creating..."
-          : dialog.kind === "cherryPick"
-            ? "Cherry-picking..."
-            : "Reverting..."
-    : "Working...";
-  const dialogConfirmDisabled =
-    !dialog ||
-    (dialog.kind === "branch" && !branchName.trim()) ||
-    (dialog.kind === "tag" && !tagName.trim()) ||
-    (dialog.kind === "worktree" &&
-      (!worktreeBranch.trim() || !worktreePath.trim()));
+  const dialogCopy = dialog ? COMMIT_DIALOG_COPY[dialog.kind] : null;
+  const dialogTitle = dialogCopy?.title ?? "";
+  const dialogConfirmLabel = dialogCopy?.confirmLabel ?? "Confirm";
+  const dialogLoadingLabel = dialogCopy?.loadingLabel ?? "Working...";
+  const dialogConfirmDisabled = commitDialogConfirmDisabled(
+    dialog,
+    branchName,
+    tagName,
+    worktreeBranch,
+    worktreePath,
+  );
 
   return (
     <div className="h-full w-full flex flex-col p-4">
@@ -1347,134 +1535,36 @@ export default function CommitList() {
       <ConfirmModal
         open={dialog !== null}
         title={dialogTitle}
-        description={
-          dialog ? (
-            <span>
-              {dialog.kind === "cherryPick" || dialog.kind === "revert"
-                ? `${dialogConfirmLabel} on ${selectedBranch ?? "current branch"}`
-                : dialogConfirmLabel}{" "}
-              <span className="font-mono text-blue-200">{dialogCommitLabel}</span>
-            </span>
-          ) : null
-        }
+        description={commitDialogDescription(
+          dialog,
+          dialogConfirmLabel,
+          selectedBranch,
+          dialogCommitLabel,
+        )}
         details={
-          dialog ? (
-            <div className="space-y-3">
-              {dialog.kind === "branch" ? (
-                <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-zinc-300">
-                    Branch name
-                  </span>
-                  <input
-                    type="text"
-                    className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
-                    value={branchName}
-                    disabled={dialogLoading}
-                    onChange={(event) => setBranchName(event.target.value)}
-                    autoFocus
-                  />
-                </label>
-              ) : null}
-              {dialog.kind === "tag" ? (
-                <>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-zinc-300">
-                      Tag name
-                    </span>
-                    <input
-                      type="text"
-                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
-                      value={tagName}
-                      disabled={dialogLoading}
-                      onChange={(event) => setTagName(event.target.value)}
-                      autoFocus
-                    />
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-zinc-300">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-border bg-background"
-                      checked={tagAnnotated}
-                      disabled={dialogLoading}
-                      onChange={(event) => setTagAnnotated(event.target.checked)}
-                    />
-                    Annotated tag
-                  </label>
-                  {tagAnnotated ? (
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-zinc-300">
-                        Description
-                      </span>
-                      <textarea
-                        className="min-h-20 w-full resize-none rounded border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-500/60"
-                        value={tagDescription}
-                        disabled={dialogLoading}
-                        onChange={(event) => setTagDescription(event.target.value)}
-                      />
-                    </label>
-                  ) : null}
-                </>
-              ) : null}
-              {dialog.kind === "worktree" ? (
-                <>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-zinc-300">
-                      Branch
-                    </span>
-                    <input
-                      type="text"
-                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
-                      value={worktreeBranch}
-                      disabled={dialogLoading}
-                      onChange={(event) => {
-                        const nextBranch = event.target.value;
-                        setWorktreeBranch(nextBranch);
-                        if (repoPath) {
-                          setWorktreePath(
-                            buildDefaultWorktreeFolder(repoPath, nextBranch),
-                          );
-                        }
-                      }}
-                      autoFocus
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-zinc-300">
-                      Path
-                    </span>
-                    <input
-                      type="text"
-                      className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
-                      value={worktreePath}
-                      disabled={dialogLoading}
-                      onChange={(event) => setWorktreePath(event.target.value)}
-                    />
-                  </label>
-                </>
-              ) : null}
-              {dialog.kind === "cherryPick" || dialog.kind === "revert" ? (
-                <span>
-                  This runs{" "}
-                  <span className="font-mono">
-                    git {dialog.kind === "cherryPick" ? "cherry-pick" : "revert"}
-                  </span>{" "}
-                  against the current branch. Git may stop for conflicts.
-                </span>
-              ) : null}
-              {dialogError ? (
-                <div className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
-                  {dialogError}
-                </div>
-              ) : null}
-            </div>
-          ) : null
+          <CommitDialogDetails
+            dialog={dialog}
+            dialogLoading={dialogLoading}
+            dialogError={dialogError}
+            branchName={branchName}
+            setBranchName={setBranchName}
+            tagName={tagName}
+            setTagName={setTagName}
+            tagAnnotated={tagAnnotated}
+            setTagAnnotated={setTagAnnotated}
+            tagDescription={tagDescription}
+            setTagDescription={setTagDescription}
+            worktreeBranch={worktreeBranch}
+            setWorktreeBranch={setWorktreeBranch}
+            worktreePath={worktreePath}
+            setWorktreePath={setWorktreePath}
+            repoPath={repoPath}
+          />
         }
         confirmLabel={dialogConfirmLabel}
         loadingLabel={dialogLoadingLabel}
         variant={
-          dialog?.kind === "cherryPick" || dialog?.kind === "revert"
-            ? "danger"
-            : "default"
+          dialog && isBranchMutationDialog(dialog.kind) ? "danger" : "default"
         }
         loading={dialogLoading}
         confirmDisabled={dialogConfirmDisabled}

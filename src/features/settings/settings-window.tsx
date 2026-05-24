@@ -1,5 +1,13 @@
 import ReactDOM from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   IconCheck,
   IconCloudDownload,
@@ -67,6 +75,12 @@ const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
   { key: "externalAgents", label: "External Agents" },
   { key: "configuration", label: "Configuration" },
 ];
+const PANE_TITLES: Record<SettingsPane, string> = {
+  runtime: "Runtime",
+  models: "Local Models",
+  externalAgents: "External Agents",
+  configuration: "Configuration",
+};
 
 const ACTIONS: ReadonlyArray<{
   kind: LocalAiActionKind;
@@ -190,6 +204,22 @@ function formatWarmMemoryDetails(model: LocalAiModelEntry) {
   return `${formatWarmMemoryClass(getWarmMemoryClass(model))} warm, about ${formatGigabytes(estimate)}`;
 }
 
+function modelDescription(model: LocalAiModelEntry, usage: string[]) {
+  const usageText = usage.length > 0 ? ` - Used by: ${usage.join(", ")}` : "";
+  return `${model.id} - ${model.downloadSizeGb.toFixed(1)}GB download - ${formatContext(model.contextWindow)} context - ${formatWarmMemoryDetails(model)}${usageText}`;
+}
+
+function externalAgentAuthMethods(agent: ExternalAiAgentEntry) {
+  return agent.status.authMethods?.map((method) => method.displayName).join(", ");
+}
+
+function externalAgentDescription(agent: ExternalAiAgentEntry) {
+  const license = agent.license ? ` - ${agent.license}` : "";
+  const authMethods = externalAgentAuthMethods(agent);
+  const auth = authMethods ? ` - Auth: ${authMethods}` : "";
+  return `${agent.provider} - ${agent.description} - ${agent.version}${license}${auth}`;
+}
+
 function formatActionLabel(kind: string) {
   return ACTIONS.find((action) => action.kind === kind)?.label ?? kind;
 }
@@ -199,6 +229,73 @@ function getModelStatusLabel(status: LocalAiModelStatus | null | undefined) {
   if (status.ready) return status.running ? "Running" : "Downloaded";
   if (!status.runtime.available) return "Runtime unavailable";
   return "Not downloaded";
+}
+
+function runtimeStatusLabel(status: LocalAiRuntimeSetupStatus | null) {
+  if (status?.runtime.available) return "Running";
+  if (status?.installed) return "Installed";
+  return "Not installed";
+}
+
+function queuedLocalProgress(
+  operationId: string,
+  modelId: string,
+  status: string,
+): LocalAiDownloadProgress {
+  return {
+    operationId,
+    modelId,
+    state: "queued",
+    status,
+    completedBytes: null,
+    totalBytes: null,
+    percentage: null,
+    error: null,
+  };
+}
+
+function queuedExternalProgress(
+  operationId: string,
+  agentId: string,
+  status: string,
+): ExternalAiAgentProgress {
+  return {
+    operationId,
+    agentId,
+    state: "queued",
+    status,
+    completedBytes: null,
+    totalBytes: null,
+    percentage: null,
+    error: null,
+  };
+}
+
+function removeRecordEntry<T>(record: Record<string, T>, key: string) {
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
+function warmDisabledReason({
+  externalEngineSelected,
+  warmMetadataAvailable,
+  modelReady,
+}: {
+  externalEngineSelected: boolean;
+  warmMetadataAvailable: boolean;
+  modelReady: boolean;
+}) {
+  if (externalEngineSelected) {
+    return "Warmup is unavailable while an external agent is selected.";
+  }
+  if (!warmMetadataAvailable) {
+    return "Restart Gitano to enable warmup for this model.";
+  }
+  if (!modelReady) {
+    return "Download the model before keeping it warm.";
+  }
+  return null;
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -422,6 +519,40 @@ function SelectControl({
   );
 }
 
+function EngineOptionGroups({
+  catalog,
+  externalAgents,
+}: {
+  catalog: LocalAiModelEntry[];
+  externalAgents: ExternalAiAgentEntry[];
+}) {
+  return (
+    <>
+      <optgroup label="Local models">
+        {catalog.map((model) => (
+          <option
+            key={model.id}
+            value={`local:${model.id}`}
+          >
+            {model.displayName}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="External agents">
+        {externalAgents.map((agent) => (
+          <option
+            key={agent.id}
+            value={`external:${agent.id}`}
+            disabled={!agent.status.available}
+          >
+            {agent.displayName}
+          </option>
+        ))}
+      </optgroup>
+    </>
+  );
+}
+
 function ActionButton({
   children,
   onClick,
@@ -489,6 +620,55 @@ function ProgressPanel({
       ) : null}
     </div>
   );
+}
+
+type SettingsProgress = LocalAiDownloadProgress | ExternalAiAgentProgress;
+
+type SettingsProgressListener<TProgress extends SettingsProgress> = (
+  handler: (progress: TProgress) => void,
+) => Promise<() => void>;
+
+function useSettingsProgressListener<TProgress extends SettingsProgress>({
+  open,
+  listen,
+  setProgressByOperationId,
+  loadSettings,
+}: {
+  open: boolean;
+  listen: SettingsProgressListener<TProgress>;
+  setProgressByOperationId: Dispatch<
+    SetStateAction<Record<string, TProgress>>
+  >;
+  loadSettings: () => Promise<void>;
+}) {
+  useEffect(() => {
+    if (!open) return;
+
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+
+    void listen((progress) => {
+      setProgressByOperationId((current) => ({
+        ...current,
+        [progress.operationId]: progress,
+      }));
+
+      if (progress.state === "completed") {
+        void loadSettings();
+      }
+    }).then((nextUnlisten) => {
+      if (mounted) {
+        unlisten = nextUnlisten;
+      } else {
+        nextUnlisten();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [listen, loadSettings, open, setProgressByOperationId]);
 }
 
 function WarmModelCheckbox({
@@ -853,11 +1033,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
         ...current,
         [agentId]: true,
       }));
-      setExternalConfigErrorsByAgentId((current) => {
-        const next = { ...current };
-        delete next[agentId];
-        return next;
-      });
+      setExternalConfigErrorsByAgentId((current) =>
+        removeRecordEntry(current, agentId),
+      );
 
       try {
         const config = await getExternalAiAgentSessionConfig({
@@ -874,11 +1052,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
           [agentId]: errorMessage(configError, "Agent config unavailable"),
         }));
       } finally {
-        setExternalConfigLoadingByAgentId((current) => {
-          const next = { ...current };
-          delete next[agentId];
-          return next;
-        });
+        setExternalConfigLoadingByAgentId((current) =>
+          removeRecordEntry(current, agentId),
+        );
       }
     },
     [
@@ -900,61 +1076,19 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     void loadSettings();
   }, [loadSettings, open]);
 
-  useEffect(() => {
-    if (!open) return;
+  useSettingsProgressListener({
+    open,
+    listen: listenToLocalAiProgress,
+    setProgressByOperationId,
+    loadSettings,
+  });
 
-    let mounted = true;
-    let unlisten: (() => void) | null = null;
-    void listenToLocalAiProgress((progress) => {
-      setProgressByOperationId((current) => ({
-        ...current,
-        [progress.operationId]: progress,
-      }));
-
-      if (progress.state === "completed") {
-        void loadSettings();
-      }
-    }).then((nextUnlisten) => {
-      if (mounted) {
-        unlisten = nextUnlisten;
-      } else {
-        nextUnlisten();
-      }
-    });
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, [loadSettings, open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    let mounted = true;
-    let unlisten: (() => void) | null = null;
-    void listenToExternalAiAgentProgress((progress) => {
-      setExternalProgressByOperationId((current) => ({
-        ...current,
-        [progress.operationId]: progress,
-      }));
-
-      if (progress.state === "completed") {
-        void loadSettings();
-      }
-    }).then((nextUnlisten) => {
-      if (mounted) {
-        unlisten = nextUnlisten;
-      } else {
-        nextUnlisten();
-      }
-    });
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, [loadSettings, open]);
+  useSettingsProgressListener({
+    open,
+    listen: listenToExternalAiAgentProgress,
+    setProgressByOperationId: setExternalProgressByOperationId,
+    loadSettings,
+  });
 
   const modelUsageById = useMemo(() => {
     const usage: Record<string, string[]> = {};
@@ -1069,26 +1203,21 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
   const selectedEngineForAction = (actionKind: LocalAiActionKind) =>
     preferenceActionEngine(preferences, actionKind);
 
-  const handlePrepareRuntime = async (forceReinstall: boolean) => {
-    setSettingsError(null);
-    try {
-      const response = await prepareLocalAiRuntime({ forceReinstall });
-      setActiveOperationId(response.operationId);
-      setProgressByOperationId((current) => ({
-        ...current,
-        [response.operationId]: {
-          operationId: response.operationId,
-          modelId: "runtime",
-          state: "queued",
-          status: forceReinstall
-            ? "Starting runtime upgrade..."
-            : "Starting runtime setup...",
-          completedBytes: null,
-          totalBytes: null,
-          percentage: null,
-          error: null,
-        },
-      }));
+    const handlePrepareRuntime = async (forceReinstall: boolean) => {
+      setSettingsError(null);
+      try {
+        const response = await prepareLocalAiRuntime({ forceReinstall });
+        setActiveOperationId(response.operationId);
+        setProgressByOperationId((current) => ({
+          ...current,
+          [response.operationId]: queuedLocalProgress(
+            response.operationId,
+            "runtime",
+            forceReinstall
+              ? "Starting runtime upgrade..."
+              : "Starting runtime setup...",
+          ),
+        }));
     } catch (runtimeError) {
       showSettingsError("Runtime setup failed", runtimeError);
     }
@@ -1097,24 +1226,19 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
   const handlePrepareModel = async (modelId: string) => {
     setSettingsError(null);
     try {
-      const response = await prepareLocalAiModel({
-        modelId,
-        allowLimited: true,
-      });
-      setActiveOperationId(response.operationId);
-      setProgressByOperationId((current) => ({
-        ...current,
-        [response.operationId]: {
-          operationId: response.operationId,
+        const response = await prepareLocalAiModel({
           modelId,
-          state: "queued",
-          status: `Starting download for ${modelId}...`,
-          completedBytes: null,
-          totalBytes: null,
-          percentage: null,
-          error: null,
-        },
-      }));
+          allowLimited: true,
+        });
+        setActiveOperationId(response.operationId);
+        setProgressByOperationId((current) => ({
+          ...current,
+          [response.operationId]: queuedLocalProgress(
+            response.operationId,
+            modelId,
+            `Starting download for ${modelId}...`,
+          ),
+        }));
     } catch (downloadError) {
       showSettingsError("Model download failed", downloadError);
     }
@@ -1130,24 +1254,19 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     }
   };
 
-  const handleInstallExternalAgent = async (agentId: string) => {
-    setSettingsError(null);
-    try {
-      const response = await installExternalAiAgent({ agentId });
-      setActiveExternalOperationId(response.operationId);
-      setExternalProgressByOperationId((current) => ({
-        ...current,
-        [response.operationId]: {
-          operationId: response.operationId,
-          agentId,
-          state: "queued",
-          status: `Starting install for ${agentId}...`,
-          completedBytes: null,
-          totalBytes: null,
-          percentage: null,
-          error: null,
-        },
-      }));
+    const handleInstallExternalAgent = async (agentId: string) => {
+      setSettingsError(null);
+      try {
+        const response = await installExternalAiAgent({ agentId });
+        setActiveExternalOperationId(response.operationId);
+        setExternalProgressByOperationId((current) => ({
+          ...current,
+          [response.operationId]: queuedExternalProgress(
+            response.operationId,
+            agentId,
+            `Starting install for ${agentId}...`,
+          ),
+        }));
     } catch (installError) {
       showSettingsError("External agent install failed", installError);
     }
@@ -1304,13 +1423,11 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
       }));
     } catch (preferenceError) {
       showSettingsError("Prompt preference failed", preferenceError);
-    } finally {
-      setPromptSavingActionKinds((current) => {
-        const next = { ...current };
-        delete next[actionKind];
-        return next;
-      });
-    }
+      } finally {
+        setPromptSavingActionKinds((current) =>
+          removeRecordEntry(current, actionKind),
+        );
+      }
   };
 
   const handleSetWarmPreference = useCallback(
@@ -1331,11 +1448,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
       } catch (warmPreferenceError) {
         showSettingsError("Model warmup preference failed", warmPreferenceError);
       } finally {
-        setWarmSavingModelIds((current) => {
-          const next = { ...current };
-          delete next[modelId];
-          return next;
-        });
+        setWarmSavingModelIds((current) => removeRecordEntry(current, modelId));
       }
     },
     [externalEngineSelected, showSettingsError],
@@ -1371,17 +1484,10 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
 
   if (!open) return null;
 
-  const runtimeActionLabel = runtimeStatus?.installed
-    ? "Upgrade runtime"
-    : "Download runtime";
-  const paneTitle =
-    pane === "runtime"
-      ? "Runtime"
-      : pane === "models"
-        ? "Local Models"
-        : pane === "externalAgents"
-          ? "External Agents"
-          : "Configuration";
+    const runtimeActionLabel = runtimeStatus?.installed
+      ? "Upgrade runtime"
+      : "Download runtime";
+    const paneTitle = PANE_TITLES[pane];
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/65 px-4 py-6">
@@ -1475,13 +1581,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                   title="Runtime Status"
                   description="Whether Gitano can reach the local AI runtime used for model downloads and inference."
                 >
-                  <ValuePill>
-                    {runtimeStatus?.runtime.available
-                      ? "Running"
-                      : runtimeStatus?.installed
-                        ? "Installed"
-                        : "Not installed"}
-                  </ValuePill>
+                    <ValuePill>
+                      {runtimeStatusLabel(runtimeStatus)}
+                    </ValuePill>
                 </SettingsRow>
 
                 {runtimeStatus?.managed === false ? (
@@ -1550,27 +1652,23 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                   const usage = modelUsageById[model.id] ?? [];
                   const warmMetadataAvailable = hasWarmMetadata(model);
                   const warmChecked = warmModelIds.includes(model.id);
-                  const warmDisabled =
-                    externalEngineSelected ||
-                    !warmMetadataAvailable ||
-                    !status?.ready ||
-                    setupInProgress ||
-                    Boolean(warmSavingModelIds[model.id]);
-                  const warmDisabledReason = externalEngineSelected
-                    ? "Warmup is unavailable while an external agent is selected."
-                    : !warmMetadataAvailable
-                    ? "Restart Gitano to enable warmup for this model."
-                    : !status?.ready
-                      ? "Download the model before keeping it warm."
-                      : null;
+                    const warmDisabled =
+                      externalEngineSelected ||
+                      !warmMetadataAvailable ||
+                      !status?.ready ||
+                      setupInProgress ||
+                      Boolean(warmSavingModelIds[model.id]);
+                    const warmReason = warmDisabledReason({
+                      externalEngineSelected,
+                      warmMetadataAvailable,
+                      modelReady: Boolean(status?.ready),
+                    });
                   return (
-                    <SettingsRow
-                      key={model.id}
-                      title={model.displayName}
-                      description={`${model.id} - ${model.downloadSizeGb.toFixed(1)}GB download - ${formatContext(model.contextWindow)} context - ${formatWarmMemoryDetails(model)}${
-                        usage.length > 0 ? ` - Used by: ${usage.join(", ")}` : ""
-                      }`}
-                    >
+                      <SettingsRow
+                        key={model.id}
+                        title={model.displayName}
+                        description={modelDescription(model, usage)}
+                      >
                       <div className="flex w-full flex-col items-end gap-2">
                         <div className="flex items-center gap-2">
                           <ValuePill>{getModelStatusLabel(status)}</ValuePill>
@@ -1600,9 +1698,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                           )}
                         </div>
                         <WarmModelCheckbox
-                          checked={warmChecked}
-                          disabled={warmDisabled}
-                          reason={warmDisabledReason}
+                            checked={warmChecked}
+                            disabled={warmDisabled}
+                            reason={warmReason}
                           onChange={(checked) => {
                             handleWarmToggle(model.id, checked);
                           }}
@@ -1617,14 +1715,11 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
             {pane === "externalAgents" ? (
               <>
                 <SectionLabel>Curated Agents</SectionLabel>
-                {externalAgents.map((agent) => {
-                  const selected =
-                    globalEngine?.type === "external_agent" &&
-                    globalEngine.agentId === agent.id;
-                  const authMethods = agent.status.authMethods
-                    ?.map((method) => method.displayName)
-                    .join(", ");
-                  const installDisabled =
+                  {externalAgents.map((agent) => {
+                    const selected =
+                      globalEngine?.type === "external_agent" &&
+                      globalEngine.agentId === agent.id;
+                    const installDisabled =
                     setupInProgress ||
                     entitlement?.entitled === false ||
                     !agent.installSource;
@@ -1635,11 +1730,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
 
                   return (
                     <SettingsRow
-                      key={agent.id}
-                      title={agent.displayName}
-                      description={`${agent.provider} - ${agent.description} - ${agent.version}${
-                        agent.license ? ` - ${agent.license}` : ""
-                      }${authMethods ? ` - Auth: ${authMethods}` : ""}`}
+                        key={agent.id}
+                        title={agent.displayName}
+                        description={externalAgentDescription(agent)}
                       warning={agent.status.error}
                     >
                       <div className="flex w-full flex-col items-end gap-2">
@@ -1714,32 +1807,15 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                         void handleSetEnginePreference(value, null);
                       }}
                     >
-                      {engineValue(globalEngine) ? null : (
-                        <option value="">
-                          ---
-                        </option>
-                      )}
-                      <optgroup label="Local models">
-                        {catalog.map((model) => (
-                          <option
-                            key={model.id}
-                            value={`local:${model.id}`}
-                          >
-                            {model.displayName}
+                        {engineValue(globalEngine) ? null : (
+                          <option value="">
+                            ---
                           </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="External agents">
-                        {externalAgents.map((agent) => (
-                          <option
-                            key={agent.id}
-                            value={`external:${agent.id}`}
-                            disabled={!agent.status.available}
-                          >
-                            {agent.displayName}
-                          </option>
-                        ))}
-                      </optgroup>
+                        )}
+                        <EngineOptionGroups
+                          catalog={catalog}
+                          externalAgents={externalAgents}
+                        />
                     </SelectControl>
                     {globalEngine?.type === "external_agent" ? (
                       <ExternalAgentConfigControls
@@ -1819,30 +1895,13 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                             void handleSetEnginePreference(value, action.kind);
                           }}
                         >
-                          <option value="">
-                            ---
-                          </option>
-                          <optgroup label="Local models">
-                            {catalog.map((model) => (
-                              <option
-                                key={model.id}
-                                value={`local:${model.id}`}
-                              >
-                                {model.displayName}
-                              </option>
-                            ))}
-                          </optgroup>
-                          <optgroup label="External agents">
-                            {externalAgents.map((agent) => (
-                              <option
-                                key={agent.id}
-                                value={`external:${agent.id}`}
-                                disabled={!agent.status.available}
-                              >
-                                {agent.displayName}
-                              </option>
-                            ))}
-                          </optgroup>
+                            <option value="">
+                              ---
+                            </option>
+                            <EngineOptionGroups
+                              catalog={catalog}
+                              externalAgents={externalAgents}
+                            />
                         </SelectControl>
                         {selectedExternalAgent ? (
                           <ValuePill>{statusLabel(selectedExternalAgent)}</ValuePill>
@@ -1885,13 +1944,13 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                               setupInProgress ||
                               Boolean(warmSavingModelIds[selectedModel.id])
                             }
-                            reason={
-                              !warmMetadataAvailable
-                                ? "Restart Gitano to enable warmup for this model."
-                                : !selectedModelStatus?.ready
-                                  ? "Download the model before keeping it warm."
-                                  : null
-                            }
+                              reason={
+                                warmDisabledReason({
+                                  externalEngineSelected: false,
+                                  warmMetadataAvailable,
+                                  modelReady: Boolean(selectedModelStatus?.ready),
+                                })
+                              }
                             onChange={(checked) => {
                               handleWarmToggle(selectedModel.id, checked);
                             }}
