@@ -20,7 +20,7 @@
     "@mantine/hooks": "^8.0.2",
     "@mantine/styles": "^6.0.22",
     "@tabler/icons-react": "^3.34.0",
-    "@tailwindcss/vite": "^4.1.10",
+    "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.10",
     "@tauri-apps/api": "^2.5.0",
