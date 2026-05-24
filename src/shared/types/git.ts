@@ -54,6 +54,40 @@ export interface TagCommitOption {
   date: number;
 }
 
+export type GitPushMode = "push-branch" | "push-branch-and-tags";
+export type GitFetchMode = "fetch-all" | "fetch-all-prune";
+
+export type TagRefStatus =
+  | "local-origin"
+  | "local"
+  | "origin"
+  | "conflict"
+  | "unknown";
+
+export interface GitTagRef {
+  name: string;
+  localObjectId: string | null;
+  originObjectId: string | null;
+  localTargetId: string | null;
+  originTargetId: string | null;
+  status: TagRefStatus;
+  isLocalAnnotated: boolean;
+}
+
+export interface GitTagRefsResponse {
+  tags: GitTagRef[];
+  originAvailable: boolean;
+  originError: string | null;
+}
+
+export interface TagNameAvailability {
+  validName: boolean;
+  localExists: boolean;
+  originExists: boolean | null;
+  originAvailable: boolean;
+  originError: string | null;
+}
+
 export enum ChangeType {
   Added = "added",
   Deleted = "deleted",

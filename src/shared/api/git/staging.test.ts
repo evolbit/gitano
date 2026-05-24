@@ -28,13 +28,21 @@ describe("staging Git API", () => {
   it.each([
     [getWorkingDirectoryChanges, "get_working_directory_changes"],
     [hasStagedChanges, "git_has_staged_changes"],
-    [pushRepository, "git_push"],
     [stageAll, "git_stage_all"],
     [unstageAll, "git_unstage_all"],
   ])("passes repo-only calls through to %s", async (fn, command) => {
     await fn("/repo");
 
     expect(invokeCommandMock).toHaveBeenCalledWith(command, { path: "/repo" });
+  });
+
+  it("pushes the current branch by default", async () => {
+    await pushRepository("/repo");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_push", {
+      path: "/repo",
+      mode: "push-branch",
+    });
   });
 
   it.each([

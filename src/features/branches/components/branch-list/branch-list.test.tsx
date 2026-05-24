@@ -21,6 +21,7 @@ function branchListState(overrides: Record<string, unknown> = {}) {
     beginCreateBranch: vi.fn(),
     requiresInitialCommit: false,
     loading: false,
+    hasLoadedOnce: true,
     error: null,
     grouped: [],
     branchTreeExpanded: {},
@@ -90,5 +91,37 @@ describe("BranchList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add branch" }));
 
     expect(state.beginCreateBranch).toHaveBeenCalledWith("main");
+  });
+
+  it("shows blocking loading before branches load for the first time", () => {
+    mocks.state = branchListState({
+      loading: true,
+      hasLoadedOnce: false,
+      grouped: [],
+    });
+
+    render(<BranchList />);
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Refreshing branches" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps loaded branches visible while refreshing", () => {
+    mocks.state = branchListState({
+      loading: true,
+      hasLoadedOnce: true,
+      type: "remote",
+      grouped: [{ type: "branch", name: "main", full: "origin/main" }],
+    });
+
+    render(<BranchList />);
+
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Refreshing branches" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
 });

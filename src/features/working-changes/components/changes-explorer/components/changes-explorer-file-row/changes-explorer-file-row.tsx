@@ -52,11 +52,13 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
       }}
     >
       <ChangesExplorerStatusIcon file={file} />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate">{fileName}</span>
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+          <span className="shrink-0 whitespace-nowrap">{fileName}</span>
           {parentPath ? (
-            <span className="truncate text-zinc-400">{parentPath}</span>
+            <span className="min-w-0 flex-1 truncate text-left text-zinc-400 [direction:rtl]">
+              {parentPath}
+            </span>
           ) : null}
         </div>
       </div>

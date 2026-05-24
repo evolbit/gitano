@@ -45,6 +45,13 @@ Backend stack:
 - Command names and payload shapes should be centralized in adapters.
 - Platform calls must be mockable in tests.
 
+## Server State
+
+- Use TanStack Query for server state and backend/API calls from React.
+- Use queries for reads and mutations for writes, with query keys owned near the feature or adapter domain.
+- Keep local component state for UI-only state such as selection, dialog visibility, form drafts, and transient view preferences.
+- Avoid duplicating fetched server state into Zustand or component state unless there is a clear synchronization boundary.
+
 ## File Organization
 
 - TypeScript and TSX filenames must be kebab-case.

@@ -1,6 +1,6 @@
-import type { GitWorktree } from "@/shared/types/git";
+import type { GitPushMode, GitWorktree } from "@/shared/types/git";
 import type { PullStrategy } from "../../stores/workspace-ui-store";
-import { PULL_STRATEGIES } from "./config";
+import { PULL_STRATEGIES, PUSH_MODES } from "./config";
 
 export function waitForNextFrame() {
   return new Promise<void>((resolve) => {
@@ -13,7 +13,16 @@ export function waitForNextFrame() {
 export function getPullStrategyLabel(strategy: PullStrategy) {
   return (
     PULL_STRATEGIES.find((option) => option.value === strategy)?.label ??
-    PULL_STRATEGIES[1].label
+    PULL_STRATEGIES.find((option) => option.value === "pull-ff-if-possible")
+      ?.label ??
+    "Pull (fast-forward if possible)"
+  );
+}
+
+export function getPushModeLabel(mode: GitPushMode) {
+  return (
+    PUSH_MODES.find((option) => option.value === mode)?.label ??
+    PUSH_MODES[0].label
   );
 }
 

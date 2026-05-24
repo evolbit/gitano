@@ -50,4 +50,14 @@ describe("ChangesExplorerFileRow", () => {
     expect(countColumn?.className).toContain("w-14");
     expect(countColumn?.className).not.toContain("pr-2");
   });
+
+  it("keeps the filename untruncated and truncates the parent path from the start", () => {
+    renderFileRow();
+
+    expect(screen.getByText("example.ts").className).toContain("shrink-0");
+    const parentPath = screen.getByText("src/features");
+
+    expect(parentPath.className).toContain("truncate");
+    expect(parentPath.className).toContain("[direction:rtl]");
+  });
 });

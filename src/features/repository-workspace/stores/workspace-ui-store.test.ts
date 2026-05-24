@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PULL_STRATEGY,
+  DEFAULT_PUSH_MODE,
   DEFAULT_REPO_WORKSPACE_STATE,
   DEFAULT_WINDOW_BOUNDS,
   useWorkspaceUiStore,
@@ -19,6 +20,7 @@ describe("workspace UI store", () => {
     useWorkspaceUiStore.setState({
       window: DEFAULT_WINDOW_BOUNDS,
       pullStrategy: DEFAULT_PULL_STRATEGY,
+      pushMode: DEFAULT_PUSH_MODE,
       repoStateByPath: {},
     });
   });
@@ -51,9 +53,10 @@ describe("workspace UI store", () => {
     ).toBe("stashes");
   });
 
-  it("updates app-level window bounds and pull strategy", () => {
+  it("updates app-level window bounds and remote action preferences", () => {
     useWorkspaceUiStore.getState().setWindowBounds({ width: 900, x: 12 });
     useWorkspaceUiStore.getState().setPullStrategy("pull-ff-only");
+    useWorkspaceUiStore.getState().setPushMode("push-branch-and-tags");
 
     expect(useWorkspaceUiStore.getState().window).toEqual({
       ...DEFAULT_WINDOW_BOUNDS,
@@ -61,6 +64,6 @@ describe("workspace UI store", () => {
       x: 12,
     });
     expect(useWorkspaceUiStore.getState().pullStrategy).toBe("pull-ff-only");
+    expect(useWorkspaceUiStore.getState().pushMode).toBe("push-branch-and-tags");
   });
 });
-

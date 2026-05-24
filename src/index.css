@@ -104,6 +104,16 @@ body {
   font-size: var(--ui-font-size-md);
 }
 
+@keyframes panel-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(300%);
+  }
+}
+
 @layer utilities {
   .text-xs {
     font-size: var(--ui-font-size-xs);

@@ -1,4 +1,4 @@
-import type { WorkingDirectoryChangesResponse } from "@/shared/types/git";
+import type { GitPushMode, WorkingDirectoryChangesResponse } from "@/shared/types/git";
 import { invokeCommand } from "@/shared/platform/tauri/command";
 
 export async function getWorkingDirectoryChanges(repoPath: string) {
@@ -20,8 +20,11 @@ export async function commitStagedChanges(
   return invokeCommand<void>("git_commit", { path: repoPath, message, amend });
 }
 
-export async function pushRepository(repoPath: string) {
-  return invokeCommand<void>("git_push", { path: repoPath });
+export async function pushRepository(
+  repoPath: string,
+  mode: GitPushMode = "push-branch",
+) {
+  return invokeCommand<void>("git_push", { path: repoPath, mode });
 }
 
 export async function stageAll(repoPath: string) {

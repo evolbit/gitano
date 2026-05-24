@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { REPO_LAYOUT } from "@/shared/config/layout";
 import { tauriStorage } from "@/shared/platform/tauri/storage";
+import type { GitFetchMode, GitPushMode } from "@/shared/types/git";
 
 export type WorkspaceViewMode = "flat" | "tree";
 export type LeftPaneSection =
@@ -13,7 +14,7 @@ export type LeftPaneSection =
 export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type PullStrategy =
-  | "fetch-all"
+  | GitFetchMode
   | "pull-ff-if-possible"
   | "pull-ff-only"
   | "pull-rebase";
@@ -48,8 +49,10 @@ interface WorkspaceUiStore {
   window: WindowBoundsState;
   repoStateByPath: Record<string, RepoWorkspaceState>;
   pullStrategy: PullStrategy;
+  pushMode: GitPushMode;
   setWindowBounds: (bounds: Partial<WindowBoundsState>) => void;
   setPullStrategy: (strategy: PullStrategy) => void;
+  setPushMode: (mode: GitPushMode) => void;
   updateRepoState: (repoPath: string, data: Partial<RepoWorkspaceState>) => void;
   setLeftPaneSection: (repoPath: string, section: LeftPaneSection) => void;
   setRightWorkspaceMode: (repoPath: string, mode: RightWorkspaceMode) => void;
@@ -93,6 +96,7 @@ export const DEFAULT_WINDOW_BOUNDS: WindowBoundsState = {
 };
 
 export const DEFAULT_PULL_STRATEGY: PullStrategy = "pull-ff-if-possible";
+export const DEFAULT_PUSH_MODE: GitPushMode = "push-branch";
 
 export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   leftPaneSection: "changes",
@@ -156,12 +160,14 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
     (set, get) => ({
       window: DEFAULT_WINDOW_BOUNDS,
       pullStrategy: DEFAULT_PULL_STRATEGY,
+      pushMode: DEFAULT_PUSH_MODE,
       repoStateByPath: {},
       setWindowBounds: (bounds) =>
         set((state) => ({
           window: { ...state.window, ...bounds },
         })),
       setPullStrategy: (strategy) => set({ pullStrategy: strategy }),
+      setPushMode: (mode) => set({ pushMode: mode }),
       updateRepoState: (repoPath, data) =>
         set((state) => ({
           repoStateByPath: {
@@ -211,6 +217,7 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
       partialize: (state) => ({
         window: state.window,
         pullStrategy: state.pullStrategy,
+        pushMode: state.pushMode,
         repoStateByPath: state.repoStateByPath,
       }),
       skipHydration: true,
@@ -221,4 +228,3 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
 export async function rehydrateWorkspaceUiStore() {
   await useWorkspaceUiStore.persist.rehydrate();
 }
-

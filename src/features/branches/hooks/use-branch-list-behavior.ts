@@ -56,6 +56,52 @@ import {
   getErrorDetails,
 } from "../utils";
 
+type BranchListState = {
+  repoPath: string | null;
+  type: BranchType;
+  branches: string[];
+  hasLoadedOnce: boolean;
+};
+
+type CachedBranchListState = Pick<BranchListState, "branches">;
+
+const branchListCacheByRepoAndType = new Map<string, CachedBranchListState>();
+
+function getBranchListCacheKey(repoPath: string, type: BranchType) {
+  return `${repoPath}:${type}`;
+}
+
+function getInitialBranchListState(
+  repoPath: string | undefined,
+  type: BranchType,
+): BranchListState {
+  if (!repoPath) {
+    return {
+      repoPath: null,
+      type,
+      branches: [],
+      hasLoadedOnce: false,
+    };
+  }
+
+  const cached = branchListCacheByRepoAndType.get(
+    getBranchListCacheKey(repoPath, type),
+  );
+
+  return {
+    repoPath,
+    type,
+    branches: cached?.branches ?? [],
+    hasLoadedOnce: Boolean(cached),
+  };
+}
+
+function cacheBranchList(repoPath: string, type: BranchType, branches: string[]) {
+  branchListCacheByRepoAndType.set(getBranchListCacheKey(repoPath, type), {
+    branches,
+  });
+}
+
 export function useBranchListBehavior() {
   const activeTabId = useRepoStore((state) => state.activeTabId);
   const tab = useRepoStore((state) =>
@@ -81,8 +127,13 @@ export function useBranchListBehavior() {
     (state) => state.setBranchTreeExpanded,
   );
 
-  const [branches, setBranches] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [type, setBranchType] = useState<BranchType>("local");
+  const [branchListState, setBranchListState] = useState<BranchListState>(() =>
+    getInitialBranchListState(repoPath, "local"),
+  );
+  const [loading, setLoading] = useState(
+    () => Boolean(repoPath) && !branchListState.hasLoadedOnce,
+  );
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedRowBranch, setSelectedRowBranch] = useState<string | null>(
@@ -94,7 +145,6 @@ export function useBranchListBehavior() {
   const [renameBranchName, setRenameBranchName] = useState("");
   const [deleteRequest, setDeleteRequest] =
     useState<BranchContextRequest | null>(null);
-  const [type, setType] = useState<BranchType>("local");
   const [contextMenu, setContextMenu] =
     useState<BranchContextMenuState | null>(null);
   const [createForm, setCreateForm] = useState<BranchCreateFormState | null>(
@@ -112,30 +162,69 @@ export function useBranchListBehavior() {
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const branchRefreshRequestRef = useRef(0);
   const requiresInitialCommit = repositoryState?.hasCommits === false;
+  const activeBranchListState =
+    branchListState.repoPath === (repoPath ?? null) &&
+    branchListState.type === type
+      ? branchListState
+      : getInitialBranchListState(repoPath, type);
+  const { branches, hasLoadedOnce } = activeBranchListState;
 
   const refreshBranches = useCallback(async () => {
     if (!repoPath) return;
+    const requestId = branchRefreshRequestRef.current + 1;
+    branchRefreshRequestRef.current = requestId;
     setLoading(true);
     setError(null);
 
     try {
+      let nextBranches: string[];
       if (type === "local") {
         const [localBranches, remoteBranches] = await Promise.all([
           getBranches(repoPath, "local"),
           getBranches(repoPath, "remote"),
         ]);
-        setBranches(filterBranchesByType(localBranches, type, remoteBranches));
-        return;
+        nextBranches = filterBranchesByType(localBranches, type, remoteBranches);
+      } else {
+        const allBranches = await getBranches(repoPath, type);
+        nextBranches = filterBranchesByType(allBranches, type);
       }
 
-      const allBranches = await getBranches(repoPath, type);
-      setBranches(filterBranchesByType(allBranches, type));
+      if (branchRefreshRequestRef.current !== requestId) return;
+      cacheBranchList(repoPath, type, nextBranches);
+      setBranchListState({
+        repoPath,
+        type,
+        branches: nextBranches,
+        hasLoadedOnce: true,
+      });
     } catch (branchError) {
+      if (branchRefreshRequestRef.current !== requestId) return;
       setError(String(branchError));
     } finally {
-      setLoading(false);
+      if (branchRefreshRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
+  }, [repoPath, type]);
+
+  const setType = useCallback(
+    (nextType: BranchType) => {
+      setBranchType(nextType);
+      const nextState = getInitialBranchListState(repoPath, nextType);
+      setBranchListState(nextState);
+      setLoading(Boolean(repoPath));
+      setError(null);
+    },
+    [repoPath],
+  );
+
+  useEffect(() => {
+    const nextState = getInitialBranchListState(repoPath, type);
+    setBranchListState(nextState);
+    setLoading(Boolean(repoPath) && !nextState.hasLoadedOnce);
+    setError(null);
   }, [repoPath, type]);
 
   useEffect(() => {
@@ -697,6 +786,7 @@ export function useBranchListBehavior() {
     branchTreeExpanded,
     grouped,
     loading,
+    hasLoadedOnce,
     error,
     search,
     setSearch,

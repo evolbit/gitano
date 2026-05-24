@@ -40,12 +40,14 @@ import {
   GIT_ACTION_ERROR_SNACKBAR_MS,
   GIT_ACTION_SUCCESS_SNACKBAR_MS,
   PULL_STRATEGIES,
+  PUSH_MODES,
   TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH,
 } from "./config";
 import {
   getCreateBaseOptions,
   getPathBasename,
   getPullStrategyLabel,
+  getPushModeLabel,
   getWorktreeDisplayName,
   getWorktreeTargetLabel,
   waitForNextFrame,
@@ -64,6 +66,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [workspaceMenuOpened, setWorkspaceMenuOpened] = useState(false);
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
+  const [pushMenuOpened, setPushMenuOpened] = useState(false);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
   const gitActionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -76,6 +79,8 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
   const pullStrategy = useWorkspaceUiStore((s) => s.pullStrategy);
   const setPullStrategy = useWorkspaceUiStore((s) => s.setPullStrategy);
+  const pushMode = useWorkspaceUiStore((s) => s.pushMode);
+  const setPushMode = useWorkspaceUiStore((s) => s.setPushMode);
   const setLeftPaneSection = useWorkspaceUiStore((s) => s.setLeftPaneSection);
   const setWorktreeCreateBaseRef = useWorkspaceUiStore(
     (s) => s.setWorktreeCreateBaseRef,
@@ -198,6 +203,10 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const initialCommitTooltip = "Create the initial commit before using this action";
   const pushTooltip = requiresInitialCommit
     ? initialCommitTooltip
+    : pushMode === "push-branch-and-tags"
+    ? resolvedBranch
+      ? `Push ${resolvedBranch} and local tags`
+      : "Push current branch and local tags"
     : resolvedBranch
     ? `Push to origin/${resolvedBranch}`
     : "Push current branch";
@@ -304,11 +313,13 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
     await waitForNextFrame();
 
     try {
-      if (pullStrategy === "fetch-all") {
-        await fetchAllRemotes(repoPath);
+      if (pullStrategy === "fetch-all" || pullStrategy === "fetch-all-prune") {
+        await fetchAllRemotes(repoPath, pullStrategy);
         handleGitActionSuccess(
           "git fetch succeeded",
-          "Fetched all configured remotes successfully.",
+          pullStrategy === "fetch-all-prune"
+            ? "Fetched all remotes and tags, then pruned stale branches and tags."
+            : "Fetched all configured remotes and tags successfully.",
         );
       } else {
         await pullRepository(repoPath, pullStrategy);
@@ -318,10 +329,12 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
         );
       }
 
-      refreshToolbarData();
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
     } catch (error) {
       handleGitActionError(
-        pullStrategy === "fetch-all" ? "git fetch failed" : "git pull failed",
+        pullStrategy === "fetch-all" || pullStrategy === "fetch-all-prune"
+          ? "git fetch failed"
+          : "git pull failed",
         error,
       );
     } finally {
@@ -336,14 +349,18 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
     await waitForNextFrame();
 
     try {
-      await pushRepository(repoPath);
+      await pushRepository(repoPath, pushMode);
       handleGitActionSuccess(
         "git push succeeded",
-        resolvedBranch
+        pushMode === "push-branch-and-tags"
+          ? resolvedBranch
+            ? `Pushed ${resolvedBranch} and local tags.`
+            : "Pushed the current branch and local tags."
+          : resolvedBranch
           ? `Pushed the current branch to origin/${resolvedBranch}.`
           : "Pushed the current branch successfully.",
       );
-      refreshToolbarData();
+      window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
       window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
     } catch (error) {
       handleGitActionError("git push failed", error);
@@ -454,6 +471,66 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
                   {selected ? <IconCheck size={14} /> : null}
                 </span>
                 <span>{strategy.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Menu.Dropdown>
+    </Menu>
+  );
+
+  const pushRightSlot = (
+    <Menu
+      shadow="md"
+      width={340}
+      opened={pushMenuOpened}
+      onOpen={() => setPushMenuOpened(true)}
+      onClose={() => setPushMenuOpened(false)}
+      position="bottom-end"
+      offset={6}
+      withinPortal>
+      <Menu.Target>
+        <button
+          type="button"
+          className={`flex w-7 items-center justify-center ${
+            isCommitDependentActionDisabled
+              ? "cursor-not-allowed text-zinc-500"
+              : "cursor-pointer text-zinc-300 hover:bg-zinc-800/70"
+          }`}
+          disabled={isCommitDependentActionDisabled}
+          aria-label="Select push mode">
+          <HiChevronDown size={16} />
+        </button>
+      </Menu.Target>
+      <Menu.Dropdown className="min-w-[340px] bg-background border border-zinc-700 p-0">
+        <div className="px-4 py-3 text-sm text-zinc-200">
+          Select what the Push button publishes
+        </div>
+        <div className="pb-2">
+          {PUSH_MODES.map((mode) => {
+            const selected = pushMode === mode.value;
+            return (
+              <button
+                key={mode.value}
+                type="button"
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left text-base transition-colors ${
+                  selected
+                    ? "bg-lime-900/50 text-white"
+                    : "text-zinc-200 hover:bg-zinc-800"
+                }`}
+                onClick={() => {
+                  setPushMode(mode.value);
+                  setPushMenuOpened(false);
+                }}>
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full border ${
+                    selected
+                      ? "border-zinc-100 text-zinc-100"
+                      : "border-zinc-400 text-transparent"
+                  }`}>
+                  {selected ? <IconCheck size={14} /> : null}
+                </span>
+                <span>{mode.label}</span>
               </button>
             );
           })}
@@ -639,7 +716,8 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
             }}
             disabled={isCommitDependentActionDisabled}
             loading={pendingGitAction === "push"}
-            tooltip={pushTooltip}
+            tooltip={pushTooltip || getPushModeLabel(pushMode)}
+            rightSlot={pushRightSlot}
           />
           <Stack
             gap={0}

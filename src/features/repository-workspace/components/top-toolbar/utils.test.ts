@@ -21,6 +21,9 @@ const worktree: GitWorktree = {
 
 describe("top toolbar utilities", () => {
   it("formats pull strategy and path labels", () => {
+    expect(getPullStrategyLabel("fetch-all-prune")).toBe(
+      "Fetch All + Tags + Prune",
+    );
     expect(getPullStrategyLabel("pull-rebase")).toBe("Pull (rebase)");
     expect(getPathBasename("/repo/project")).toBe("project");
     expect(getPathBasename("C:\\repo\\project")).toBe("project");

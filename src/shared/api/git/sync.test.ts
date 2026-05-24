@@ -23,6 +23,18 @@ describe("sync Git API", () => {
 
     expect(invokeCommandMock).toHaveBeenCalledWith("git_fetch", {
       path: "/repo",
+      mode: "fetch-all",
+    });
+  });
+
+  it("fetches all remotes with pruning when requested", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await fetchAllRemotes("/repo", "fetch-all-prune");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_fetch", {
+      path: "/repo",
+      mode: "fetch-all-prune",
     });
   });
 
@@ -37,13 +49,25 @@ describe("sync Git API", () => {
     });
   });
 
-  it("pushes the current branch", async () => {
+  it("pushes the current branch by default", async () => {
     invokeCommandMock.mockResolvedValueOnce(undefined);
 
     await pushRepository("/repo");
 
     expect(invokeCommandMock).toHaveBeenCalledWith("git_push", {
       path: "/repo",
+      mode: "push-branch",
+    });
+  });
+
+  it("pushes with the selected push mode", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await pushRepository("/repo", "push-branch-and-tags");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_push", {
+      path: "/repo",
+      mode: "push-branch-and-tags",
     });
   });
 });

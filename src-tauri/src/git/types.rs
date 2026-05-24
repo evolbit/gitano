@@ -70,6 +70,46 @@ pub struct TagCommitOption {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TagRefStatus {
+    LocalOrigin,
+    Local,
+    Origin,
+    Conflict,
+    Unknown,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTagRef {
+    pub name: String,
+    pub local_object_id: Option<String>,
+    pub origin_object_id: Option<String>,
+    pub local_target_id: Option<String>,
+    pub origin_target_id: Option<String>,
+    pub status: TagRefStatus,
+    pub is_local_annotated: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTagRefsResponse {
+    pub tags: Vec<GitTagRef>,
+    pub origin_available: bool,
+    pub origin_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TagNameAvailability {
+    pub valid_name: bool,
+    pub local_exists: bool,
+    pub origin_exists: Option<bool>,
+    pub origin_available: bool,
+    pub origin_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CommitHistoryMode {
     GitLog,

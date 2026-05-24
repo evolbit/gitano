@@ -1,3 +1,4 @@
+import type { GitFetchMode, GitPushMode } from "@/shared/types/git";
 import { invokeCommand } from "@/shared/platform/tauri/command";
 
 export type PullRepositoryStrategy =
@@ -5,8 +6,11 @@ export type PullRepositoryStrategy =
   | "pull-ff-only"
   | "pull-rebase";
 
-export async function fetchAllRemotes(repoPath: string) {
-  return invokeCommand<void>("git_fetch", { path: repoPath });
+export async function fetchAllRemotes(
+  repoPath: string,
+  mode: GitFetchMode = "fetch-all",
+) {
+  return invokeCommand<void>("git_fetch", { path: repoPath, mode });
 }
 
 export async function pullRepository(
@@ -16,6 +20,9 @@ export async function pullRepository(
   return invokeCommand<void>("git_pull", { path: repoPath, strategy });
 }
 
-export async function pushRepository(repoPath: string) {
-  return invokeCommand<void>("git_push", { path: repoPath });
+export async function pushRepository(
+  repoPath: string,
+  mode: GitPushMode = "push-branch",
+) {
+  return invokeCommand<void>("git_push", { path: repoPath, mode });
 }
