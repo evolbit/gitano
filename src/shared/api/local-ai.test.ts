@@ -19,6 +19,7 @@ import {
   runLocalAiAction,
   setExternalAiAgentAsDefault,
   setExternalAiAgentConfigPreference,
+  setLocalAiActionPromptOverride,
   setLocalAiAnalysisEnginePreference,
   setLocalAiModelPreference,
   setLocalAiModelWarmPreference,
@@ -344,6 +345,43 @@ describe("local AI API", () => {
           actionKind: "branchReview",
           configId: "model",
           value: "gpt-5.5",
+        },
+      },
+    );
+  });
+
+  it("persists action prompt overrides through the backend command", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      globalModelId: "",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "local_model",
+        modelId: null,
+      },
+      actionEngines: {},
+      externalAgentOptionValues: {},
+      actionExternalAgentOptionValues: {},
+      actionPromptOverrides: {
+        branchReview: "Focus on security risks.",
+      },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    const preferences = await setLocalAiActionPromptOverride({
+      actionKind: "branchReview",
+      prompt: "Focus on security risks.",
+    });
+
+    expect(preferences.actionPromptOverrides?.branchReview).toBe(
+      "Focus on security risks.",
+    );
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "ai_set_action_prompt_override",
+      {
+        request: {
+          actionKind: "branchReview",
+          prompt: "Focus on security risks.",
         },
       },
     );

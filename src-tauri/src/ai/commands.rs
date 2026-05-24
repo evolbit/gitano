@@ -11,14 +11,15 @@ use super::machine::{compatibility_for_model, machine_profile};
 use super::models::{
     external_agent_effective_option_values, find_model, load_preferences, model_catalog,
     reconcile_preferences_after_model_delete, reconcile_preferences_with_available_models,
-    resolve_model_id, set_analysis_engine_preference, set_external_agent_config_preference,
-    set_first_downloaded_model_as_global_default, set_model_preference, set_warm_model_preference,
-    NO_AI_MODELS_AVAILABLE_MESSAGE,
+    resolve_model_id, set_action_prompt_override, set_analysis_engine_preference,
+    set_external_agent_config_preference, set_first_downloaded_model_as_global_default,
+    set_model_preference, set_warm_model_preference, NO_AI_MODELS_AVAILABLE_MESSAGE,
 };
 use super::ollama::{emit_failed_progress, OllamaClient};
 use super::prompts::{
-    build_external_agent_prompt, build_prompt, parse_structured_result,
-    EXTERNAL_AGENT_PROMPT_VERSION, PROMPT_VERSION,
+    build_external_agent_prompt_with_instruction, build_prompt_with_instruction,
+    effective_prompt_instruction, parse_structured_result, EXTERNAL_AGENT_PROMPT_VERSION,
+    PROMPT_VERSION,
 };
 use super::runtime::{
     ensure_runtime_ready, latest_compatible_runtime_version, managed_runtime_supported,
@@ -36,10 +37,10 @@ use super::types::{
     LocalAiPrepareModelRequest, LocalAiPrepareModelResponse, LocalAiPrepareRuntimeRequest,
     LocalAiPrepareRuntimeResponse, LocalAiReviewConfidence, LocalAiReviewLineSide,
     LocalAiRunProgress, LocalAiRunProgressState, LocalAiRunRequest, LocalAiRunResult,
-    LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus, LocalAiSetAnalysisEnginePreferenceRequest,
-    LocalAiSetModelPreferenceRequest, LocalAiSetModelWarmPreferenceRequest,
-    LocalAiStructuredResult, LocalAiWarmModelFailure, LocalAiWarmModelsResponse,
-    LOCAL_AI_RUN_PROGRESS_EVENT,
+    LocalAiRuntimeSetupStatus, LocalAiRuntimeStatus, LocalAiSetActionPromptOverrideRequest,
+    LocalAiSetAnalysisEnginePreferenceRequest, LocalAiSetModelPreferenceRequest,
+    LocalAiSetModelWarmPreferenceRequest, LocalAiStructuredResult, LocalAiWarmModelFailure,
+    LocalAiWarmModelsResponse, LOCAL_AI_RUN_PROGRESS_EVENT,
 };
 use futures_util::{stream, StreamExt};
 use std::collections::{HashMap, HashSet};
@@ -145,6 +146,14 @@ pub fn ai_set_external_agent_config_preference(
         &request.config_id,
         request.value.as_deref(),
     )
+}
+
+#[tauri::command]
+pub fn ai_set_action_prompt_override(
+    request: LocalAiSetActionPromptOverrideRequest,
+) -> Result<LocalAiPreferences, String> {
+    ensure_entitled()?;
+    set_action_prompt_override(request.action_kind, request.prompt.as_deref())
 }
 
 #[tauri::command]
@@ -545,6 +554,7 @@ async fn run_action_inner(
         }
         _ => build_git_context(request, effective_context)?,
     };
+    let prompt_instruction = effective_prompt_instruction(&preferences, request.action_kind);
     emit_run_progress(
         app,
         request,
@@ -560,6 +570,7 @@ async fn run_action_inner(
         request.action_kind,
         PROMPT_VERSION,
         &model_digest,
+        &prompt_instruction,
         &request.repo_path,
         &git_context.input_digest,
     );
@@ -584,7 +595,7 @@ async fn run_action_inner(
         }
     }
 
-    let prompt = build_prompt(&git_context);
+    let prompt = build_prompt_with_instruction(&git_context, &prompt_instruction);
     let generation_context = generation_context_window_for_prompt(
         request.action_kind,
         model.context_window,
@@ -676,10 +687,12 @@ async fn run_external_agent_action(
         status.version.as_deref(),
         &external_agent_option_values,
     );
+    let prompt_instruction = effective_prompt_instruction(&preferences, request.action_kind);
     let cache_key = build_cache_key(
         request.action_kind,
         EXTERNAL_AGENT_PROMPT_VERSION,
         &agent_digest,
+        &prompt_instruction,
         &request.repo_path,
         &git_context.input_digest,
     );
@@ -708,7 +721,7 @@ async fn run_external_agent_action(
         .run_id
         .clone()
         .unwrap_or_else(|| operation_id(agent_id));
-    let prompt = build_external_agent_prompt(&git_context);
+    let prompt = build_external_agent_prompt_with_instruction(&git_context, &prompt_instruction);
     emit_run_progress(
         app,
         request,
@@ -939,6 +952,8 @@ async fn run_segmented_branch_review(
         effective_context,
         |step| emit_branch_context_progress(app, request, step),
     )?;
+    let prompt_instruction =
+        effective_prompt_instruction(preferences, LocalAiActionKind::BranchReview).into_owned();
     emit_run_progress(
         app,
         request,
@@ -954,6 +969,7 @@ async fn run_segmented_branch_review(
         request.action_kind,
         PROMPT_VERSION,
         &model_digest,
+        &prompt_instruction,
         &request.repo_path,
         &file_contexts.input_digest,
     );
@@ -999,11 +1015,12 @@ async fn run_segmented_branch_review(
         let client = client.clone();
         let model_id = model_id.clone();
         let keep_alive = keep_alive.clone();
+        let prompt_instruction = prompt_instruction.clone();
         let model_context_window = model.context_window;
 
         async move {
             let file_path = context.title.clone();
-            let prompt = build_prompt(&context);
+            let prompt = build_prompt_with_instruction(&context, &prompt_instruction);
             let generation_context = generation_context_window_for_prompt(
                 LocalAiActionKind::BranchReview,
                 model_context_window,

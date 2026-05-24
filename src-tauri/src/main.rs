@@ -91,6 +91,7 @@ fn main() {
             ai::ai_set_analysis_engine_preference,
             ai::ai_set_external_agent_as_default,
             ai::ai_set_external_agent_config_preference,
+            ai::ai_set_action_prompt_override,
             ai::ai_install_external_agent,
             ai::ai_remove_external_agent,
             ai::ai_authenticate_external_agent,

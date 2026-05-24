@@ -195,6 +195,7 @@ pub fn default_preferences() -> LocalAiPreferences {
         action_engines: HashMap::new(),
         external_agent_option_values: HashMap::new(),
         action_external_agent_option_values: HashMap::new(),
+        action_prompt_overrides: HashMap::new(),
         warm_model_ids: Vec::new(),
         keep_alive_minutes: DEFAULT_KEEP_ALIVE_MINUTES,
     }
@@ -404,6 +405,27 @@ pub fn set_external_agent_config_preference(
                 }
             }
         },
+    }
+
+    save_preferences(&preferences)?;
+    Ok(preferences)
+}
+
+pub fn set_action_prompt_override(
+    action_kind: LocalAiActionKind,
+    prompt: Option<&str>,
+) -> Result<LocalAiPreferences, String> {
+    let mut preferences = load_preferences();
+    let action_key = action_kind.as_key();
+    match prompt.map(str::trim).filter(|prompt| !prompt.is_empty()) {
+        Some(prompt) => {
+            preferences
+                .action_prompt_overrides
+                .insert(action_key.to_string(), prompt.to_string());
+        }
+        None => {
+            preferences.action_prompt_overrides.remove(action_key);
+        }
     }
 
     save_preferences(&preferences)?;
@@ -688,6 +710,40 @@ mod tests {
         let cleared = set_warm_model_preference("phi4-mini", false).expect("clear warm model");
 
         assert!(cleared.warm_model_ids.is_empty());
+
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        }
+    }
+
+    #[test]
+    fn action_prompt_override_saves_and_clears_trimmed_prompt() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+
+        let saved = set_action_prompt_override(
+            LocalAiActionKind::BranchReview,
+            Some("  Focus on security risks.  "),
+        )
+        .expect("save prompt override");
+        assert_eq!(
+            saved
+                .action_prompt_overrides
+                .get(LocalAiActionKind::BranchReview.as_key())
+                .map(String::as_str),
+            Some("Focus on security risks.")
+        );
+
+        let cleared = set_action_prompt_override(LocalAiActionKind::BranchReview, Some("   "))
+            .expect("clear prompt override");
+        assert!(!cleared
+            .action_prompt_overrides
+            .contains_key(LocalAiActionKind::BranchReview.as_key()));
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),

@@ -24,6 +24,7 @@ import {
   removeExternalAiAgent,
   setExternalAiAgentConfigPreference,
   setExternalAiAgentAsDefault,
+  setLocalAiActionPromptOverride,
   setLocalAiAnalysisEnginePreference,
   setLocalAiModelPreference,
   setLocalAiModelWarmPreference,
@@ -62,7 +63,7 @@ type WarmConfirmation = {
 
 const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
   { key: "runtime", label: "Runtime" },
-  { key: "models", label: "Models" },
+  { key: "models", label: "Local Models" },
   { key: "externalAgents", label: "External Agents" },
   { key: "configuration", label: "Configuration" },
 ];
@@ -98,6 +99,36 @@ const ACTIONS: ReadonlyArray<{
     description: "Suggest conflict resolution steps.",
   },
 ];
+
+const DEFAULT_ACTION_PROMPTS: Record<LocalAiActionKind, string> = {
+  commitMessage: [
+    "Generate a Git commit message for the staged changes only.",
+    "Requirements:",
+    "- The message must be specific to the files and behavior changed.",
+    "- Use imperative mood and keep the subject near 72 characters.",
+    "- Prefer conventional commit style when a clear type fits: feat, fix, refactor, test, docs, chore.",
+    '- Do not use generic messages like "Update changes", "Update files", "Misc changes", or "Refactor code".',
+  ].join("\n"),
+  commitAnalysis:
+    "Analyze this commit for correctness, risk, and maintainability.",
+  branchAnalysis: [
+    "Analyze this branch or PR-style diff as a reviewer preparing to approve or question a PR.",
+    "Focus on intent, real risks, behavioral changes, potential regressions, test gaps, recommendations, and action items.",
+    "Do not return a raw changed-file list; the UI already shows the changed files. Mention files only when they support a concrete risk or action item.",
+    "Do not create low-value findings. If there are no concrete findings, return an empty findings array and useful recommendations or action items if applicable.",
+    "Keep the report focused on findings that affect review or release decisions.",
+  ].join("\n"),
+  branchReview: [
+    "Review this branch like PR review feedback. Find changed lines that may introduce bugs, regressions, unsafe assumptions, missing validation, missing tests, or maintainability issues.",
+    'Every inline finding must be anchored to a changed line from the diff. Use side "new" for added/modified new-code feedback and side "old" only when the deleted line itself needs attention.',
+    "Do not summarize files. Do not produce informational cleanup comments. If there are no actionable changed-code risks, return an empty findings array and a concise summary.",
+    "Suggested comments should be ready to paste into a PR and should ask for a concrete change or clarification.",
+    "Include all material changed-code risks you can substantiate.",
+    "Prioritize actionable, high-confidence findings over exhaustive or stylistic feedback.",
+  ].join("\n"),
+  mergeConflictSuggestions:
+    "Suggest how to resolve these merge conflicts without modifying files.",
+};
 
 const WARM_MEMORY_WARNING_BASELINE_GB = 5;
 const WARM_MEMORY_HIGH_SHARE = 0.25;
@@ -359,7 +390,7 @@ function SettingsRow({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-t border-border pt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">
+    <div className="mb-3 mt-6 text-xs font-semibold uppercase tracking-normal text-zinc-500">
       {children}
     </div>
   );
@@ -634,6 +665,72 @@ function ExternalAgentConfigControls({
   );
 }
 
+function promptDraftsFromPreferences(
+  preferences: LocalAiPreferences | null,
+): Record<string, string> {
+  return Object.fromEntries(
+    ACTIONS.map((action) => [
+      action.kind,
+      preferences?.actionPromptOverrides?.[action.kind] ??
+        DEFAULT_ACTION_PROMPTS[action.kind],
+    ]),
+  );
+}
+
+function PromptOverrideRow({
+  action,
+  value,
+  hasOverride,
+  canSave,
+  canUseDefault,
+  onChange,
+  onSave,
+  onUseDefault,
+}: {
+  action: (typeof ACTIONS)[number];
+  value: string;
+  hasOverride: boolean;
+  canSave: boolean;
+  canUseDefault: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onUseDefault: () => void;
+}) {
+  return (
+    <div className="border-t border-border py-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold leading-5 text-foreground">
+            {action.label}
+          </div>
+          <div className="mt-1 max-w-[640px] text-xs leading-5 text-zinc-400">
+            {action.description}
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <ActionButton disabled={!canUseDefault} onClick={onUseDefault}>
+            Use default value
+          </ActionButton>
+          <ActionButton disabled={!canSave} onClick={onSave}>
+            Save
+          </ActionButton>
+        </div>
+      </div>
+      <textarea
+        aria-label={`${action.label} prompt override`}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="min-h-28 w-full resize-y rounded border border-border bg-background px-3 py-2 font-mono text-xs leading-5 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-blue-500/60"
+      />
+      <div className="mt-2 text-[11px] leading-4 text-zinc-500">
+        {hasOverride
+          ? "Custom prompt override is active for this action."
+          : "Using Gitano's default prompt for this action."}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps) {
   const [pane, setPane] = useState<SettingsPane>("runtime");
   const [catalog, setCatalog] = useState<LocalAiModelEntry[]>([]);
@@ -665,6 +762,10 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [warmSavingModelIds, setWarmSavingModelIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
+  const [promptSavingActionKinds, setPromptSavingActionKinds] = useState<
     Record<string, boolean>
   >({});
   const [warmConfirmation, setWarmConfirmation] =
@@ -723,6 +824,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
       setCatalog(nextCatalog);
       setExternalAgents(nextExternalAgents);
       setPreferences(nextPreferences);
+      setPromptDrafts(promptDraftsFromPreferences(nextPreferences));
       setEntitlement(nextEntitlement);
       setRuntimeStatus(nextRuntimeStatus);
       setMachineProfile(nextMachineProfile);
@@ -1179,6 +1281,38 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     }
   };
 
+  const handleSetActionPromptOverride = async (
+    actionKind: LocalAiActionKind,
+    prompt: string | null,
+  ) => {
+    setSettingsError(null);
+    setPromptSavingActionKinds((current) => ({
+      ...current,
+      [actionKind]: true,
+    }));
+    try {
+      const nextPreferences = await setLocalAiActionPromptOverride({
+        actionKind,
+        prompt,
+      });
+      setPreferences(nextPreferences);
+      setPromptDrafts((current) => ({
+        ...current,
+        [actionKind]:
+          nextPreferences.actionPromptOverrides?.[actionKind] ??
+          DEFAULT_ACTION_PROMPTS[actionKind],
+      }));
+    } catch (preferenceError) {
+      showSettingsError("Prompt preference failed", preferenceError);
+    } finally {
+      setPromptSavingActionKinds((current) => {
+        const next = { ...current };
+        delete next[actionKind];
+        return next;
+      });
+    }
+  };
+
   const handleSetWarmPreference = useCallback(
     async (modelId: string, warm: boolean) => {
       if (externalEngineSelected) return;
@@ -1244,7 +1378,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     pane === "runtime"
       ? "Runtime"
       : pane === "models"
-        ? "Models"
+        ? "Local Models"
         : pane === "externalAgents"
           ? "External Agents"
           : "Configuration";
@@ -1410,7 +1544,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
 
             {pane === "models" ? (
               <>
-                <SectionLabel>Available Models</SectionLabel>
+                <SectionLabel>Available Local Models</SectionLabel>
                 {catalog.map((model) => {
                   const status = modelStatuses[model.id];
                   const usage = modelUsageById[model.id] ?? [];
@@ -1765,6 +1899,71 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                         ) : null}
                       </div>
                     </SettingsRow>
+                  );
+                })}
+
+                <SectionLabel>Prompts</SectionLabel>
+
+                {ACTIONS.map((action) => {
+                  const defaultPrompt = DEFAULT_ACTION_PROMPTS[action.kind];
+                  const persistedOverride =
+                    preferences?.actionPromptOverrides?.[action.kind] ?? null;
+                  const hasOverride = Boolean(persistedOverride?.trim());
+                  const value =
+                    promptDrafts[action.kind] ??
+                    persistedOverride ??
+                    defaultPrompt;
+                  const normalizedValue = value.trim();
+                  const normalizedDefault = defaultPrompt.trim();
+                  const normalizedSaved = (
+                    persistedOverride ?? defaultPrompt
+                  ).trim();
+                  const saving = Boolean(
+                    promptSavingActionKinds[action.kind],
+                  );
+                  const isDefaultValue =
+                    normalizedValue === normalizedDefault;
+                  const isSavedValue = normalizedValue === normalizedSaved;
+
+                  return (
+                    <PromptOverrideRow
+                      key={action.kind}
+                      action={action}
+                      value={value}
+                      hasOverride={hasOverride}
+                      canSave={
+                        !saving &&
+                        normalizedValue.length > 0 &&
+                        !isSavedValue &&
+                        !isDefaultValue
+                      }
+                      canUseDefault={
+                        !saving && (hasOverride || !isDefaultValue)
+                      }
+                      onChange={(value) => {
+                        setPromptDrafts((current) => ({
+                          ...current,
+                          [action.kind]: value,
+                        }));
+                      }}
+                      onSave={() => {
+                        void handleSetActionPromptOverride(
+                          action.kind,
+                          promptDrafts[action.kind] ??
+                            preferences?.actionPromptOverrides?.[
+                              action.kind
+                            ] ??
+                            DEFAULT_ACTION_PROMPTS[action.kind],
+                        );
+                      }}
+                      onUseDefault={() => {
+                        setPromptDrafts((current) => ({
+                          ...current,
+                          [action.kind]: DEFAULT_ACTION_PROMPTS[action.kind],
+                        }));
+                        void handleSetActionPromptOverride(action.kind, null);
+                      }}
+                    />
                   );
                 })}
               </>

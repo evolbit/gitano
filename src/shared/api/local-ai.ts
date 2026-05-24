@@ -67,6 +67,7 @@ export type LocalAiPreferences = {
     string,
     Record<string, Record<string, string>>
   >;
+  actionPromptOverrides?: Record<string, string>;
   warmModelIds?: string[];
   keepAliveMinutes?: number;
 };
@@ -296,6 +297,11 @@ export type ExternalAiAgentConfigPreferenceRequest = {
   actionKind?: LocalAiActionKind | null;
   configId: string;
   value?: string | null;
+};
+
+export type LocalAiSetActionPromptOverrideRequest = {
+  actionKind: LocalAiActionKind;
+  prompt?: string | null;
 };
 
 export type ExternalAiRunEventKind =
@@ -555,6 +561,7 @@ function applyPreferenceOverrides(
       preferences.externalAgentOptionValues ?? {},
     actionExternalAgentOptionValues:
       preferences.actionExternalAgentOptionValues ?? {},
+    actionPromptOverrides: preferences.actionPromptOverrides ?? {},
     warmModelIds: preferences.warmModelIds ?? [],
     keepAliveMinutes: preferences.keepAliveMinutes ?? 30,
   };
@@ -712,6 +719,20 @@ export function setExternalAiAgentConfigPreference(
         actionKind: request.actionKind ?? null,
         configId: request.configId,
         value: request.value ?? null,
+      },
+    },
+  ).then(applyPreferenceOverrides);
+}
+
+export function setLocalAiActionPromptOverride(
+  request: LocalAiSetActionPromptOverrideRequest,
+) {
+  return invokeCommand<LocalAiPreferences>(
+    "ai_set_action_prompt_override",
+    {
+      request: {
+        actionKind: request.actionKind,
+        prompt: request.prompt ?? null,
       },
     },
   ).then(applyPreferenceOverrides);

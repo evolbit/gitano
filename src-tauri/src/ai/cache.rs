@@ -17,6 +17,7 @@ pub fn build_cache_key(
     action_kind: LocalAiActionKind,
     prompt_version: &str,
     model_digest: &str,
+    prompt_instruction: &str,
     repo_path: &str,
     input_digest: &str,
 ) -> String {
@@ -24,6 +25,7 @@ pub fn build_cache_key(
         action_kind.as_key(),
         prompt_version,
         model_digest,
+        prompt_instruction,
         repo_path,
         input_digest,
     ])
@@ -94,6 +96,7 @@ mod tests {
             LocalAiActionKind::CommitAnalysis,
             "v1",
             "digest-a",
+            "prompt",
             "/repo",
             "input",
         );
@@ -101,6 +104,7 @@ mod tests {
             LocalAiActionKind::CommitAnalysis,
             "v1",
             "digest-b",
+            "prompt",
             "/repo",
             "input",
         );
@@ -114,6 +118,7 @@ mod tests {
             LocalAiActionKind::BranchAnalysis,
             "v1",
             "digest",
+            "prompt",
             "/repo",
             "input",
         );
@@ -121,11 +126,34 @@ mod tests {
             LocalAiActionKind::BranchReview,
             "v1",
             "digest",
+            "prompt",
             "/repo",
             "input",
         );
 
         assert_ne!(analysis, review);
+    }
+
+    #[test]
+    fn cache_key_changes_with_prompt_instruction() {
+        let first = build_cache_key(
+            LocalAiActionKind::CommitAnalysis,
+            "v1",
+            "digest",
+            "first prompt",
+            "/repo",
+            "input",
+        );
+        let second = build_cache_key(
+            LocalAiActionKind::CommitAnalysis,
+            "v1",
+            "digest",
+            "second prompt",
+            "/repo",
+            "input",
+        );
+
+        assert_ne!(first, second);
     }
 
     #[test]

@@ -163,6 +163,8 @@ pub struct LocalAiPreferences {
     pub action_external_agent_option_values:
         HashMap<String, HashMap<String, HashMap<String, String>>>,
     #[serde(default)]
+    pub action_prompt_overrides: HashMap<String, String>,
+    #[serde(default)]
     pub warm_model_ids: Vec<String>,
     #[serde(default = "default_keep_alive_minutes")]
     pub keep_alive_minutes: u64,
@@ -183,6 +185,8 @@ struct LocalAiPreferencesWire {
     external_agent_option_values: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
     action_external_agent_option_values: HashMap<String, HashMap<String, HashMap<String, String>>>,
+    #[serde(default)]
+    action_prompt_overrides: HashMap<String, String>,
     #[serde(default)]
     warm_model_ids: Vec<String>,
     #[serde(default = "default_keep_alive_minutes")]
@@ -211,6 +215,7 @@ impl<'de> Deserialize<'de> for LocalAiPreferences {
             action_engines,
             external_agent_option_values: wire.external_agent_option_values,
             action_external_agent_option_values: wire.action_external_agent_option_values,
+            action_prompt_overrides: wire.action_prompt_overrides,
             warm_model_ids: wire.warm_model_ids,
             keep_alive_minutes: wire.keep_alive_minutes,
         };
@@ -577,6 +582,14 @@ pub struct ExternalAiAgentConfigPreferenceRequest {
     pub config_id: String,
     #[serde(default)]
     pub value: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiSetActionPromptOverrideRequest {
+    pub action_kind: LocalAiActionKind,
+    #[serde(default)]
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

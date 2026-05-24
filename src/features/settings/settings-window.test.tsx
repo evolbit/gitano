@@ -23,6 +23,7 @@ const apiMocks = vi.hoisted(() => ({
   removeExternalAiAgent: vi.fn(),
   setExternalAiAgentAsDefault: vi.fn(),
   setExternalAiAgentConfigPreference: vi.fn(),
+  setLocalAiActionPromptOverride: vi.fn(),
   setLocalAiAnalysisEnginePreference: vi.fn(),
   setLocalAiModelPreference: vi.fn(),
   setLocalAiModelWarmPreference: vi.fn(),
@@ -262,7 +263,7 @@ describe("SettingsWindow", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Models" }));
+    await user.click(await screen.findByRole("button", { name: "Local Models" }));
 
     expect(screen.getByText("Qwen2.5 Coder 1.5B")).toBeInTheDocument();
     expect(screen.getByText(/Medium warm, about 7GB/)).toBeInTheDocument();
@@ -281,7 +282,7 @@ describe("SettingsWindow", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Models" }));
+    await user.click(await screen.findByRole("button", { name: "Local Models" }));
 
     expect(screen.getAllByText(/Warm memory unavailable/).length).toBeGreaterThan(0);
     expect(
@@ -309,7 +310,7 @@ describe("SettingsWindow", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Models" }));
+    await user.click(await screen.findByRole("button", { name: "Local Models" }));
     const warmCheckboxes = await screen.findAllByLabelText(
       "Keep this model warm",
     );
@@ -553,6 +554,134 @@ describe("SettingsWindow", () => {
     });
   });
 
+  it("renders prompt controls for every AI action", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+
+    expect(screen.getByText("Prompts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Commit prompt override")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Commit review prompt override"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Branch analysis prompt override"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Branch review prompt override"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Merge conflicts prompt override"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Save" })[0]).toBeDisabled();
+    expect(
+      screen.getAllByRole("button", { name: "Use default value" })[0],
+    ).toBeDisabled();
+
+    await user.type(
+      screen.getByLabelText("Commit prompt override"),
+      "\nFocus on the user-visible behavior.",
+    );
+
+    expect(screen.getAllByRole("button", { name: "Save" })[0]).toBeEnabled();
+    expect(
+      screen.getAllByRole("button", { name: "Use default value" })[0],
+    ).toBeEnabled();
+  });
+
+  it("saves and clears an action prompt override", async () => {
+    const user = userEvent.setup();
+    apiMocks.getLocalAiModelPreferences.mockResolvedValueOnce({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "local_model",
+        modelId: "qwen2.5-coder:7b",
+      },
+      actionEngines: {},
+      actionPromptOverrides: {
+        branchReview: "Focus on security regressions.",
+      },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+    apiMocks.setLocalAiActionPromptOverride
+      .mockResolvedValueOnce({
+        globalModelId: "qwen2.5-coder:7b",
+        actionModelIds: {},
+        analysisEngine: {
+          type: "local_model",
+          modelId: "qwen2.5-coder:7b",
+        },
+        actionEngines: {},
+        actionPromptOverrides: {
+          branchReview: "Focus on authorization and data loss.",
+        },
+        warmModelIds: [],
+        keepAliveMinutes: 30,
+      })
+      .mockResolvedValueOnce({
+        globalModelId: "qwen2.5-coder:7b",
+        actionModelIds: {},
+        analysisEngine: {
+          type: "local_model",
+          modelId: "qwen2.5-coder:7b",
+        },
+        actionEngines: {},
+        actionPromptOverrides: {},
+        warmModelIds: [],
+        keepAliveMinutes: 30,
+      });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    const prompt = await screen.findByLabelText("Branch review prompt override");
+    expect(prompt).toHaveValue("Focus on security regressions.");
+    expect(screen.getAllByRole("button", { name: "Save" })[3]).toBeDisabled();
+    expect(
+      screen.getAllByRole("button", { name: "Use default value" })[3],
+    ).toBeEnabled();
+
+    await user.clear(prompt);
+    await user.type(prompt, "Focus on authorization and data loss.");
+    expect(screen.getAllByRole("button", { name: "Save" })[3]).toBeEnabled();
+    await user.click(screen.getAllByRole("button", { name: "Save" })[3]);
+
+    expect(apiMocks.setLocalAiActionPromptOverride).toHaveBeenCalledWith({
+      actionKind: "branchReview",
+      prompt: "Focus on authorization and data loss.",
+    });
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Use default value" })[3],
+    );
+
+    expect(apiMocks.setLocalAiActionPromptOverride).toHaveBeenLastCalledWith({
+      actionKind: "branchReview",
+      prompt: null,
+    });
+    expect((prompt as HTMLTextAreaElement).value).toContain(
+      "Review this branch like PR review feedback.",
+    );
+  });
+
   it("disables warmup controls when an external agent is selected", async () => {
     const user = userEvent.setup();
     apiMocks.getLocalAiModelPreferences.mockResolvedValueOnce({
@@ -574,7 +703,7 @@ describe("SettingsWindow", () => {
       />,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Models" }));
+    await user.click(await screen.findByRole("button", { name: "Local Models" }));
     expect(
       screen.getAllByText(
         "Warmup is unavailable while an external agent is selected.",
