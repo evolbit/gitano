@@ -1,19 +1,19 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import ReactDOM from "react-dom";
 import {
-  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import { IconExchange, IconPlus, IconSparkles, IconX } from "@/shared/components/icons/icons";
+import {
+  IconExchange,
+  IconSparkles,
+  IconX,
+} from "@/shared/components/icons/icons";
 import {
   DiffInteractionProvider,
   DiffViewerBase,
-  type DiffInteractionContextValue,
-  type DiffLineAnchor,
   type DiffDisplayMode,
 } from "@/features/diffs";
 import {
@@ -21,34 +21,16 @@ import {
   type ChangesExplorerViewMode,
 } from "@/features/working-changes";
 import {
-  listenToExternalAiRunEvents,
-  listenToLocalAiRunProgress,
-  runLocalAiAction,
   type LocalAiBranchReviewFinding,
   type LocalAiBranchReviewNote,
 } from "@/shared/api/local-ai";
 import { writeClipboardText } from "@/shared/platform/clipboard";
 import {
-  appendExternalAiRunEvent,
-  appendLocalAiRunProgress,
   LocalAiResultModal,
   LocalAiSetupModal,
 } from "@/features/local-ai";
 import { useGitActionsStore } from "@/features/repository-workspace";
-import {
-  addReviewThreadReply,
-  deleteReviewThreadComment,
-  findReviewThreadForAnchor,
-  getReviewComparisonPairKey,
-  getReviewThreadAnchorKey,
-  ReviewThreadView,
-  setReviewThreadStatus,
-  toReviewThreadAnchor,
-  updateReviewThreadComment,
-  upsertReviewThreadComment,
-  type ReviewCommentAuthor,
-  type ReviewThread,
-} from "@/features/review-comments";
+import { getReviewComparisonPairKey } from "@/features/review-comments";
 import { BranchCompareBranchDropdown } from "../branch-compare-target-dropdown/branch-compare-target-dropdown";
 import {
   useBranchComparisonData,
@@ -56,27 +38,18 @@ import {
   useBranchReviewHunks,
 } from "../../hooks/use-branch-compare-data";
 import {
-  branchAiActionKind,
-  branchAiFailureTitle,
-  branchAiSetter,
-  createBranchAiRunId,
-  describeAiError,
-  emptyBranchAiState,
-  shouldOpenAiSetup,
-  useBranchAiRunEvents,
-  type BranchAiAction,
-  type BranchAiSetupState,
-  type BranchAiState,
+  useBranchAiRunner,
 } from "./branch-ai";
 import {
   buildAnchorIndex,
-  findingAnchorKey,
-  findingKey,
-  formatFindingFeedback,
   formatNoteFeedback,
   reviewResultData,
   visibleBranchReviewResult,
 } from "./branch-review-utils";
+import {
+  useBranchReviewThreads,
+  useDismissedBranchReviewFindings,
+} from "./use-branch-review-threads";
 
 type BranchCompareModalProps = {
   repoPath: string;
@@ -87,18 +60,6 @@ type BranchCompareModalProps = {
 
 const DIFF_CONTEXT_LINES = 3;
 const BRANCH_COMPARE_MODE = "direct" as const;
-const CURRENT_REVIEW_AUTHOR: ReviewCommentAuthor = {
-  id: "local-current-user",
-  name: "You",
-  initials: "Y",
-  kind: "user",
-};
-const GITANO_AI_AUTHOR: ReviewCommentAuthor = {
-  id: "gitano-local-ai",
-  name: "Gitano AI",
-  initials: "AI",
-  kind: "bot",
-};
 const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
 
 export function BranchCompareModal({
@@ -119,31 +80,37 @@ export function BranchCompareModal({
   const [displayMode, setDisplayMode] =
     useState<DiffDisplayMode>("unified");
   const [viewMode, setViewMode] = useState<ChangesExplorerViewMode>("tree");
-  const [reviewThreads, setReviewThreads] = useState<ReviewThread[]>([]);
-  const [activeReviewAnchor, setActiveReviewAnchor] =
-    useState<DiffLineAnchor | null>(null);
-  const [branchAnalysis, setBranchAnalysis] = useState<BranchAiState>(
-    emptyBranchAiState,
-  );
-  const [branchReview, setBranchReview] = useState<BranchAiState>(
-    emptyBranchAiState,
-  );
-  const [dismissedAiFindingKeys, setDismissedAiFindingKeys] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [branchAiSetup, setBranchAiSetup] =
-    useState<BranchAiSetupState | null>(null);
-  const activeBranchAiRunIdsRef = useRef<
-    Record<BranchAiAction, string | null>
-  >({
-    analysis: null,
-    review: null,
-  });
-  const updateBranchAiState = useCallback(
-    (action: BranchAiAction, updater: SetStateAction<BranchAiState>) => {
-      branchAiSetter(action, setBranchAnalysis, setBranchReview)(updater);
+  const {
+    dismissAiFinding,
+    dismissedAiFindingKeys,
+    resetBranchReviewFindings,
+  } = useDismissedBranchReviewFindings();
+
+  const notifyAiError = useCallback(
+    (title: string, analysisError: unknown, expanded = false) => {
+      setGitActionNotice({
+        kind: "error",
+        title,
+        details:
+          analysisError instanceof Error
+            ? analysisError.message
+            : String(analysisError || title),
+        expanded,
+      });
     },
-    [],
+    [setGitActionNotice],
+  );
+
+  const notifyAiSuccess = useCallback(
+    (title: string, details: string) => {
+      setGitActionNotice({
+        kind: "success",
+        title,
+        details,
+        expanded: false,
+      });
+    },
+    [setGitActionNotice],
   );
 
   useEffect(() => {
@@ -154,6 +121,24 @@ export function BranchCompareModal({
   const comparisonReady = Boolean(
     sourceBranch && targetBranch && sourceBranch !== targetBranch,
   );
+  const {
+    branchAiSetup,
+    branchAnalysis,
+    branchReview,
+    closeBranchAiSetup,
+    resetBranchAiAction,
+    resetBranchAiRuns,
+    retryBranchAiSetup,
+    runBranchAiAction,
+  } = useBranchAiRunner({
+    comparisonMode: BRANCH_COMPARE_MODE,
+    comparisonReady,
+    notifyAiError,
+    onReviewReset: resetBranchReviewFindings,
+    repoPath,
+    sourceBranch,
+    targetBranch,
+  });
   const {
     files,
     selectedPath,
@@ -232,179 +217,16 @@ export function BranchCompareModal({
     return () => window.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
-  useBranchAiRunEvents({
-    activeRunIdsRef: activeBranchAiRunIdsRef,
-    listen: listenToLocalAiRunProgress,
-    updateState: updateBranchAiState,
-    appendEvent: appendLocalAiRunProgress,
-  });
-
-  useBranchAiRunEvents({
-    activeRunIdsRef: activeBranchAiRunIdsRef,
-    listen: listenToExternalAiRunEvents,
-    updateState: updateBranchAiState,
-    appendEvent: appendExternalAiRunEvent,
-  });
+  useEffect(() => {
+    resetBranchAiRuns();
+    setReviewHunksByPath({});
+  }, [pairKey, resetBranchAiRuns, setReviewHunksByPath]);
 
   useEffect(() => {
-    activeBranchAiRunIdsRef.current = {
-      analysis: null,
-      review: null,
-    };
-    setBranchAnalysis(emptyBranchAiState());
-    setBranchReview(emptyBranchAiState());
-    setReviewHunksByPath({});
-    setDismissedAiFindingKeys(new Set());
-    setActiveReviewAnchor(null);
-  }, [pairKey, setReviewHunksByPath]);
-
-  const notifyAiError = useCallback(
-    (title: string, analysisError: unknown, expanded = false) => {
-      setGitActionNotice({
-        kind: "error",
-        title,
-        details:
-          analysisError instanceof Error
-            ? analysisError.message
-            : String(analysisError || title),
-        expanded,
-      });
-    },
-    [setGitActionNotice],
-  );
-
-  const notifyAiSuccess = useCallback(
-    (title: string, details: string) => {
-      setGitActionNotice({
-        kind: "success",
-        title,
-        details,
-        expanded: false,
-      });
-    },
-    [setGitActionNotice],
-  );
-
-  const runBranchAiAction = useCallback(
-    async (action: BranchAiAction, forceRefresh = false) => {
-      if (!comparisonReady || !sourceBranch || !targetBranch) return;
-
-      const actionKind = branchAiActionKind(action);
-      const runId = createBranchAiRunId(action);
-      activeBranchAiRunIdsRef.current[action] = runId;
-      const setState = branchAiSetter(action, setBranchAnalysis, setBranchReview);
-      setState({
-        result: null,
-        loading: true,
-        error: null,
-        progressRunId: runId,
-        progress: [],
-        externalEvents: [],
-      });
-      if (action === "review") {
-        setDismissedAiFindingKeys(new Set());
-        setReviewHunksByPath({});
-      }
-
-      try {
-        const result = await runLocalAiAction({
-          repoPath,
-          actionKind,
-          runId,
-          baseRef: targetBranch,
-          headRef: sourceBranch,
-          comparisonMode: BRANCH_COMPARE_MODE,
-          forceRefresh,
-        });
-        if (activeBranchAiRunIdsRef.current[action] !== runId) return;
-        setState((current) =>
-          current.progressRunId === runId
-            ? {
-                ...current,
-                result,
-                loading: false,
-                error: null,
-                progressRunId: runId,
-              }
-            : current,
-        );
-      } catch (analysisError) {
-        if (activeBranchAiRunIdsRef.current[action] !== runId) return;
-        const errorMessage = describeAiError(analysisError);
-        console.error("Branch local AI action failed", {
-          actionKind,
-          error: analysisError,
-        });
-        const opensSetup = shouldOpenAiSetup(errorMessage);
-        notifyAiError(
-          opensSetup
-            ? "Local AI setup required"
-            : branchAiFailureTitle(action, errorMessage),
-          analysisError,
-          true,
-        );
-        if (opensSetup) {
-          setBranchAiSetup({
-            actionKind,
-            reason: errorMessage,
-          });
-        }
-        setState((current) =>
-          current.progressRunId === runId
-            ? {
-                ...current,
-                result: null,
-                loading: false,
-                error: null,
-                progressRunId: runId,
-              }
-            : current,
-        );
-      }
-    },
-    [
-      comparisonReady,
-      notifyAiError,
-      repoPath,
-      setReviewHunksByPath,
-      sourceBranch,
-      targetBranch,
-    ],
-  );
-
-  const applyAiFinding = useCallback(
-    (finding: LocalAiBranchReviewFinding) => {
-      const anchor = branchReviewAnchorIndex.get(findingAnchorKey(finding));
-      if (!anchor || !pairKey) return;
-
-      setReviewThreads((current) =>
-        upsertReviewThreadComment({
-          threads: current,
-          pairKey,
-          anchor,
-          author: GITANO_AI_AUTHOR,
-          bodyMarkdown:
-            finding.suggestedComment ||
-            finding.recommendation ||
-            finding.explanation,
-        }),
-      );
-      setDismissedAiFindingKeys((current) => {
-        const next = new Set(current);
-        next.add(findingKey(finding));
-        return next;
-      });
-    },
-    [branchReviewAnchorIndex, pairKey],
-  );
-
-  const dismissAiFinding = useCallback((finding: LocalAiBranchReviewFinding) => {
-    setDismissedAiFindingKeys((current) => {
-      const next = new Set(current);
-      next.add(findingKey(finding));
-      return next;
-    });
-  }, []);
+    if (branchReview.loading && branchReview.progressRunId) {
+      setReviewHunksByPath({});
+    }
+  }, [branchReview.loading, branchReview.progressRunId, setReviewHunksByPath]);
 
   const copyAiFeedback = useCallback(
     async (text: string) => {
@@ -418,49 +240,14 @@ export function BranchCompareModal({
     [notifyAiError, notifyAiSuccess],
   );
 
-  const beginReviewThread = useCallback((anchor: DiffLineAnchor) => {
-    setActiveReviewAnchor(anchor);
-  }, []);
-
-  const renderAiFindingActions = useCallback(
-    (finding: LocalAiBranchReviewFinding) => {
-      const canApply = branchReviewAnchorIndex.has(findingAnchorKey(finding));
-      return (
-        <>
-          <button
-            type="button"
-            className="h-7 rounded border border-border px-2 text-xs text-zinc-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canApply}
-            onClick={() => applyAiFinding(finding)}
-          >
-            Apply draft
-          </button>
-          <button
-            type="button"
-            className="h-7 rounded border border-border px-2 text-xs text-zinc-200 transition-colors hover:bg-zinc-800"
-            onClick={() => {
-              void copyAiFeedback(formatFindingFeedback(finding));
-            }}
-          >
-            Copy
-          </button>
-          <button
-            type="button"
-            className="h-7 rounded border border-border px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-            onClick={() => dismissAiFinding(finding)}
-          >
-            Dismiss
-          </button>
-        </>
-      );
-    },
-    [
-      applyAiFinding,
-      branchReviewAnchorIndex,
-      copyAiFeedback,
-      dismissAiFinding,
-    ],
-  );
+  const { interactionValue, renderAiFindingActions } = useBranchReviewThreads({
+    branchReviewAnchorIndex,
+    branchReviewData,
+    dismissAiFinding,
+    dismissedAiFindingKeys,
+    onCopyAiFeedback: copyAiFeedback,
+    pairKey,
+  });
 
   const renderAiNoteActions = useCallback(
     (note: LocalAiBranchReviewNote) => (
@@ -475,160 +262,6 @@ export function BranchCompareModal({
       </button>
     ),
     [copyAiFeedback],
-  );
-
-  const interactionValue = useMemo<DiffInteractionContextValue>(
-    () => ({
-      renderLineAccessory: (anchor) => {
-        const thread = pairKey
-          ? findReviewThreadForAnchor(
-              reviewThreads,
-              pairKey,
-              toReviewThreadAnchor(anchor),
-            )
-          : undefined;
-        const commentCount = thread?.comments.length ?? 0;
-        return (
-          <button
-            type="button"
-            className={`flex h-6 min-w-6 items-center justify-center rounded border text-[11px] transition-colors ${
-              commentCount > 0
-                ? "border-blue-500/50 bg-blue-500/20 text-blue-100"
-                : "border-border bg-background text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-zinc-100"
-            }`}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              beginReviewThread(anchor);
-            }}
-            aria-label={commentCount > 0 ? "Open review thread" : "Add comment"}
-          >
-            {commentCount > 0 ? commentCount : <IconPlus size={13} />}
-          </button>
-        );
-      },
-      renderLineBelowFullWidth: (anchor) => {
-        if (!pairKey) return null;
-        const line = anchor.side === "old" ? anchor.oldLine : anchor.newLine;
-        const anchorFindings =
-          line === null
-            ? []
-            : (branchReviewData?.findings ?? []).filter(
-                (finding) =>
-                  !dismissedAiFindingKeys.has(findingKey(finding)) &&
-                  findingAnchorKey(finding) ===
-                    findingAnchorKey({
-                      filePath: anchor.filePath,
-                      side: anchor.side,
-                      line,
-                    }),
-              );
-        const threadAnchor = toReviewThreadAnchor(anchor);
-        const thread = findReviewThreadForAnchor(
-          reviewThreads,
-          pairKey,
-          threadAnchor,
-        ) ?? null;
-        const isCreating =
-          !!activeReviewAnchor &&
-          !thread &&
-          getReviewThreadAnchorKey(pairKey, toReviewThreadAnchor(activeReviewAnchor)) ===
-            getReviewThreadAnchorKey(pairKey, threadAnchor);
-
-        if (!isCreating && !thread && anchorFindings.length === 0) return null;
-
-        return (
-          <div className="space-y-3">
-            {anchorFindings.map((finding) => (
-              <div
-                key={findingKey(finding)}
-                className="rounded border border-blue-500/30 bg-blue-500/10 p-3 text-sm"
-              >
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <span className="rounded border border-blue-400/40 px-1.5 py-0.5 text-[10px] uppercase text-blue-100">
-                    AI review
-                  </span>
-                  <span className="font-medium text-zinc-100">
-                    {finding.title}
-                  </span>
-                </div>
-                <p className="text-zinc-300">{finding.explanation}</p>
-                {finding.suggestedComment ? (
-                  <div className="mt-2 rounded border border-border bg-background px-2 py-1.5 text-xs text-zinc-300">
-                    {finding.suggestedComment}
-                  </div>
-                ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {renderAiFindingActions(finding)}
-                </div>
-              </div>
-            ))}
-            {thread || isCreating ? (
-              <ReviewThreadView
-                thread={thread}
-                isCreating={isCreating}
-                currentAuthor={CURRENT_REVIEW_AUTHOR}
-                onSaveInitial={(bodyMarkdown) => {
-                  setReviewThreads((current) =>
-                    upsertReviewThreadComment({
-                      threads: current,
-                      pairKey,
-                      anchor,
-                      author: CURRENT_REVIEW_AUTHOR,
-                      bodyMarkdown,
-                    }),
-                  );
-                  setActiveReviewAnchor(null);
-                }}
-                onCancelInitial={() => setActiveReviewAnchor(null)}
-                onReply={(threadId, bodyMarkdown) =>
-                  setReviewThreads((current) =>
-                    addReviewThreadReply({
-                      threads: current,
-                      threadId,
-                      author: CURRENT_REVIEW_AUTHOR,
-                      bodyMarkdown,
-                    }),
-                  )
-                }
-                onResolveThread={(threadId, resolved) =>
-                  setReviewThreads((current) =>
-                    setReviewThreadStatus({
-                      threads: current,
-                      threadId,
-                      status: resolved ? "resolved" : "open",
-                    }),
-                  )
-                }
-                onUpdateComment={(commentId, bodyMarkdown) =>
-                  setReviewThreads((current) =>
-                    updateReviewThreadComment({
-                      threads: current,
-                      commentId,
-                      bodyMarkdown,
-                    }),
-                  )
-                }
-                onDeleteComment={(commentId) => {
-                  setReviewThreads((current) =>
-                    deleteReviewThreadComment({ threads: current, commentId }),
-                  );
-                }}
-              />
-            ) : null}
-          </div>
-        );
-      },
-    }),
-    [
-      activeReviewAnchor,
-      beginReviewThread,
-      branchReviewData,
-      dismissedAiFindingKeys,
-      pairKey,
-      renderAiFindingActions,
-      reviewThreads,
-    ],
   );
 
   const branchAiLoading = branchAnalysis.loading || branchReview.loading;
@@ -764,8 +397,7 @@ export function BranchCompareModal({
             void runBranchAiAction("analysis", true);
           }}
           onClose={() => {
-            activeBranchAiRunIdsRef.current.analysis = null;
-            setBranchAnalysis(emptyBranchAiState());
+            resetBranchAiAction("analysis");
           }}
         />
         <LocalAiResultModal
@@ -784,23 +416,16 @@ export function BranchCompareModal({
             void runBranchAiAction("review", true);
           }}
           onClose={() => {
-            activeBranchAiRunIdsRef.current.review = null;
-            setBranchReview(emptyBranchAiState());
+            resetBranchAiAction("review");
             setReviewHunksByPath({});
-            setDismissedAiFindingKeys(new Set());
           }}
         />
         <LocalAiSetupModal
           open={Boolean(branchAiSetup)}
           actionKind={branchAiSetup?.actionKind ?? null}
           setupReason={branchAiSetup?.reason ?? null}
-          onClose={() => setBranchAiSetup(null)}
-          onReady={() => {
-            const action =
-              branchAiSetup?.actionKind === "branchReview" ? "review" : "analysis";
-            setBranchAiSetup(null);
-            void runBranchAiAction(action);
-          }}
+          onClose={closeBranchAiSetup}
+          onReady={retryBranchAiSetup}
         />
       </div>
     </div>

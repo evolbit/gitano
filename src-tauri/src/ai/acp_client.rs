@@ -5,34 +5,26 @@ use super::types::{
     ExternalAiRunEvent, ExternalAiRunEventKind, LocalAiActionKind, LocalAiRunProgress,
     LocalAiRunProgressState, EXTERNAL_AI_RUN_EVENT, LOCAL_AI_RUN_PROGRESS_EVENT,
 };
+mod client_requests;
 mod events;
 mod filesystem;
 mod permissions;
 mod session_config;
 mod terminal;
-use events::normalize_session_update;
-use filesystem::read_repo_text_file;
 use once_cell::sync::Lazy;
-use permissions::{
-    permission_allow_outcome, permission_denial_outcome, permission_request_is_read_only_terminal,
-};
-use serde::Deserialize;
+mod transport;
 use serde_json::{json, Value};
 use session_config::session_config_options;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use terminal::{
-    parse_terminal_create_request, prepare_terminal_command, spawn_terminal_session,
-    terminal_command_display, terminal_id_param, terminal_output_snapshot,
-    terminal_try_exit_status, TerminalSession,
-};
+use terminal::TerminalSession;
+use transport::{spawn_stdout_reader, write_message, RpcLineReceiver};
 
 const ACP_PROTOCOL_VERSION: u16 = 1;
 const JSON_RPC_VERSION: &str = "2.0";
@@ -47,33 +39,13 @@ struct ActiveRun {
     writer: Arc<Mutex<ChildStdin>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct RpcError {
-    code: i64,
-    message: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RpcMessage {
-    #[serde(default)]
-    id: Option<Value>,
-    #[serde(default)]
-    method: Option<String>,
-    #[serde(default)]
-    params: Option<Value>,
-    #[serde(default)]
-    result: Option<Value>,
-    #[serde(default)]
-    error: Option<RpcError>,
-}
-
 struct AcpProcessClient {
     app: AppHandle,
     request: ExternalAiPromptRequest,
     repo_root: PathBuf,
     child: Child,
     writer: Arc<Mutex<ChildStdin>>,
-    stdout_lines: Receiver<Result<String, String>>,
+    stdout_lines: RpcLineReceiver,
     next_request_id: u64,
     next_terminal_id: u64,
     terminals: HashMap<String, TerminalSession>,
@@ -378,384 +350,6 @@ impl AcpProcessClient {
             .ok_or_else(|| "External agent did not return a stop reason.".to_string())
     }
 
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
-        let id = self.next_id();
-        write_message(
-            &self.writer,
-            &json!({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": id,
-                "method": method,
-                "params": params,
-            }),
-        )?;
-
-        loop {
-            let message = self.read_message()?;
-            if message.id.as_ref() == Some(&id) && message.method.is_none() {
-                if let Some(error) = message.error {
-                    return Err(format!(
-                        "External agent returned JSON-RPC error {}: {}",
-                        error.code, error.message
-                    ));
-                }
-                return Ok(message.result.unwrap_or(Value::Null));
-            }
-
-            self.handle_message(message)?;
-        }
-    }
-
-    fn next_id(&mut self) -> Value {
-        let id = self.next_request_id;
-        self.next_request_id += 1;
-        json!(id)
-    }
-
-    fn read_message(&mut self) -> Result<RpcMessage, String> {
-        loop {
-            let line = match self.stdout_lines.recv_timeout(EXTERNAL_AGENT_IDLE_TIMEOUT) {
-                Ok(Ok(line)) => line,
-                Ok(Err(error)) => return Err(error),
-                Err(RecvTimeoutError::Timeout) => {
-                    if let Ok(Some(status)) = self.child.try_wait() {
-                        return Err(format!(
-                            "External agent exited before completing the request: {}.",
-                            status
-                        ));
-                    }
-
-                    let message = external_agent_idle_timeout_message();
-                    self.emit_event(
-                        ExternalAiRunEventKind::Error,
-                        message.clone(),
-                        Some(json!({
-                            "timeoutSeconds": EXTERNAL_AGENT_IDLE_TIMEOUT.as_secs(),
-                        })),
-                    );
-                    return Err(message);
-                }
-                Err(RecvTimeoutError::Disconnected) => {
-                    return Err(
-                        "External agent connection closed before completing the request."
-                            .to_string(),
-                    );
-                }
-            };
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            return serde_json::from_str(line.trim_end())
-                .map_err(|e| format!("External agent sent invalid JSON-RPC: {}", e));
-        }
-    }
-
-    fn handle_message(&mut self, message: RpcMessage) -> Result<(), String> {
-        match (message.id, message.method, message.params) {
-            (None, Some(method), params) => self.handle_notification(&method, params),
-            (Some(id), Some(method), params) => self.handle_client_request(id, &method, params),
-            _ => Ok(()),
-        }
-    }
-
-    fn handle_notification(&mut self, method: &str, params: Option<Value>) -> Result<(), String> {
-        if method != "session/update" {
-            return Ok(());
-        }
-
-        let Some(params) = params else {
-            return Ok(());
-        };
-        self.emit_session_update(&params);
-        Ok(())
-    }
-
-    fn emit_session_update(&mut self, params: &Value) {
-        if let Some(event) = normalize_session_update(&self.request, params) {
-            if event.kind == ExternalAiRunEventKind::Text {
-                self.transcript.push_str(&event.message);
-            }
-            let kind = event.kind;
-            let message = event.message.clone();
-            let _ = self.app.emit(EXTERNAL_AI_RUN_EVENT, event);
-            emit_compatible_run_progress(&self.app, &self.request, kind, message);
-        }
-    }
-
-    fn handle_client_request(
-        &mut self,
-        id: Value,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<(), String> {
-        match (method, params) {
-            ("fs/read_text_file", Some(params)) => self.handle_read_text_file(id, params),
-            ("fs/write_text_file", params) => self.deny_file_write(id, params),
-            ("session/request_permission", Some(params)) => {
-                self.handle_permission_request(id, params)
-            }
-            (method, params) if method.starts_with("terminal/") => {
-                self.handle_terminal_request(id, method, params)
-            }
-            (method, _) => self.respond_error(
-                id,
-                -32601,
-                &format!("Unsupported ACP client method: {}", method),
-            ),
-        }
-    }
-
-    fn handle_terminal_request(
-        &mut self,
-        id: Value,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<(), String> {
-        match (method, params) {
-            ("terminal/create", Some(params)) => self.handle_terminal_create(id, params),
-            ("terminal/output", Some(params)) => self.handle_terminal_output(id, params),
-            ("terminal/wait_for_exit", Some(params)) => {
-                self.handle_terminal_wait_for_exit(id, params)
-            }
-            ("terminal/kill", Some(params)) => self.handle_terminal_kill(id, params),
-            ("terminal/release", Some(params)) => self.handle_terminal_release(id, params),
-            (method, params) => {
-                self.emit_event(
-                    ExternalAiRunEventKind::PermissionDenied,
-                    format!("External agent terminal request unsupported: {}", method),
-                    params,
-                );
-                self.respond_error(
-                    id,
-                    -32601,
-                    &format!("Unsupported ACP terminal method: {}", method),
-                )
-            }
-        }
-    }
-
-    fn deny_file_write(&mut self, id: Value, params: Option<Value>) -> Result<(), String> {
-        self.emit_event(
-            ExternalAiRunEventKind::PermissionDenied,
-            "External agent file writes are disabled.".to_string(),
-            params,
-        );
-        self.respond_error(
-            id,
-            -32000,
-            "Gitano does not allow external agents to modify repository files.",
-        )
-    }
-
-    fn handle_read_text_file(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let path = params.get("path").and_then(Value::as_str).ok_or_else(|| {
-            "External agent file read request did not include a path.".to_string()
-        })?;
-        let line = params
-            .get("line")
-            .and_then(Value::as_u64)
-            .map(|line| line as usize);
-        let limit = params
-            .get("limit")
-            .and_then(Value::as_u64)
-            .map(|limit| limit as usize);
-
-        match read_repo_text_file(&self.repo_root, path, line, limit) {
-            Ok(content) => {
-                self.emit_event(
-                    ExternalAiRunEventKind::FileRead,
-                    format!("Read {}", path),
-                    Some(params),
-                );
-                self.respond_result(id, json!({ "content": content }))
-            }
-            Err(error) => {
-                self.emit_event(ExternalAiRunEventKind::Error, error.clone(), Some(params));
-                self.respond_error(id, -32001, &error)
-            }
-        }
-    }
-
-    fn handle_permission_request(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let (outcome, message, kind) = if permission_request_is_read_only_terminal(&params) {
-            (
-                permission_allow_outcome(&params)
-                    .unwrap_or_else(|| permission_denial_outcome(&params)),
-                "Allowed read-only external agent command.".to_string(),
-                ExternalAiRunEventKind::ToolCallUpdate,
-            )
-        } else {
-            (
-                permission_denial_outcome(&params),
-                "External agent permission request denied.".to_string(),
-                ExternalAiRunEventKind::PermissionDenied,
-            )
-        };
-        self.emit_event(kind, message, Some(params));
-        self.respond_result(id, json!({ "outcome": outcome }))
-    }
-
-    fn handle_terminal_create(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let request = parse_terminal_create_request(&params, &self.repo_root)?;
-
-        if !request.cwd.starts_with(&self.repo_root) {
-            self.emit_event(
-                ExternalAiRunEventKind::PermissionDenied,
-                "External agent terminal cwd is outside the active repository.".to_string(),
-                Some(params),
-            );
-            return self.respond_error(
-                id,
-                -32000,
-                "Gitano only allows external agent commands inside the active repository.",
-            );
-        }
-
-        let Some(prepared_command) = prepare_terminal_command(&request.command, &request.args)
-        else {
-            let display = terminal_command_display(&request.command, &request.args);
-            self.emit_event(
-                ExternalAiRunEventKind::PermissionDenied,
-                format!("Blocked terminal command: {}", display),
-                Some(params),
-            );
-            return self.respond_error(
-                id,
-                -32000,
-                "Gitano only allows read-only inspection commands for external agents.",
-            );
-        };
-
-        let terminal_id = self.next_terminal_id();
-        let terminal_session = spawn_terminal_session(
-            &request,
-            &prepared_command,
-            self.app.clone(),
-            self.request.clone(),
-            &terminal_id,
-        )?;
-
-        self.emit_event(
-            ExternalAiRunEventKind::ToolCall,
-            format!(
-                "{}\n{}",
-                request.cwd.to_string_lossy(),
-                prepared_command.display
-            ),
-            Some(json!({
-                "terminalId": terminal_id,
-                "command": prepared_command.program,
-                "args": prepared_command.args,
-                "cwd": request.cwd.to_string_lossy(),
-            })),
-        );
-        self.terminals.insert(terminal_id.clone(), terminal_session);
-        self.respond_result(id, json!({ "terminalId": terminal_id }))
-    }
-
-    fn handle_terminal_output(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let terminal_id = terminal_id_param(&params)?;
-        let Some(terminal) = self.terminals.get_mut(&terminal_id) else {
-            return self.respond_error(id, -32004, "Unknown external agent terminal id.");
-        };
-        let exit_status = terminal_try_exit_status(terminal);
-        let output = terminal_output_snapshot(&terminal.output);
-
-        self.respond_result(
-            id,
-            json!({
-                "output": output.text,
-                "truncated": output.truncated,
-                "exitStatus": exit_status,
-            }),
-        )
-    }
-
-    fn handle_terminal_wait_for_exit(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let terminal_id = terminal_id_param(&params)?;
-        let Some(terminal) = self.terminals.get_mut(&terminal_id) else {
-            return self.respond_error(id, -32004, "Unknown external agent terminal id.");
-        };
-        let status = terminal
-            .child
-            .wait()
-            .map_err(|e| format!("Could not wait for external agent terminal: {}", e))?;
-        let exit_status = json!({
-            "exitCode": status.code(),
-            "signal": Value::Null,
-        });
-
-        self.respond_result(id, exit_status)
-    }
-
-    fn handle_terminal_kill(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let terminal_id = terminal_id_param(&params)?;
-        let Some(terminal) = self.terminals.get_mut(&terminal_id) else {
-            return self.respond_error(id, -32004, "Unknown external agent terminal id.");
-        };
-
-        terminal
-            .child
-            .kill()
-            .map_err(|e| format!("Could not kill external agent terminal: {}", e))?;
-        self.emit_event(
-            ExternalAiRunEventKind::ToolCallUpdate,
-            format!("Terminal command killed: {}", terminal_id),
-            Some(params),
-        );
-        self.respond_result(id, json!({}))
-    }
-
-    fn handle_terminal_release(&mut self, id: Value, params: Value) -> Result<(), String> {
-        let terminal_id = terminal_id_param(&params)?;
-        let Some(mut terminal) = self.terminals.remove(&terminal_id) else {
-            return self.respond_error(id, -32004, "Unknown external agent terminal id.");
-        };
-
-        if terminal
-            .child
-            .try_wait()
-            .map_err(|e| e.to_string())?
-            .is_none()
-        {
-            let _ = terminal.child.kill();
-        }
-        let _ = terminal.child.wait();
-        self.respond_result(id, json!({}))
-    }
-
-    fn respond_result(&mut self, id: Value, result: Value) -> Result<(), String> {
-        write_message(
-            &self.writer,
-            &json!({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": id,
-                "result": result,
-            }),
-        )
-    }
-
-    fn next_terminal_id(&mut self) -> String {
-        let id = self.next_terminal_id;
-        self.next_terminal_id += 1;
-        format!("gitano-terminal-{}", id)
-    }
-
-    fn respond_error(&mut self, id: Value, code: i64, message: &str) -> Result<(), String> {
-        write_message(
-            &self.writer,
-            &json!({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": id,
-                "error": {
-                    "code": code,
-                    "message": message
-                },
-            }),
-        )
-    }
-
     fn emit_event(&self, kind: ExternalAiRunEventKind, message: String, raw: Option<Value>) {
         let _ = self.app.emit(
             EXTERNAL_AI_RUN_EVENT,
@@ -860,48 +454,6 @@ fn external_agent_idle_timeout_message() -> String {
         "External agent connection appears stalled. No response was received for {} seconds. Check your internet connection and try again.",
         EXTERNAL_AGENT_IDLE_TIMEOUT.as_secs()
     )
-}
-
-fn spawn_stdout_reader(stdout: ChildStdout) -> Receiver<Result<String, String>> {
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
-                Ok(0) => {
-                    let _ = sender.send(Err(
-                        "External agent connection closed before completing the request."
-                            .to_string(),
-                    ));
-                    break;
-                }
-                Ok(_) => {
-                    if sender.send(Ok(line)).is_err() {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    let _ = sender.send(Err(format!(
-                        "External agent transport read failed: {}",
-                        error
-                    )));
-                    break;
-                }
-            }
-        }
-    });
-    receiver
-}
-
-fn write_message(writer: &Arc<Mutex<ChildStdin>>, message: &Value) -> Result<(), String> {
-    let mut writer = writer.lock().map_err(|e| e.to_string())?;
-    let line = serde_json::to_string(message).map_err(|e| e.to_string())?;
-    writer
-        .write_all(line.as_bytes())
-        .and_then(|_| writer.write_all(b"\n"))
-        .and_then(|_| writer.flush())
-        .map_err(|e| format!("External agent transport write failed: {}", e))
 }
 
 fn register_active_run(run_id: &str, writer: Arc<Mutex<ChildStdin>>) -> Result<(), String> {

@@ -1,34 +1,17 @@
 import { useDeferredValue, useMemo, useState, useCallback } from "react";
-import {
-  discardFileChanges,
-  stageAll,
-  stageFile,
-  stageLines,
-  trashUntrackedFile,
-  unstageAll,
-  unstageFile,
-} from "@/shared/api/git/staging";
-import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
-import {
-  buildAllStageableLineMap,
-  buildCompressedTree,
-} from "@/shared/lib/tree/changes-explorer-tree";
+import { buildCompressedTree } from "@/shared/lib/tree/changes-explorer-tree";
 import {
   fileMatchesSearch,
   normalizeFiles,
   partitionFiles,
-  getCheckboxStateForFile,
-  getFolderCheckboxState as computeFolderCheckboxState,
-  isUntrackedFile,
-  cloneStagedLinesState,
-  serializeLineSelection,
 } from "./utils";
 import { ChangesExplorerFileRow } from "./components/changes-explorer-file-row/changes-explorer-file-row";
 import { ChangesExplorerSection } from "./components/changes-explorer-section/changes-explorer-section";
 import { ChangesExplorerTreeNodes } from "./components/changes-explorer-tree-nodes/changes-explorer-tree-nodes";
 import { ChangesExplorerMenu } from "./components/changes-explorer-menu/changes-explorer-menu";
 import { useChangesExplorerBehavior } from "./hooks/use-changes-explorer-behavior";
+import { useChangesExplorerStaging } from "./hooks/use-changes-explorer-staging";
 import type { ChangesExplorerProps } from "./types";
 import {
   IconBinaryTree2,
@@ -49,28 +32,6 @@ const VIEW_MODE_OPTIONS = [
     Icon: IconBinaryTree2,
   },
 ] as const;
-
-type PathMutation = (repoPath: string, path: string) => Promise<unknown>;
-
-function uniqueFilesByPath(files: ChangesExplorerFile[]) {
-  return Array.from(new Map(files.map((file) => [file.path, file])).values());
-}
-
-function hasDiffHunks(file: ChangesExplorerFile) {
-  return "hunks" in file && file.hunks.length > 0;
-}
-
-function serializeAllStageableLines(file: ChangesExplorerFile) {
-  const allStageableLines = buildAllStageableLineMap(file);
-  const stagedLineSets = Object.fromEntries(
-    Object.entries(allStageableLines).map(([hunkIdx, lineIdxs]) => [
-      Number(hunkIdx),
-      new Set(lineIdxs),
-    ]),
-  ) as Record<number, Set<number>>;
-
-  return serializeLineSelection(stagedLineSets);
-}
 
 function ChangesExplorer({
   files,
@@ -115,18 +76,6 @@ function ChangesExplorer({
     [sections],
   );
 
-  const stagedLines = useStagedLinesStore((s) => s.stagedLines);
-  const clearStagedLinesForFile = useStagedLinesStore(
-    (s) => s.clearStagedLinesForFile,
-  );
-  const setLineSelectionForFile = useStagedLinesStore(
-    (s) => s.setLineSelectionForFile,
-  );
-  const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
-  const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
-  const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
-  const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
-
   const {
     expanded,
     activeContextMenu,
@@ -148,6 +97,26 @@ function ChangesExplorer({
     selectedPath,
     viewMode,
     sectionTrees,
+  });
+
+  const {
+    areAllFilesFullySelected,
+    getCheckboxState,
+    getFolderCheckboxState,
+    handleDiscardTrackedFile,
+    handleDiscardTrackedFolder,
+    handleTrashUntrackedFile,
+    handleTrashUntrackedFolder,
+    toggleAllFilesSelection,
+    toggleFileSelection,
+    toggleFolderSelection,
+  } = useChangesExplorerStaging({
+    normalizedFiles,
+    onImmediateStageChange,
+    repoPath,
+    scheduleImmediateStageRefresh,
+    setActionError,
+    showFileCheckboxes,
   });
 
   const handleSelectFile = useCallback(
@@ -176,239 +145,6 @@ function ChangesExplorer({
       });
     },
     [openContextMenu],
-  );
-
-  const getCheckboxState = useCallback(
-    (file: ChangesExplorerFile) =>
-      getCheckboxStateForFile(
-        file,
-        stagedLines,
-        isStagedNewFile,
-        isWholeFileStaged,
-      ),
-    [stagedLines, isStagedNewFile, isWholeFileStaged],
-  );
-
-  const areAllFilesFullySelected =
-    showFileCheckboxes &&
-    normalizedFiles.length > 0 &&
-    normalizedFiles.every((file) => getCheckboxState(file) === "checked");
-
-  const runStagedLinesMutation = useCallback(
-    async (mutation: () => Promise<void>) => {
-      setActionError(null);
-      const previousStagedLines = cloneStagedLinesState(
-        useStagedLinesStore.getState().stagedLines,
-      );
-
-      try {
-        await mutation();
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        useStagedLinesStore.setState({ stagedLines: previousStagedLines });
-        setActionError(String(error));
-      }
-    },
-    [onImmediateStageChange, scheduleImmediateStageRefresh, setActionError],
-  );
-
-  const runPathMutation = useCallback(
-    async (
-      targetPath: string,
-      filesToClear: ChangesExplorerFile[],
-      mutation: PathMutation,
-    ) => {
-      if (!repoPath) return;
-      setActionError(null);
-
-      try {
-        filesToClear.forEach((file) => clearStagedLinesForFile(file.path));
-        await mutation(repoPath, targetPath);
-        scheduleImmediateStageRefresh(onImmediateStageChange);
-      } catch (error) {
-        setActionError(String(error));
-      }
-    },
-    [
-      clearStagedLinesForFile,
-      onImmediateStageChange,
-      repoPath,
-      scheduleImmediateStageRefresh,
-      setActionError,
-    ],
-  );
-
-  const applyStageAllOptimistic = useCallback(
-    (targetFiles: ChangesExplorerFile[]) => {
-      targetFiles.forEach((file) => {
-        if (isUntrackedFile(file)) {
-          setStagedNewFile(file.path, true);
-          return;
-        }
-
-        setLineSelectionForFile(file.path, {});
-        setWholeFileStaged(file.path, true);
-      });
-    },
-    [setLineSelectionForFile, setStagedNewFile, setWholeFileStaged],
-  );
-
-  const applyUnstageAllOptimistic = useCallback(
-    (targetFiles: ChangesExplorerFile[]) => {
-      targetFiles.forEach((file) => {
-        clearStagedLinesForFile(file.path);
-      });
-    },
-    [clearStagedLinesForFile],
-  );
-
-  const toggleAllFilesSelection = useCallback(async () => {
-    if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0)
-      return;
-
-    await runStagedLinesMutation(async () => {
-      if (areAllFilesFullySelected) {
-        applyUnstageAllOptimistic(normalizedFiles);
-        await unstageAll(repoPath);
-      } else {
-        applyStageAllOptimistic(normalizedFiles);
-        await stageAll(repoPath);
-      }
-    });
-  }, [
-    areAllFilesFullySelected,
-    applyStageAllOptimistic,
-    applyUnstageAllOptimistic,
-    normalizedFiles,
-    repoPath,
-    runStagedLinesMutation,
-    showFileCheckboxes,
-  ]);
-
-  const toggleFileSelection = useCallback(
-    async (file: ChangesExplorerFile) => {
-      if (!repoPath) return;
-
-      await runStagedLinesMutation(async () => {
-        const checkboxState = getCheckboxState(file);
-
-        if (isUntrackedFile(file)) {
-          if (checkboxState === "checked") {
-            setStagedNewFile(file.path, false);
-            await unstageFile(repoPath, file.path);
-          } else {
-            setStagedNewFile(file.path, true);
-            await stageFile(repoPath, file.path);
-          }
-          return;
-        }
-
-        if (file.status === "deleted") {
-          if (checkboxState === "checked") {
-            clearStagedLinesForFile(file.path);
-            setWholeFileStaged(file.path, false);
-            await unstageFile(repoPath, file.path);
-          } else {
-            setWholeFileStaged(file.path, true);
-            await stageFile(repoPath, file.path);
-          }
-          return;
-        }
-
-        if (checkboxState === "checked") {
-          clearStagedLinesForFile(file.path);
-          if (hasDiffHunks(file)) {
-            await stageLines(repoPath, file.path, {});
-          } else {
-            await unstageFile(repoPath, file.path);
-          }
-          return;
-        }
-
-        setWholeFileStaged(file.path, true);
-        setLineSelectionForFile(file.path, {});
-        await stageLines(repoPath, file.path, serializeAllStageableLines(file));
-      });
-    },
-    [
-      clearStagedLinesForFile,
-      getCheckboxState,
-      repoPath,
-      runStagedLinesMutation,
-      setLineSelectionForFile,
-      setStagedNewFile,
-      setWholeFileStaged,
-    ],
-  );
-
-  const getFolderCheckboxState = useCallback(
-    (filesInFolder: ChangesExplorerFile[]) =>
-      computeFolderCheckboxState(filesInFolder, getCheckboxState),
-    [getCheckboxState],
-  );
-
-  const toggleFolderSelection = useCallback(
-    async (_folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
-      if (!repoPath || filesInFolder.length === 0) return;
-      const uniqueFilesInFolder = uniqueFilesByPath(filesInFolder);
-
-      await runStagedLinesMutation(async () => {
-        if (getFolderCheckboxState(uniqueFilesInFolder) === "checked") {
-          for (const file of uniqueFilesInFolder) {
-            clearStagedLinesForFile(file.path);
-            await unstageFile(repoPath, file.path);
-          }
-        } else {
-          for (const file of uniqueFilesInFolder) {
-            if (isUntrackedFile(file)) {
-              setStagedNewFile(file.path, true);
-            } else {
-              setLineSelectionForFile(file.path, {});
-              setWholeFileStaged(file.path, true);
-            }
-
-            await stageFile(repoPath, file.path);
-          }
-        }
-      });
-    },
-    [
-      clearStagedLinesForFile,
-      getFolderCheckboxState,
-      repoPath,
-      runStagedLinesMutation,
-      setLineSelectionForFile,
-      setStagedNewFile,
-      setWholeFileStaged,
-    ],
-  );
-
-  const handleDiscardTrackedFolder = useCallback(
-    async (folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
-      await runPathMutation(folderPath, filesInFolder, discardFileChanges);
-    },
-    [runPathMutation],
-  );
-
-  const handleTrashUntrackedFolder = useCallback(
-    async (folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
-      await runPathMutation(folderPath, filesInFolder, trashUntrackedFile);
-    },
-    [runPathMutation],
-  );
-
-  const handleDiscardTrackedFile = useCallback(
-    async (file: ChangesExplorerFile) => {
-      await runPathMutation(file.path, [file], discardFileChanges);
-    },
-    [runPathMutation],
-  );
-
-  const handleTrashUntrackedFile = useCallback(
-    async (file: ChangesExplorerFile) => {
-      await runPathMutation(file.path, [file], trashUntrackedFile);
-    },
-    [runPathMutation],
   );
 
   return (

@@ -4,12 +4,9 @@ import {
 } from "react";
 import { ConfirmModal } from "@/shared/components/confirm-modal/confirm-modal";
 import { buildDefaultWorktreeFolder } from "@/features/worktrees";
-import type { CommitListItem } from "@/shared/types/git";
+import type { CommitDialogState } from "../../../../types/commit-list";
 
-export type CommitDialogState = {
-  kind: "branch" | "tag" | "worktree" | "cherryPick" | "revert";
-  commit: CommitListItem;
-};
+export type { CommitDialogState } from "../../../../types/commit-list";
 
 const COMMIT_DIALOG_COPY: Record<
   CommitDialogState["kind"],
