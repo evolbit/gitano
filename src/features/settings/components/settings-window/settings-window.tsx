@@ -1,7 +1,5 @@
 import ReactDOM from "react-dom";
 import {
-  type Dispatch,
-  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
@@ -16,17 +14,7 @@ import {
 import {
   authenticateExternalAiAgent,
   deleteLocalAiModel,
-  getExternalAiAgentCatalog,
-  getExternalAiAgentSessionConfig,
-  getLocalAiEntitlementStatus,
-  getLocalAiMachineProfile,
-  getLocalAiModelCatalog,
-  getLocalAiModelPreferences,
-  getLocalAiModelStatus,
-  getLocalAiRuntimeStatus,
   installExternalAiAgent,
-  listenToExternalAiAgentProgress,
-  listenToLocalAiProgress,
   prepareLocalAiModel,
   prepareLocalAiRuntime,
   removeExternalAiAgent,
@@ -37,420 +25,62 @@ import {
   setLocalAiModelPreference,
   setLocalAiModelWarmPreference,
   warmConfiguredLocalAiModels,
-  type AnalysisEngine,
-  type ExternalAiAgentConfigOption,
   type ExternalAiAgentEntry,
   type ExternalAiAgentProgress,
   type ExternalAiAgentSessionConfig,
   type LocalAiActionKind,
   type LocalAiDownloadProgress,
-  type LocalAiEntitlementStatus,
-  type LocalAiMachineProfile,
   type LocalAiModelEntry,
-  type LocalAiModelWarmMemoryClass,
-  type LocalAiModelStatus,
   type LocalAiPreferences,
-  type LocalAiRuntimeSetupStatus,
 } from "@/shared/api/local-ai";
 import { ACTION_MODEL_REQUIRED_MESSAGE } from "../../constants";
-
-type SettingsPane = "runtime" | "models" | "externalAgents" | "configuration";
-
-type SettingsWindowProps = {
-  open: boolean;
-  onClose: () => void;
-  repoPath?: string | null;
-};
-
-type WarmConfirmation = {
-  modelId: string;
-  title: string;
-  description: string;
-  details: string;
-};
-
-const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
-  { key: "runtime", label: "Runtime" },
-  { key: "models", label: "Local Models" },
-  { key: "externalAgents", label: "External Agents" },
-  { key: "configuration", label: "Configuration" },
-];
-const PANE_TITLES: Record<SettingsPane, string> = {
-  runtime: "Runtime",
-  models: "Local Models",
-  externalAgents: "External Agents",
-  configuration: "Configuration",
-};
-
-const ACTIONS: ReadonlyArray<{
-  kind: LocalAiActionKind;
-  label: string;
-  description: string;
-}> = [
-  {
-    kind: "commitMessage",
-    label: "Commit",
-    description: "Generate commit messages from staged changes.",
-  },
-  {
-    kind: "commitAnalysis",
-    label: "Commit review",
-    description: "Analyze committed changes.",
-  },
-  {
-    kind: "branchAnalysis",
-    label: "Branch analysis",
-    description: "Analyze branch risk before opening a PR.",
-  },
-  {
-    kind: "branchReview",
-    label: "Branch review",
-    description: "Review changed lines before opening a PR.",
-  },
-  {
-    kind: "mergeConflictSuggestions",
-    label: "Merge conflicts",
-    description: "Suggest conflict resolution steps.",
-  },
-];
-
-const DEFAULT_ACTION_PROMPTS: Record<LocalAiActionKind, string> = {
-  commitMessage: [
-    "Generate a Git commit message for the staged changes only.",
-    "Requirements:",
-    "- The message must be specific to the files and behavior changed.",
-    "- Use imperative mood and keep the subject near 72 characters.",
-    "- Prefer conventional commit style when a clear type fits: feat, fix, refactor, test, docs, chore.",
-    '- Do not use generic messages like "Update changes", "Update files", "Misc changes", or "Refactor code".',
-  ].join("\n"),
-  commitAnalysis:
-    "Analyze this commit for correctness, risk, and maintainability.",
-  branchAnalysis: [
-    "Analyze this branch or PR-style diff as a reviewer preparing to approve or question a PR.",
-    "Focus on intent, real risks, behavioral changes, potential regressions, test gaps, recommendations, and action items.",
-    "Do not return a raw changed-file list; the UI already shows the changed files. Mention files only when they support a concrete risk or action item.",
-    "Do not create low-value findings. If there are no concrete findings, return an empty findings array and useful recommendations or action items if applicable.",
-    "Keep the report focused on findings that affect review or release decisions.",
-  ].join("\n"),
-  branchReview: [
-    "Review this branch like PR review feedback. Find changed lines that may introduce bugs, regressions, unsafe assumptions, missing validation, missing tests, or maintainability issues.",
-    'Every inline finding must be anchored to a changed line from the diff. Use side "new" for added/modified new-code feedback and side "old" only when the deleted line itself needs attention.',
-    "Do not summarize files. Do not produce informational cleanup comments. If there are no actionable changed-code risks, return an empty findings array and a concise summary.",
-    "Suggested comments should be ready to paste into a PR and should ask for a concrete change or clarification.",
-    "Include all material changed-code risks you can substantiate.",
-    "Prioritize actionable, high-confidence findings over exhaustive or stylistic feedback.",
-  ].join("\n"),
-  mergeConflictSuggestions:
-    "Suggest how to resolve these merge conflicts without modifying files.",
-};
-
-const WARM_MEMORY_WARNING_BASELINE_GB = 5;
-const WARM_MEMORY_HIGH_SHARE = 0.25;
-const WARM_MEMORY_VERY_HIGH_SHARE = 0.5;
-
-function formatContext(tokens: number) {
-  return tokens >= 1024 ? `${Math.round(tokens / 1024)}K` : `${tokens}`;
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function formatGigabytes(value: number | null | undefined) {
-  if (!isFiniteNumber(value)) {
-    return "Unknown";
-  }
-
-  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}GB`;
-}
-
-function getWarmMemoryEstimateGb(model: LocalAiModelEntry | null | undefined) {
-  return isFiniteNumber(model?.warmMemoryEstimateGb)
-    ? model.warmMemoryEstimateGb
-    : null;
-}
-
-function getWarmMemoryClass(model: LocalAiModelEntry | null | undefined) {
-  return model?.warmMemoryClass ?? null;
-}
-
-function hasWarmMetadata(model: LocalAiModelEntry | null | undefined) {
-  return getWarmMemoryEstimateGb(model) !== null && getWarmMemoryClass(model) !== null;
-}
-
-function formatWarmMemoryClass(
-  memoryClass: LocalAiModelWarmMemoryClass | null | undefined,
-) {
-  switch (memoryClass) {
-    case "small":
-      return "Small";
-    case "medium":
-      return "Medium";
-    case "large":
-      return "Large";
-    case "veryLarge":
-      return "Very large";
-    default:
-      return "Unknown";
-  }
-}
-
-function formatWarmMemoryDetails(model: LocalAiModelEntry) {
-  const estimate = getWarmMemoryEstimateGb(model);
-  if (estimate === null) {
-    return "Warm memory unavailable";
-  }
-
-  return `${formatWarmMemoryClass(getWarmMemoryClass(model))} warm, about ${formatGigabytes(estimate)}`;
-}
-
-function modelDescription(model: LocalAiModelEntry, usage: string[]) {
-  const usageText = usage.length > 0 ? ` - Used by: ${usage.join(", ")}` : "";
-  return `${model.id} - ${model.downloadSizeGb.toFixed(1)}GB download - ${formatContext(model.contextWindow)} context - ${formatWarmMemoryDetails(model)}${usageText}`;
-}
-
-function externalAgentAuthMethods(agent: ExternalAiAgentEntry) {
-  return agent.status.authMethods?.map((method) => method.displayName).join(", ");
-}
-
-function externalAgentDescription(agent: ExternalAiAgentEntry) {
-  const license = agent.license ? ` - ${agent.license}` : "";
-  const authMethods = externalAgentAuthMethods(agent);
-  const auth = authMethods ? ` - Auth: ${authMethods}` : "";
-  return `${agent.provider} - ${agent.description} - ${agent.version}${license}${auth}`;
-}
-
-function formatActionLabel(kind: string) {
-  return ACTIONS.find((action) => action.kind === kind)?.label ?? kind;
-}
-
-function getModelStatusLabel(status: LocalAiModelStatus | null | undefined) {
-  if (!status) return "Unknown";
-  if (status.ready) return status.running ? "Running" : "Downloaded";
-  if (!status.runtime.available) return "Runtime unavailable";
-  return "Not downloaded";
-}
-
-function runtimeStatusLabel(status: LocalAiRuntimeSetupStatus | null) {
-  if (status?.runtime.available) return "Running";
-  if (status?.installed) return "Installed";
-  return "Not installed";
-}
-
-function queuedLocalProgress(
-  operationId: string,
-  modelId: string,
-  status: string,
-): LocalAiDownloadProgress {
-  return {
-    operationId,
-    modelId,
-    state: "queued",
-    status,
-    completedBytes: null,
-    totalBytes: null,
-    percentage: null,
-    error: null,
-  };
-}
-
-function queuedExternalProgress(
-  operationId: string,
-  agentId: string,
-  status: string,
-): ExternalAiAgentProgress {
-  return {
-    operationId,
-    agentId,
-    state: "queued",
-    status,
-    completedBytes: null,
-    totalBytes: null,
-    percentage: null,
-    error: null,
-  };
-}
-
-function removeRecordEntry<T>(record: Record<string, T>, key: string) {
-  const next = { ...record };
-  delete next[key];
-  return next;
-}
-
-function warmDisabledReason({
-  externalEngineSelected,
-  warmMetadataAvailable,
-  modelReady,
-}: {
-  externalEngineSelected: boolean;
-  warmMetadataAvailable: boolean;
-  modelReady: boolean;
-}) {
-  if (externalEngineSelected) {
-    return "Warmup is unavailable while an external agent is selected.";
-  }
-  if (!warmMetadataAvailable) {
-    return "Restart Gitano to enable warmup for this model.";
-  }
-  if (!modelReady) {
-    return "Download the model before keeping it warm.";
-  }
-  return null;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : String(error || fallback);
-}
-
-function isUnsupportedEmptyModelError(error: unknown) {
-  return errorMessage(error, "").trim() === "Unsupported local AI model:";
-}
-
-function describeWarmupFailures(
-  failures: ReadonlyArray<{ modelId: string; error: string }>,
-) {
-  return failures
-    .map((failure) => `${failure.modelId}: ${failure.error}`)
-    .join("\n");
-}
-
-function warmModelIdsWithToggle(
-  currentModelIds: readonly string[],
-  modelId: string,
-  warm: boolean,
-) {
-  if (!warm) {
-    return currentModelIds.filter((warmModelId) => warmModelId !== modelId);
-  }
-
-  return Array.from(new Set([...currentModelIds, modelId]));
-}
-
-function localModelEngine(modelId: string | null): AnalysisEngine {
-  return {
-    type: "local_model",
-    modelId,
-  };
-}
-
-function engineValue(engine: AnalysisEngine | null | undefined) {
-  if (!engine) return "";
-  if (engine.type === "external_agent") return `external:${engine.agentId}`;
-  return engine.modelId ? `local:${engine.modelId}` : "";
-}
-
-function engineFromValue(value: string): AnalysisEngine | null {
-  if (value.startsWith("external:")) {
-    const agentId = value.slice("external:".length);
-    return agentId ? { type: "external_agent", agentId } : null;
-  }
-
-  if (value.startsWith("local:")) {
-    const modelId = value.slice("local:".length);
-    return modelId ? localModelEngine(modelId) : null;
-  }
-
-  return null;
-}
-
-function preferenceGlobalEngine(preferences: LocalAiPreferences | null) {
-  if (!preferences) return null;
-  return (
-    preferences.analysisEngine ??
-    localModelEngine(preferences.globalModelId.trim() || null)
-  );
-}
-
-function preferenceActionEngine(
-  preferences: LocalAiPreferences | null,
-  actionKind: LocalAiActionKind,
-) {
-  if (!preferences) return null;
-  return (
-    preferences.actionEngines?.[actionKind] ??
-    (preferences.actionModelIds[actionKind]
-      ? localModelEngine(preferences.actionModelIds[actionKind])
-      : null)
-  );
-}
-
-function hasExternalEngine(preferences: LocalAiPreferences | null) {
-  if (!preferences) return false;
-  const globalEngine = preferenceGlobalEngine(preferences);
-  return (
-    globalEngine?.type === "external_agent" ||
-    Object.values(preferences.actionEngines ?? {}).some(
-      (engine) => engine.type === "external_agent",
-    )
-  );
-}
-
-const INHERIT_EXTERNAL_CONFIG_VALUE = "__gitano_inherit_external_config__";
-
-function externalAgentGlobalOptionValues(
-  preferences: LocalAiPreferences | null,
-  agentId: string,
-) {
-  return preferences?.externalAgentOptionValues?.[agentId] ?? {};
-}
-
-function externalAgentActionOptionValues(
-  preferences: LocalAiPreferences | null,
-  actionKind: LocalAiActionKind,
-  agentId: string,
-) {
-  return (
-    preferences?.actionExternalAgentOptionValues?.[actionKind]?.[agentId] ?? {}
-  );
-}
-
-function externalAgentEffectiveOptionValue(
-  preferences: LocalAiPreferences | null,
-  agentId: string,
-  actionKind: LocalAiActionKind | null,
-  option: ExternalAiAgentConfigOption,
-) {
-  const globalValue = externalAgentGlobalOptionValues(preferences, agentId)[
-    option.id
-  ];
-  const actionValue = actionKind
-    ? externalAgentActionOptionValues(preferences, actionKind, agentId)[
-        option.id
-      ]
-    : undefined;
-  return actionValue ?? globalValue ?? option.currentValue;
-}
-
-function externalAgentOptionLabel(
-  option: ExternalAiAgentConfigOption,
-  value: string,
-) {
-  return option.options.find((item) => item.value === value)?.name ?? value;
-}
-
-function selectableExternalConfigOptions(
-  config: ExternalAiAgentSessionConfig | null | undefined,
-) {
-  return (config?.options ?? []).filter(
-    (option) => option.type === "select" && option.options.length > 0,
-  );
-}
-
-function statusLabel(agent: ExternalAiAgentEntry) {
-  if (agent.status.available) return agent.status.authenticated ? "Ready" : "Ready";
-  switch (agent.status.state) {
-    case "notInstalled":
-      return "Not installed";
-    case "unsupportedPlatform":
-      return "Unsupported";
-    case "unavailable":
-      return "Unavailable";
-    case "failed":
-      return "Failed";
-    default:
-      return "Unknown";
-  }
-}
+import { useAiSettingsData } from "../../hooks/use-ai-settings-data";
+import { useExternalAgentConfig } from "../../hooks/use-external-agent-config";
+import { useSettingsOperations } from "../../hooks/use-settings-operations";
+import {
+  ACTIONS,
+  AI_PANES,
+  DEFAULT_ACTION_PROMPTS,
+  INHERIT_EXTERNAL_CONFIG_VALUE,
+  PANE_TITLES,
+  WARM_MEMORY_HIGH_SHARE,
+  WARM_MEMORY_VERY_HIGH_SHARE,
+  WARM_MEMORY_WARNING_BASELINE_GB,
+} from "./config";
+import type {
+  SettingsPane,
+  SettingsWindowProps,
+  WarmConfirmation,
+} from "./types";
+import {
+  describeWarmupFailures,
+  engineFromValue,
+  engineValue,
+  externalAgentActionOptionValues,
+  externalAgentDescription,
+  externalAgentEffectiveOptionValue,
+  externalAgentGlobalOptionValues,
+  externalAgentOptionLabel,
+  formatActionLabel,
+  formatGigabytes,
+  getModelStatusLabel,
+  getWarmMemoryClass,
+  getWarmMemoryEstimateGb,
+  hasExternalEngine,
+  hasWarmMetadata,
+  isUnsupportedEmptyModelError,
+  modelDescription,
+  preferenceActionEngine,
+  preferenceGlobalEngine,
+  queuedExternalProgress,
+  queuedLocalProgress,
+  removeRecordEntry,
+  runtimeStatusLabel,
+  selectableExternalConfigOptions,
+  statusLabel,
+  warmDisabledReason,
+  warmModelIdsWithToggle,
+} from "./utils";
 
 function SettingsRow({
   title,
@@ -620,55 +250,6 @@ function ProgressPanel({
       ) : null}
     </div>
   );
-}
-
-type SettingsProgress = LocalAiDownloadProgress | ExternalAiAgentProgress;
-
-type SettingsProgressListener<TProgress extends SettingsProgress> = (
-  handler: (progress: TProgress) => void,
-) => Promise<() => void>;
-
-function useSettingsProgressListener<TProgress extends SettingsProgress>({
-  open,
-  listen,
-  setProgressByOperationId,
-  loadSettings,
-}: {
-  open: boolean;
-  listen: SettingsProgressListener<TProgress>;
-  setProgressByOperationId: Dispatch<
-    SetStateAction<Record<string, TProgress>>
-  >;
-  loadSettings: () => Promise<void>;
-}) {
-  useEffect(() => {
-    if (!open) return;
-
-    let mounted = true;
-    let unlisten: (() => void) | null = null;
-
-    void listen((progress) => {
-      setProgressByOperationId((current) => ({
-        ...current,
-        [progress.operationId]: progress,
-      }));
-
-      if (progress.state === "completed") {
-        void loadSettings();
-      }
-    }).then((nextUnlisten) => {
-      if (mounted) {
-        unlisten = nextUnlisten;
-      } else {
-        nextUnlisten();
-      }
-    });
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, [listen, loadSettings, open, setProgressByOperationId]);
 }
 
 function WarmModelCheckbox({
@@ -845,18 +426,6 @@ function ExternalAgentConfigControls({
   );
 }
 
-function promptDraftsFromPreferences(
-  preferences: LocalAiPreferences | null,
-): Record<string, string> {
-  return Object.fromEntries(
-    ACTIONS.map((action) => [
-      action.kind,
-      preferences?.actionPromptOverrides?.[action.kind] ??
-        DEFAULT_ACTION_PROMPTS[action.kind],
-    ]),
-  );
-}
-
 function PromptOverrideRow({
   action,
   value,
@@ -909,241 +478,6 @@ function PromptOverrideRow({
       </div>
     </div>
   );
-}
-
-function useAiSettingsData(open: boolean) {
-  const [catalog, setCatalog] = useState<LocalAiModelEntry[]>([]);
-  const [externalAgents, setExternalAgents] = useState<ExternalAiAgentEntry[]>([]);
-  const [preferences, setPreferences] = useState<LocalAiPreferences | null>(null);
-  const [entitlement, setEntitlement] =
-    useState<LocalAiEntitlementStatus | null>(null);
-  const [runtimeStatus, setRuntimeStatus] =
-    useState<LocalAiRuntimeSetupStatus | null>(null);
-  const [machineProfile, setMachineProfile] =
-    useState<LocalAiMachineProfile | null>(null);
-  const [modelStatuses, setModelStatuses] = useState<
-    Record<string, LocalAiModelStatus | null>
-  >({});
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [settingsRevision, setSettingsRevision] = useState(0);
-  const showSettingsError = useCallback((fallback: string, error: unknown) => {
-    setSettingsError(errorMessage(error, fallback));
-  }, []);
-
-  const loadSettings = useCallback(async () => {
-    setLoading(true);
-    setSettingsError(null);
-    try {
-      const [
-        nextCatalog,
-        nextExternalAgents,
-        nextPreferences,
-        nextEntitlement,
-        nextRuntimeStatus,
-        nextMachineProfile,
-      ] =
-        await Promise.all([
-          getLocalAiModelCatalog(),
-          getExternalAiAgentCatalog(),
-          getLocalAiModelPreferences(),
-          getLocalAiEntitlementStatus(),
-          getLocalAiRuntimeStatus(),
-          getLocalAiMachineProfile(),
-        ]);
-      const statusEntries = await Promise.all(
-        nextCatalog.map(async (model) => {
-          try {
-            const status = await getLocalAiModelStatus(model.id);
-            return [model.id, status] as const;
-          } catch {
-            return [model.id, null] as const;
-          }
-        }),
-      );
-
-      setCatalog(nextCatalog);
-      setExternalAgents(nextExternalAgents);
-      setPreferences(nextPreferences);
-      setPromptDrafts(promptDraftsFromPreferences(nextPreferences));
-      setEntitlement(nextEntitlement);
-      setRuntimeStatus(nextRuntimeStatus);
-      setMachineProfile(nextMachineProfile);
-      setModelStatuses(Object.fromEntries(statusEntries));
-      setSettingsRevision((current) => current + 1);
-    } catch (loadError) {
-      showSettingsError("AI settings failed", loadError);
-    } finally {
-      setLoading(false);
-    }
-  }, [showSettingsError]);
-
-  useEffect(() => {
-    if (!open) return;
-    void loadSettings();
-  }, [loadSettings, open]);
-
-  return {
-    catalog,
-    externalAgents,
-    preferences,
-    setPreferences,
-    entitlement,
-    runtimeStatus,
-    machineProfile,
-    modelStatuses,
-    settingsError,
-    setSettingsError,
-    showSettingsError,
-    promptDrafts,
-    setPromptDrafts,
-    loading,
-    loadSettings,
-    settingsRevision,
-  };
-}
-
-function useSettingsOperations(
-  open: boolean,
-  loadSettings: () => Promise<void>,
-) {
-  const [progressByOperationId, setProgressByOperationId] = useState<
-    Record<string, LocalAiDownloadProgress>
-  >({});
-  const [externalProgressByOperationId, setExternalProgressByOperationId] =
-    useState<Record<string, ExternalAiAgentProgress>>({});
-  const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
-  const [activeExternalOperationId, setActiveExternalOperationId] =
-    useState<string | null>(null);
-
-  useSettingsProgressListener({
-    open,
-    listen: listenToLocalAiProgress,
-    setProgressByOperationId,
-    loadSettings,
-  });
-
-  useSettingsProgressListener({
-    open,
-    listen: listenToExternalAiAgentProgress,
-    setProgressByOperationId: setExternalProgressByOperationId,
-    loadSettings,
-  });
-
-  const activeProgress = activeOperationId
-    ? progressByOperationId[activeOperationId]
-    : null;
-  const activeExternalProgress = activeExternalOperationId
-    ? externalProgressByOperationId[activeExternalOperationId]
-    : null;
-  const setupInProgress =
-    (!!activeProgress &&
-      activeProgress.state !== "completed" &&
-      activeProgress.state !== "failed") ||
-    (!!activeExternalProgress &&
-      activeExternalProgress.state !== "completed" &&
-      activeExternalProgress.state !== "failed");
-
-  return {
-    progressByOperationId,
-    setProgressByOperationId,
-    externalProgressByOperationId,
-    setExternalProgressByOperationId,
-    activeOperationId,
-    setActiveOperationId,
-    activeExternalOperationId,
-    setActiveExternalOperationId,
-    activeProgress,
-    activeExternalProgress,
-    setupInProgress,
-  };
-}
-
-function useExternalAgentConfig({
-  repoPath,
-  enabled,
-  selectedExternalAgentIds,
-  resetKey,
-}: {
-  repoPath?: string | null;
-  enabled: boolean;
-  selectedExternalAgentIds: string[];
-  resetKey: number;
-}) {
-  const [externalConfigByAgentId, setExternalConfigByAgentId] = useState<
-    Record<string, ExternalAiAgentSessionConfig | null>
-  >({});
-  const [externalConfigLoadingByAgentId, setExternalConfigLoadingByAgentId] =
-    useState<Record<string, boolean>>({});
-  const [externalConfigErrorsByAgentId, setExternalConfigErrorsByAgentId] =
-    useState<Record<string, string>>({});
-
-  const loadExternalAgentConfig = useCallback(
-    async (agentId: string) => {
-      if (
-        externalConfigByAgentId[agentId] ||
-        externalConfigLoadingByAgentId[agentId] ||
-        externalConfigErrorsByAgentId[agentId]
-      ) {
-        return;
-      }
-
-      setExternalConfigLoadingByAgentId((current) => ({
-        ...current,
-        [agentId]: true,
-      }));
-      setExternalConfigErrorsByAgentId((current) =>
-        removeRecordEntry(current, agentId),
-      );
-
-      try {
-        const config = await getExternalAiAgentSessionConfig({
-          agentId,
-          repoPath: repoPath ?? null,
-        });
-        setExternalConfigByAgentId((current) => ({
-          ...current,
-          [agentId]: config,
-        }));
-      } catch (configError) {
-        setExternalConfigErrorsByAgentId((current) => ({
-          ...current,
-          [agentId]: errorMessage(configError, "Agent config unavailable"),
-        }));
-      } finally {
-        setExternalConfigLoadingByAgentId((current) =>
-          removeRecordEntry(current, agentId),
-        );
-      }
-    },
-    [
-      externalConfigByAgentId,
-      externalConfigErrorsByAgentId,
-      externalConfigLoadingByAgentId,
-      repoPath,
-    ],
-  );
-
-  useEffect(() => {
-    setExternalConfigByAgentId({});
-    setExternalConfigLoadingByAgentId({});
-    setExternalConfigErrorsByAgentId({});
-  }, [repoPath, resetKey]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    selectedExternalAgentIds.forEach((agentId) => {
-      void loadExternalAgentConfig(agentId);
-    });
-  }, [enabled, loadExternalAgentConfig, selectedExternalAgentIds]);
-
-  return {
-    externalConfigByAgentId,
-    externalConfigLoadingByAgentId,
-    externalConfigErrorsByAgentId,
-    loadExternalAgentConfig,
-  };
 }
 
 export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps) {

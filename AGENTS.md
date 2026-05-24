@@ -33,7 +33,8 @@ Backend stack:
 - `src/shared` is for feature-independent UI, platform adapters, pure utilities, config, and cross-feature types.
 - Dependency direction is `app -> features -> shared`.
 - `src/shared` must not import from `src/features` or `src/app`.
-- Features should not import implementation details from other features. Use a public feature API or promote genuinely reusable code to `src/shared`.
+- Features must not import from other feature folders. If two features need the same code, move that code upward to `src/shared` in the appropriate domain folder.
+- Feature `index.ts` files are public boundaries for app composition and external callers, not a way for one feature to depend on another feature.
 - Cross-layer imports should use aliases: `@/app`, `@/features`, `@/shared`.
 - Same-feature imports may use relative paths.
 

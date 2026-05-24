@@ -1,8 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import ReactDOM from "react-dom";
 import {
-  type Dispatch,
-  type MutableRefObject,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -26,12 +24,8 @@ import {
   listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   runLocalAiAction,
-  type ExternalAiRunEvent,
-  type LocalAiActionKind,
   type LocalAiBranchReviewFinding,
   type LocalAiBranchReviewNote,
-  type LocalAiRunProgress,
-  type LocalAiRunResult,
 } from "@/shared/api/local-ai";
 import { writeClipboardText } from "@/shared/platform/clipboard";
 import {
@@ -41,7 +35,6 @@ import {
   LocalAiSetupModal,
 } from "@/features/local-ai";
 import { useGitActionsStore } from "@/features/repository-workspace";
-import type { DiffHunk } from "@/shared/types/git";
 import {
   addReviewThreadReply,
   deleteReviewThreadComment,
@@ -62,6 +55,28 @@ import {
   useBranchLists,
   useBranchReviewHunks,
 } from "../../hooks/use-branch-compare-data";
+import {
+  branchAiActionKind,
+  branchAiFailureTitle,
+  branchAiSetter,
+  createBranchAiRunId,
+  describeAiError,
+  emptyBranchAiState,
+  shouldOpenAiSetup,
+  useBranchAiRunEvents,
+  type BranchAiAction,
+  type BranchAiSetupState,
+  type BranchAiState,
+} from "./branch-ai";
+import {
+  buildAnchorIndex,
+  findingAnchorKey,
+  findingKey,
+  formatFindingFeedback,
+  formatNoteFeedback,
+  reviewResultData,
+  visibleBranchReviewResult,
+} from "./branch-review-utils";
 
 type BranchCompareModalProps = {
   repoPath: string;
@@ -85,262 +100,6 @@ const GITANO_AI_AUTHOR: ReviewCommentAuthor = {
   kind: "bot",
 };
 const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
-
-type BranchAiAction = "analysis" | "review";
-
-type BranchAiState = {
-  result: LocalAiRunResult | null;
-  loading: boolean;
-  error: string | null;
-  progressRunId: string | null;
-  progress: LocalAiRunProgress[];
-  externalEvents: ExternalAiRunEvent[];
-};
-type BranchAiSetupState = {
-  actionKind: LocalAiActionKind;
-  reason: string;
-};
-type BranchAiStateSetter = Dispatch<SetStateAction<BranchAiState>>;
-type BranchAiRunEvent = Pick<
-  LocalAiRunProgress | ExternalAiRunEvent,
-  "actionKind" | "runId"
->;
-type BranchAiRunListener<TEvent extends BranchAiRunEvent> = (
-  handler: (event: TEvent) => void,
-) => Promise<() => void> | (() => void);
-
-const emptyBranchAiState = (): BranchAiState => ({
-  result: null,
-  loading: false,
-  error: null,
-  progressRunId: null,
-  progress: [],
-  externalEvents: [],
-});
-
-function createBranchAiRunId(action: BranchAiAction) {
-  return `branch-${action}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function branchAiActionKind(action: BranchAiAction): LocalAiActionKind {
-  return action === "analysis" ? "branchAnalysis" : "branchReview";
-}
-
-function branchAiActionForKind(
-  actionKind: LocalAiActionKind,
-): BranchAiAction | null {
-  if (actionKind === "branchAnalysis") return "analysis";
-  if (actionKind === "branchReview") return "review";
-  return null;
-}
-
-function findingAnchorKey({
-  filePath,
-  side,
-  line,
-}: {
-  filePath: string;
-  side: "old" | "new";
-  line: number;
-}) {
-  return `${filePath}:${side}:${line}`;
-}
-
-function findingKey(finding: LocalAiBranchReviewFinding) {
-  return `${findingAnchorKey(finding)}:${finding.title}`;
-}
-
-function buildAnchorIndex(hunksByPath: Record<string, DiffHunk[]>) {
-  const index = new Map<string, DiffLineAnchor>();
-
-  Object.entries(hunksByPath).forEach(([filePath, fileHunks]) => {
-    fileHunks.forEach((hunk, hunkIdx) => {
-      hunk.lines.forEach((line, lineIdx) => {
-        if (line.kind === "Add" && line.new_lineno !== null) {
-          index.set(
-            findingAnchorKey({
-              filePath,
-              side: "new",
-              line: line.new_lineno,
-            }),
-            {
-              filePath,
-              hunkIdx,
-              lineIdx,
-              side: "new",
-              oldLine: line.old_lineno,
-              newLine: line.new_lineno,
-              kind: line.kind,
-            },
-          );
-        }
-        if (line.kind === "Del" && line.old_lineno !== null) {
-          index.set(
-            findingAnchorKey({
-              filePath,
-              side: "old",
-              line: line.old_lineno,
-            }),
-            {
-              filePath,
-              hunkIdx,
-              lineIdx,
-              side: "old",
-              oldLine: line.old_lineno,
-              newLine: line.new_lineno,
-              kind: line.kind,
-            },
-          );
-        }
-      });
-    });
-  });
-
-  return index;
-}
-
-function formatFindingFeedback(finding: LocalAiBranchReviewFinding) {
-  return [
-    `**${finding.title}**`,
-    "",
-    `\`${finding.filePath}:${finding.line}\``,
-    "",
-    finding.explanation,
-    finding.impact ? `\nImpact: ${finding.impact}` : "",
-    finding.recommendation ? `\nRecommendation: ${finding.recommendation}` : "",
-    finding.suggestedComment
-      ? `\nSuggested comment:\n\n${finding.suggestedComment}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function formatNoteFeedback(note: LocalAiBranchReviewNote) {
-  return [
-    `**${note.title}**`,
-    note.filePath ? `\n\`${note.filePath}\`` : "",
-    "",
-    note.explanation,
-    note.recommendation ? `\nRecommendation: ${note.recommendation}` : "",
-    note.suggestedComment ? `\nSuggested comment:\n\n${note.suggestedComment}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function reviewResultData(result: LocalAiRunResult | null) {
-  return result?.result.kind === "branchReview" ? result.result.data : null;
-}
-
-function describeAiError(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "");
-}
-
-function shouldOpenAiSetup(errorMessage: string) {
-  const normalized = errorMessage.toLowerCase();
-  return (
-    errorMessage.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
-    normalized.includes("no ai model selected") ||
-    normalized.includes("no ai models available") ||
-    normalized.includes("ollama runtime is unavailable") ||
-    normalized.includes("ollama did not respond") ||
-    normalized.includes("local ai runtime is unavailable") ||
-    normalized.includes("local ai runtime could not be started")
-  );
-}
-
-function branchAiFailureTitle(action: BranchAiAction, errorMessage: string) {
-  const actionLabel = action === "review" ? "review" : "analysis";
-  return `Local AI ${actionLabel} failed: ${errorMessage}`;
-}
-
-function branchAiSetter(
-  action: BranchAiAction,
-  setBranchAnalysis: BranchAiStateSetter,
-  setBranchReview: BranchAiStateSetter,
-) {
-  return action === "analysis" ? setBranchAnalysis : setBranchReview;
-}
-
-function useBranchAiRunEvents<TEvent extends BranchAiRunEvent>({
-  activeRunIdsRef,
-  listen,
-  updateState,
-  appendEvent,
-}: {
-  activeRunIdsRef: MutableRefObject<Record<BranchAiAction, string | null>>;
-  listen: BranchAiRunListener<TEvent>;
-  updateState: (
-    action: BranchAiAction,
-    updater: SetStateAction<BranchAiState>,
-  ) => void;
-  appendEvent: (current: BranchAiState, event: TEvent) => BranchAiState;
-}) {
-  useEffect(() => {
-    const unlistenPromise = listen((event) => {
-      const action = branchAiActionForKind(event.actionKind);
-      if (!action || event.runId !== activeRunIdsRef.current[action]) {
-        return;
-      }
-
-      updateState(action, (current) => appendEvent(current, event));
-    });
-
-    return () => {
-      void Promise.resolve(unlistenPromise)
-        .then((unlisten) => unlisten())
-        .catch(() => undefined);
-    };
-  }, [activeRunIdsRef, appendEvent, listen, updateState]);
-}
-
-function visibleBranchReviewResult(
-  result: LocalAiRunResult | null,
-  anchorIndex: Map<string, DiffLineAnchor>,
-  dismissedFindingKeys: Set<string>,
-  reviewHunksLoading: boolean,
-): LocalAiRunResult | null {
-  if (!result || result.result.kind !== "branchReview") {
-    return result;
-  }
-
-  const data = result.result.data;
-  const notes = [...data.notes];
-  const findings = data.findings.filter((finding) => {
-    if (dismissedFindingKeys.has(findingKey(finding))) {
-      return false;
-    }
-
-    const anchor = anchorIndex.get(findingAnchorKey(finding));
-    if (!anchor && !reviewHunksLoading) {
-      notes.push({
-        severity: finding.severity,
-        confidence: finding.confidence,
-        title: finding.title,
-        explanation: finding.explanation,
-        recommendation: finding.recommendation,
-        suggestedComment: finding.suggestedComment,
-        filePath: finding.filePath,
-      });
-      return false;
-    }
-
-    return true;
-  });
-
-  return {
-    ...result,
-    result: {
-      kind: "branchReview",
-      data: {
-        ...data,
-        findings,
-        notes,
-      },
-    },
-  };
-}
 
 export function BranchCompareModal({
   repoPath,

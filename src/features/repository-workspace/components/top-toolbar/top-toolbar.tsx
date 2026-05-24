@@ -4,8 +4,6 @@ import {
   Menu,
   Stack,
   Text,
-  TextInput,
-  Tooltip,
 } from "@mantine/core";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
@@ -24,10 +22,7 @@ import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { useGitActionsStore } from "../../stores/git-actions-store";
 import { useRepoStore } from "../../stores/repo-store";
-import {
-  type PullStrategy,
-  useWorkspaceUiStore,
-} from "../../stores/workspace-ui-store";
+import { useWorkspaceUiStore } from "../../stores/workspace-ui-store";
 import type { GitWorktree } from "@/shared/types/git";
 import type { RepositoryState } from "@/shared/types/git";
 import {
@@ -37,257 +32,31 @@ import {
   IconCloudDownload,
   IconCloudUpload,
   IconGitBranch,
-  IconPlus,
-  IconSearch,
   IconStack2,
   IconX,
 } from "@/shared/components/icons/icons";
+import type { TopToolbarProps } from "./types";
 import {
-  PullStrategyOption,
-  RemoteActionButtonProps,
-  TopToolbarProps,
-  ToolbarDropdownProps,
-} from "./types";
-
-const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
-const TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH = 420;
-const GIT_ACTION_SUCCESS_SNACKBAR_MS = 3200;
-const GIT_ACTION_ERROR_SNACKBAR_MS = 8000;
-const TOOLBAR_DROPDOWN_ITEM_CLASS =
-  "px-4 py-2 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
-
-function waitForNextFrame() {
-  return new Promise<void>((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
-  });
-}
-
-const PULL_STRATEGIES: PullStrategyOption[] = [
-  { value: "fetch-all", label: "Fetch All" },
-  {
-    value: "pull-ff-if-possible",
-    label: "Pull (fast-forward if possible)",
-  },
-  { value: "pull-ff-only", label: "Pull (fast-forward only)" },
-  { value: "pull-rebase", label: "Pull (rebase)" },
-];
-
-const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
-  searchValue,
-  onSearchChange,
-  placeholder = "Search",
-  children,
-}) => (
-  <Menu.Dropdown className="p-0 bg-background border border-zinc-700 rounded-b transition-colors overflow-hidden">
-    <div className="px-4 pt-2 pb-1 sticky top-0 border-b border-zinc-700 z-10 rounded-t bg-background">
-      <TextInput
-        value={searchValue}
-        onChange={(e) => onSearchChange(e.currentTarget.value)}
-        placeholder={placeholder}
-        leftSection={
-          <IconSearch
-            size={16}
-            className="text-zinc-400"
-          />
-        }
-        leftSectionPointerEvents="none"
-        leftSectionWidth={28}
-        size="xs"
-        classNames={{
-          input:
-            "bg-background pl-8 text-[11px] text-zinc-200 placeholder:text-[11px] placeholder:text-zinc-500",
-        }}
-        radius="md"
-        autoFocus
-      />
-    </div>
-    <div
-      className="overflow-y-auto overflow-x-hidden overscroll-contain"
-      style={{ maxHeight: TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT }}>
-      {children}
-    </div>
-  </Menu.Dropdown>
-);
-
-const ToolbarDropdownItem: React.FC<{
-  label: string;
-  onClick: () => void;
-}> = ({ label, onClick }) => (
-  <Menu.Item
-    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
-    styles={{
-      item: {
-        overflow: "hidden",
-      },
-      itemLabel: {
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      },
-    }}
-    onClick={onClick}>
-    <Text
-      size="sm"
-      className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-      {label}
-    </Text>
-  </Menu.Item>
-);
-
-const ToolbarDropdownActionItem: React.FC<{
-  label: string;
-  onClick: () => void;
-}> = ({ label, onClick }) => (
-  <Menu.Item
-    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
-    leftSection={<IconPlus size={16} />}
-    onClick={onClick}>
-    <Text
-      size="sm"
-      className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-      {label}
-    </Text>
-  </Menu.Item>
-);
-
-const WorktreeDropdownItem: React.FC<{
-  worktree: GitWorktree;
-  onClick: () => void;
-}> = ({ worktree, onClick }) => (
-  <Menu.Item
-    className={TOOLBAR_DROPDOWN_ITEM_CLASS}
-    styles={{
-      item: {
-        overflow: "hidden",
-      },
-      itemLabel: {
-        minWidth: 0,
-        overflow: "hidden",
-      },
-    }}
-    onClick={onClick}>
-    <div className="flex w-full min-w-0 items-start gap-3 overflow-hidden">
-      <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-blue-300">
-        <IconArrowFork size={15} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-zinc-100">
-          {getWorktreeDisplayName(worktree)}
-        </span>
-        <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-400">
-          {worktree.branch ?? "Detached HEAD"} - {worktree.path}
-        </span>
-      </span>
-    </div>
-  </Menu.Item>
-);
-
-const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
-  label,
-  icon,
-  onClick,
-  disabled = false,
-  loading = false,
-  tooltip,
-  rightSlot,
-}) => {
-  const content = (
-    <div
-      className={`flex h-full overflow-hidden rounded border transition-colors ${
-        loading
-          ? "border-zinc-700/80 bg-zinc-800/70"
-          : disabled
-          ? "border-transparent opacity-45"
-          : "border-transparent hover:border-zinc-700/80 hover:bg-zinc-800/70"
-      }`}>
-      <button
-        type="button"
-        className={`flex min-w-[60px] flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 text-left ${
-          loading
-            ? "cursor-progress text-zinc-400"
-            : disabled
-            ? "cursor-not-allowed text-zinc-500"
-            : "cursor-pointer text-zinc-400"
-        }`}
-        onClick={onClick}
-        disabled={disabled || loading}>
-        <Text
-          size="xs"
-          className={`text-[10px] leading-none ${
-            disabled ? "text-zinc-500" : "text-zinc-400"
-          }`}>
-          {label}
-        </Text>
-        <div className={disabled ? "text-zinc-500" : "text-zinc-100"}>
-          {loading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500/40 border-t-zinc-100" />
-          ) : (
-            icon
-          )}
-        </div>
-      </button>
-      {rightSlot}
-    </div>
-  );
-
-  if (!tooltip) {
-    return content;
-  }
-
-  return (
-    <Tooltip
-      label={tooltip}
-      openDelay={150}>
-      {content}
-    </Tooltip>
-  );
-};
-
-function getPullStrategyLabel(strategy: PullStrategy) {
-  return (
-    PULL_STRATEGIES.find((option) => option.value === strategy)?.label ??
-    PULL_STRATEGIES[1].label
-  );
-}
-
-function getPathBasename(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() || path;
-}
-
-function getWorktreeDisplayName(worktree: GitWorktree) {
-  if (worktree.isMain) return "main worktree";
-  return worktree.name || getPathBasename(worktree.path) || "worktree";
-}
-
-function getWorktreeTargetLabel(worktree: GitWorktree | null, repoPath?: string) {
-  if (worktree) {
-    return worktree.isMain ? "main" : getWorktreeDisplayName(worktree);
-  }
-
-  return repoPath ? getPathBasename(repoPath) : "No workspace";
-}
-
-function getCreateBaseOptions(currentBranch: string | null | undefined) {
-  const options: Array<{ refName: string; label: string }> = [];
-
-  if (currentBranch && currentBranch !== "Detached HEAD") {
-    options.push({
-      refName: currentBranch,
-      label: `Create new worktree based on ${currentBranch}`,
-    });
-  }
-
-  if (!options.some((option) => option.refName === "master")) {
-    options.push({
-      refName: "master",
-      label: "Create new worktree based on master",
-    });
-  }
-
-  return options;
-}
+  GIT_ACTION_ERROR_SNACKBAR_MS,
+  GIT_ACTION_SUCCESS_SNACKBAR_MS,
+  PULL_STRATEGIES,
+  TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH,
+} from "./config";
+import {
+  getCreateBaseOptions,
+  getPathBasename,
+  getPullStrategyLabel,
+  getWorktreeDisplayName,
+  getWorktreeTargetLabel,
+  waitForNextFrame,
+} from "./utils";
+import { RemoteActionButton } from "./components/remote-action-button/remote-action-button";
+import {
+  ToolbarDropdownActionItem,
+  ToolbarDropdownBody,
+  ToolbarDropdownItem,
+  WorktreeDropdownItem,
+} from "./components/toolbar-dropdown/toolbar-dropdown";
 
 const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [workspaceSearch, setWorkspaceSearch] = useState("");

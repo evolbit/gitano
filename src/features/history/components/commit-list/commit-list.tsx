@@ -23,9 +23,6 @@ import {
   listenToExternalAiRunEvents,
   listenToLocalAiRunProgress,
   runLocalAiAction,
-  type ExternalAiRunEvent,
-  type LocalAiRunProgress,
-  type LocalAiRunResult,
 } from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
@@ -58,131 +55,34 @@ import {
   isBranchMutationDialog,
 } from "./components/commit-action-dialog/commit-action-dialog";
 import CommitAuthorCell from "./components/commit-author-cell/commit-author-cell";
-import {
-  CommitCompareModal,
-  type CommitCompareMode,
-} from "./components/commit-compare-modal/commit-compare-modal";
+import { CommitCompareModal } from "./components/commit-compare-modal/commit-compare-modal";
 import {
   CommitContextMenu,
   type CommitContextMenuAction,
 } from "./components/commit-context-menu/commit-context-menu";
 import CommitGraphCell from "./components/commit-graph-cell/commit-graph-cell";
-
-const FULL_LOG_COMMIT_LIMIT = 100_000;
-const COMMIT_ROW_HEIGHT = 30;
-const GRAPH_LANE_WIDTH = 16;
-const GRAPH_PADDING_X = 24;
-const GRAPH_MIN_WIDTH = 120;
-const GRAPH_MAX_WIDTH = 560;
-
-type LoadCommitsOptions = {
-  forceRefresh?: boolean;
-  resetScroll?: boolean;
-};
-
-type CommitTableRow = {
-  id: string;
-  graphWidth: number;
-  graphLane: number;
-  graphColor: number;
-  graphSegments: CommitListItem["graph_segments"];
-  refs: string[];
-  message: string;
-  date: number;
-  author: string;
-  authorInitial: string;
-  authorAvatarUrl?: string | null;
-  sha: string;
-  commit: CommitListItem;
-};
-
-type CommitContextMenuState = {
-  row: CommitTableRow;
-  x: number;
-  y: number;
-};
-
-type CommitCompareState = {
-  mode: CommitCompareMode;
-  commit: CommitListItem;
-};
-
-type CommitAiAnalysisState = {
-  commit: CommitListItem;
-  result: LocalAiRunResult | null;
-  loading: boolean;
-  error: string | null;
-  setupOpen: boolean;
-  progressRunId: string | null;
-  progress: LocalAiRunProgress[];
-  externalEvents: ExternalAiRunEvent[];
-};
-
-function createCommitAiRunId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `commit-analysis-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function formatCommitDate(value: number): string {
-  if (!value) return "";
-  const date = new Date(value * 1000);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-GB", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function toSearchableText(commit: CommitListItem): string {
-  return [commit.message, commit.author, commit.sha, ...(commit.refs ?? [])]
-    .join(" ")
-    .toLowerCase();
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function highlightMatches(text: string, query: string): React.ReactNode {
-  if (!query) {
-    return text;
-  }
-
-  const pattern = new RegExp(`(${escapeRegExp(query)})`, "ig");
-  const parts = text.split(pattern);
-  if (parts.length <= 1) {
-    return text;
-  }
-
-  return parts.map((part, index) =>
-    part.toLowerCase() === query.toLowerCase() ? (
-      <span
-        key={`${part}-${index}`}
-        className="text-sky-400"
-      >
-        {part}
-      </span>
-    ) : (
-      <span key={`${part}-${index}`}>{part}</span>
-    )
-  );
-}
-
-function getRefBadgeClass(refLabel: string): string {
-  if (refLabel.startsWith("tag:")) {
-    return "border-lime-500/40 bg-lime-500/10 text-lime-200";
-  }
-  if (refLabel.startsWith("origin/")) {
-    return "border-blue-500/40 bg-blue-500/10 text-blue-200";
-  }
-  return "border-violet-500/40 bg-violet-500/10 text-violet-200";
-}
+import {
+  COMMIT_ROW_HEIGHT,
+  FULL_LOG_COMMIT_LIMIT,
+  GRAPH_LANE_WIDTH,
+  GRAPH_MAX_WIDTH,
+  GRAPH_MIN_WIDTH,
+  GRAPH_PADDING_X,
+} from "./constants";
+import type {
+  CommitAiAnalysisState,
+  CommitCompareState,
+  CommitContextMenuState,
+  CommitTableRow,
+  LoadCommitsOptions,
+} from "./types";
+import {
+  createCommitAiRunId,
+  formatCommitDate,
+  getRefBadgeClass,
+  highlightMatches,
+  toSearchableText,
+} from "./utils";
 
 export default function CommitList() {
   const activeTabId = useRepoStore((s) => s.activeTabId);
