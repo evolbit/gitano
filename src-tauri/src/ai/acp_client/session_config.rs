@@ -83,6 +83,15 @@ fn config_option_value_from_value(value: &Value) -> Option<ExternalAiAgentConfig
     })
 }
 
+pub(super) fn mode_value_key(value: &str) -> String {
+    value
+        .trim()
+        .rsplit(['#', '/'])
+        .next()
+        .unwrap_or(value)
+        .to_ascii_lowercase()
+}
+
 fn mode_config_option_from_value(value: Option<&Value>) -> Option<ExternalAiAgentConfigOption> {
     let modes = value?;
     let current_value = modes.get("currentModeId")?.as_str()?.to_string();
@@ -182,6 +191,47 @@ mod tests {
         assert!(!fallback);
         assert_eq!(options.len(), 1);
         assert_eq!(options[0].id, "model");
+    }
+
+    #[test]
+    fn preserves_detected_mode_values() {
+        let (options, fallback) = session_config_options(&json!({
+            "sessionId": "session-1",
+            "configOptions": [
+                {
+                    "id": "mode",
+                    "name": "Mode",
+                    "category": "mode",
+                    "type": "select",
+                    "currentValue": "https://agentclientprotocol.com/protocol/session-modes#plan",
+                    "options": [
+                        {
+                            "value": "https://agentclientprotocol.com/protocol/session-modes#plan",
+                            "name": "Plan"
+                        },
+                        {
+                            "value": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+                            "name": "Autopilot"
+                        },
+                        {
+                            "value": "https://agentclientprotocol.com/protocol/session-modes#agent",
+                            "name": "Agent"
+                        }
+                    ]
+                }
+            ]
+        }));
+
+        assert!(!fallback);
+        assert_eq!(options.len(), 1);
+        assert_eq!(
+            options[0]
+                .options
+                .iter()
+                .map(|option| option.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Plan", "Autopilot", "Agent"]
+        );
     }
 
     #[test]

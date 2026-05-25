@@ -320,6 +320,7 @@ function externalAgentOptionRequiresUnsupportedClientService(
 ) {
   return (
     option.id === "allow_all" ||
+    option.id === "mode" ||
     option.category === "permission" ||
     option.category === "permissions" ||
     option.category === "tool_permissions"

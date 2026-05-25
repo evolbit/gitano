@@ -94,7 +94,7 @@ describe("settings window utilities", () => {
     ).toBe("Warmup is unavailable while an external agent is selected.");
   });
 
-  it("hides permission-service external agent options", () => {
+  it("hides external agent options that are not supported by read-only actions", () => {
     const config: ExternalAiAgentSessionConfig = {
       agentId: "github-copilot-cli",
       options: [
@@ -108,6 +108,28 @@ describe("settings window utilities", () => {
           options: [
             { value: "off", name: "Off", description: null },
             { value: "on", name: "On", description: null },
+          ],
+        },
+        {
+          id: "mode",
+          name: "Mode",
+          description: null,
+          category: "mode",
+          type: "select",
+          currentValue:
+            "https://agentclientprotocol.com/protocol/session-modes#plan",
+          options: [
+            {
+              value: "https://agentclientprotocol.com/protocol/session-modes#plan",
+              name: "Plan",
+              description: null,
+            },
+            {
+              value:
+                "https://agentclientprotocol.com/protocol/session-modes#agent",
+              name: "Agent",
+              description: null,
+            },
           ],
         },
         {

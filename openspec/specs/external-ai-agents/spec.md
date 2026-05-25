@@ -197,9 +197,10 @@ The system SHALL discover and apply external agent session configuration through
 - **AND** changing the value MUST persist the preference under the selected agent id
 
 #### Scenario: Agent exposes unsupported client-service config options
-- **WHEN** an external agent exposes a config option that requires a client service Gitano does not provide, such as permission-service option `allow_all`
-- **THEN** Gitano MUST NOT show that option in Settings
-- **AND** Gitano MUST skip stale saved values for that option when applying session config
+- **WHEN** an external agent exposes a config option that is not supported by Gitano's read-only action flow, such as permission-service option `allow_all` or session `mode`
+- **THEN** Gitano MUST detect the option from ACP session config for future surfaces
+- **AND** Gitano MUST NOT show that unsupported option in Settings for read-only AI actions
+- **AND** Gitano MUST skip stale saved values for unsupported options when applying session config for read-only AI actions
 - **AND** Gitano MUST continue applying supported config options for the same agent
 
 #### Scenario: Legacy modes are exposed

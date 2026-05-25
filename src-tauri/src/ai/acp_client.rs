@@ -14,7 +14,7 @@ mod terminal;
 use once_cell::sync::Lazy;
 mod transport;
 use serde_json::{json, Value};
-use session_config::session_config_options;
+use session_config::{mode_value_key, session_config_options};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -311,6 +311,10 @@ impl AcpProcessClient {
         values.sort_by(|(left, _), (right, _)| left.cmp(right));
 
         for (config_id, value) in values {
+            if config_id == "mode" {
+                continue;
+            }
+
             let Some(option) = session
                 .config_options
                 .iter()
@@ -348,12 +352,7 @@ impl AcpProcessClient {
     }
 
     fn apply_default_action_mode(&mut self, session: &AcpSession) -> Result<(), String> {
-        if self.request.agent_id != COPILOT_AGENT_ID
-            || self
-                .request
-                .external_agent_option_overrides
-                .contains_key("mode")
-        {
+        if self.request.agent_id != COPILOT_AGENT_ID {
             return Ok(());
         }
 
@@ -464,20 +463,27 @@ fn copilot_default_action_mode(session: &AcpSession) -> Option<DefaultActionMode
 
 fn preferred_non_plan_mode<'a>(values: impl Iterator<Item = &'a str>) -> Option<String> {
     let values = values.collect::<Vec<_>>();
-    for preferred in ["agent", "autopilot", "interactive", "code"] {
-        if values.iter().any(|value| *value == preferred) {
-            return Some(preferred.to_string());
+    for preferred in ["agent", "interactive", "code"] {
+        if let Some(value) = values
+            .iter()
+            .find(|value| mode_value_key(value.as_ref()) == preferred)
+        {
+            return Some((*value).to_string());
         }
     }
 
     values
         .into_iter()
-        .find(|value| !is_plan_mode(value))
+        .find(|value| !is_plan_mode(value) && !is_autopilot_mode(value))
         .map(ToString::to_string)
 }
 
 fn is_plan_mode(value: &str) -> bool {
-    value.eq_ignore_ascii_case("plan") || value.eq_ignore_ascii_case("architect")
+    matches!(mode_value_key(value).as_str(), "plan" | "architect")
+}
+
+fn is_autopilot_mode(value: &str) -> bool {
+    mode_value_key(value) == "autopilot"
 }
 
 fn should_retry_structured_response(transcript: &str, stop_reason: &str) -> bool {
@@ -650,15 +656,18 @@ mod tests {
                 description: None,
                 category: Some("mode".to_string()),
                 option_type: "select".to_string(),
-                current_value: "plan".to_string(),
+                current_value: "https://agentclientprotocol.com/protocol/session-modes#plan"
+                    .to_string(),
                 options: vec![
                     super::super::types::ExternalAiAgentConfigOptionValue {
-                        value: "plan".to_string(),
+                        value: "https://agentclientprotocol.com/protocol/session-modes#plan"
+                            .to_string(),
                         name: "Plan".to_string(),
                         description: None,
                     },
                     super::super::types::ExternalAiAgentConfigOptionValue {
-                        value: "agent".to_string(),
+                        value: "https://agentclientprotocol.com/protocol/session-modes#agent"
+                            .to_string(),
                         name: "Agent".to_string(),
                         description: None,
                     },
@@ -669,10 +678,46 @@ mod tests {
         match copilot_default_action_mode(&session) {
             Some(DefaultActionMode::ConfigOption { config_id, value }) => {
                 assert_eq!(config_id, "mode");
-                assert_eq!(value, "agent");
+                assert_eq!(
+                    value,
+                    "https://agentclientprotocol.com/protocol/session-modes#agent"
+                );
             }
             _ => panic!("expected config mode"),
         }
+    }
+
+    #[test]
+    fn copilot_default_action_mode_does_not_select_autopilot() {
+        let session = AcpSession {
+            session_id: "session-1".to_string(),
+            mode_config_fallback: false,
+            config_options: vec![ExternalAiAgentConfigOption {
+                id: "mode".to_string(),
+                name: "Mode".to_string(),
+                description: None,
+                category: Some("mode".to_string()),
+                option_type: "select".to_string(),
+                current_value: "https://agentclientprotocol.com/protocol/session-modes#plan"
+                    .to_string(),
+                options: vec![
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "https://agentclientprotocol.com/protocol/session-modes#plan"
+                            .to_string(),
+                        name: "Plan".to_string(),
+                        description: None,
+                    },
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
+                            .to_string(),
+                        name: "Autopilot".to_string(),
+                        description: None,
+                    },
+                ],
+            }],
+        };
+
+        assert!(copilot_default_action_mode(&session).is_none());
     }
 
     #[test]
