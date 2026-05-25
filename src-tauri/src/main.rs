@@ -3,6 +3,7 @@
 
 mod ai;
 mod git;
+mod integrations;
 
 use std::time::Duration;
 
@@ -115,6 +116,16 @@ fn main() {
             ai::ai_delete_model,
             ai::ai_warm_configured_models,
             ai::ai_run_action,
+            integrations::integration_list_providers,
+            integrations::integration_start_github_oauth,
+            integrations::integration_complete_github_oauth,
+            integrations::integration_verify_provider,
+            integrations::integration_disconnect_provider,
+            integrations::github_pull_request_count,
+            integrations::github_list_pull_requests,
+            integrations::github_prepare_pull_request_refs,
+            integrations::github_list_pull_request_comments,
+            integrations::github_submit_pull_request_review,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

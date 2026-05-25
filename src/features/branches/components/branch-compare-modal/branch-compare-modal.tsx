@@ -30,6 +30,12 @@ import {
   LocalAiResultModal,
   LocalAiSetupModal,
 } from "@/features/local-ai";
+import {
+  listGitHubPullRequestComments,
+  submitGitHubPullRequestReview,
+  type GitHubPullRequestComment,
+  type GitHubPullRequestReviewCommentDraft,
+} from "@/shared/api/integrations";
 import { useGitActionsStore } from "@/features/repository-workspace";
 import { getReviewComparisonPairKey } from "@/features/review-comments";
 import { BranchCompareBranchDropdown } from "../branch-compare-target-dropdown/branch-compare-target-dropdown";
@@ -56,11 +62,18 @@ type BranchCompareModalProps = {
   repoPath: string;
   initialSourceBranch: string | null;
   initialTargetBranch: string | null;
+  pullRequestContext?: {
+    number: number;
+    title: string;
+    baseRef: string;
+    headRef: string;
+    baseLabel: string;
+    headLabel: string;
+  } | null;
   onClose: () => void;
 };
 
 const DIFF_CONTEXT_LINES = 3;
-const BRANCH_COMPARE_MODE = "direct" as const;
 const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
 
 function BranchAiErrorDetails({
@@ -96,6 +109,7 @@ export function BranchCompareModal({
   repoPath,
   initialSourceBranch,
   initialTargetBranch,
+  pullRequestContext = null,
   onClose,
 }: BranchCompareModalProps) {
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
@@ -110,6 +124,22 @@ export function BranchCompareModal({
   const [displayMode, setDisplayMode] =
     useState<DiffDisplayMode>("unified");
   const [viewMode, setViewMode] = useState<ChangesExplorerViewMode>("tree");
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [pullRequestComments, setPullRequestComments] = useState<
+    GitHubPullRequestComment[]
+  >([]);
+  const [pullRequestCommentsLoading, setPullRequestCommentsLoading] =
+    useState(false);
+  const [pullRequestCommentsError, setPullRequestCommentsError] = useState<
+    string | null
+  >(null);
+  const [submitCommentsLoading, setSubmitCommentsLoading] = useState(false);
+  const [submitCommentsError, setSubmitCommentsError] = useState<string | null>(
+    null,
+  );
+  const [submitCommentsNotice, setSubmitCommentsNotice] = useState<string | null>(
+    null,
+  );
   const {
     dismissAiFinding,
     dismissedAiFindingKeys,
@@ -151,6 +181,8 @@ export function BranchCompareModal({
   const comparisonReady = Boolean(
     sourceBranch && targetBranch && sourceBranch !== targetBranch,
   );
+  const isPullRequestMode = Boolean(pullRequestContext);
+  const comparisonMode = isPullRequestMode ? ("mergeBase" as const) : ("direct" as const);
   const {
     branchAiSetup,
     branchAnalysis,
@@ -161,7 +193,7 @@ export function BranchCompareModal({
     retryBranchAiSetup,
     runBranchAiAction,
   } = useBranchAiRunner({
-    comparisonMode: BRANCH_COMPARE_MODE,
+    comparisonMode,
     comparisonReady,
     notifyAiError,
     onReviewReset: resetBranchReviewFindings,
@@ -184,7 +216,7 @@ export function BranchCompareModal({
     sourceBranch,
     targetBranch,
     comparisonReady,
-    comparisonMode: BRANCH_COMPARE_MODE,
+    comparisonMode,
     contextLines: DIFF_CONTEXT_LINES,
   });
   const pairKey = useMemo(
@@ -212,7 +244,7 @@ export function BranchCompareModal({
     targetBranch,
     comparisonReady,
     findings: branchReviewData?.findings ?? EMPTY_BRANCH_REVIEW_FINDINGS,
-    comparisonMode: BRANCH_COMPARE_MODE,
+    comparisonMode,
     contextLines: DIFF_CONTEXT_LINES,
   });
   const branchReviewAnchorIndex = useMemo(
@@ -253,6 +285,37 @@ export function BranchCompareModal({
   }, [pairKey, resetBranchAiRuns, setReviewHunksByPath]);
 
   useEffect(() => {
+    if (!commentsOpen || !pullRequestContext) return;
+
+    let cancelled = false;
+    setPullRequestCommentsLoading(true);
+    setPullRequestCommentsError(null);
+    listGitHubPullRequestComments({
+      path: repoPath,
+      number: pullRequestContext.number,
+    })
+      .then((comments) => {
+        if (!cancelled) setPullRequestComments(comments);
+      })
+      .catch((commentError) => {
+        if (!cancelled) {
+          setPullRequestCommentsError(
+            commentError instanceof Error
+              ? commentError.message
+              : String(commentError),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPullRequestCommentsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [commentsOpen, pullRequestContext, repoPath]);
+
+  useEffect(() => {
     if (branchReview.loading && branchReview.progressRunId) {
       setReviewHunksByPath({});
     }
@@ -281,7 +344,8 @@ export function BranchCompareModal({
     [notifyAiError, notifyAiSuccess],
   );
 
-  const { interactionValue, renderAiFindingActions } = useBranchReviewThreads({
+  const { interactionValue, renderAiFindingActions, reviewThreads } =
+    useBranchReviewThreads({
     branchReviewAnchorIndex,
     branchReviewData,
     dismissAiFinding,
@@ -289,6 +353,63 @@ export function BranchCompareModal({
     onCopyAiFeedback: copyAiFeedback,
     pairKey,
   });
+
+  const draftReviewCommentCount = reviewThreads.reduce(
+    (total, thread) => total + thread.comments.length,
+    0,
+  );
+
+  const submitDraftComments = useCallback(async () => {
+    if (!pullRequestContext || !repoPath) return;
+
+    const comments: GitHubPullRequestReviewCommentDraft[] = [];
+    for (const thread of reviewThreads) {
+      const line =
+        thread.anchor.side === "old"
+          ? thread.anchor.oldLine
+          : thread.anchor.newLine;
+      if (!line) {
+        setSubmitCommentsError(
+          `Cannot submit a comment on ${thread.anchor.filePath} because its line anchor is unavailable.`,
+        );
+        return;
+      }
+
+      for (const comment of thread.comments) {
+        comments.push({
+          path: thread.anchor.filePath,
+          body: comment.bodyMarkdown,
+          side: thread.anchor.side === "old" ? "LEFT" : "RIGHT",
+          line,
+        });
+      }
+    }
+
+    if (comments.length === 0) {
+      setSubmitCommentsError("Add at least one draft comment before submitting.");
+      return;
+    }
+
+    setSubmitCommentsLoading(true);
+    setSubmitCommentsError(null);
+    setSubmitCommentsNotice(null);
+    try {
+      await submitGitHubPullRequestReview({
+        path: repoPath,
+        number: pullRequestContext.number,
+        event: "COMMENT",
+        body: null,
+        comments,
+      });
+      setSubmitCommentsNotice(`Submitted ${comments.length} review comment${comments.length === 1 ? "" : "s"}.`);
+    } catch (submitError) {
+      setSubmitCommentsError(
+        submitError instanceof Error ? submitError.message : String(submitError),
+      );
+    } finally {
+      setSubmitCommentsLoading(false);
+    }
+  }, [pullRequestContext, repoPath, reviewThreads]);
 
   const renderAiNoteActions = useCallback(
     (note: LocalAiBranchReviewNote) => (
@@ -314,40 +435,59 @@ export function BranchCompareModal({
       <div className="relative mx-auto my-6 flex h-[96vh] w-[96vw] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
         <div className="flex min-w-0 items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">
-              Show changes in
-            </span>
-            <BranchCompareBranchDropdown
-              selectedBranch={sourceBranch}
-              localBranches={localBranches}
-              remoteBranches={remoteBranches}
-              placeholder="Select source branch"
-              loading={branchLoading}
-              error={branchError}
-              onSelectBranch={setSourceBranch}
-            />
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-              title="Swap comparison direction"
-              aria-label="Swap comparison direction"
-              onClick={() => {
-                setSourceBranch(targetBranch);
-                setTargetBranch(sourceBranch);
-              }}
-            >
-              <IconExchange size={16} />
-            </button>
-            <span className="text-sm font-semibold text-foreground">against</span>
-            <BranchCompareBranchDropdown
-              selectedBranch={targetBranch}
-              localBranches={localBranches}
-              remoteBranches={remoteBranches}
-              placeholder="Select target branch"
-              loading={branchLoading}
-              error={branchError}
-              onSelectBranch={setTargetBranch}
-            />
+            {isPullRequestMode && pullRequestContext ? (
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-normal text-zinc-500">
+                  Pull Request #{pullRequestContext.number}
+                </div>
+                <div className="truncate text-sm font-semibold text-foreground">
+                  {pullRequestContext.title}
+                </div>
+                <div className="mt-0.5 truncate text-xs text-zinc-500">
+                  {pullRequestContext.baseLabel} {"<-"}{" "}
+                  {pullRequestContext.headLabel}
+                </div>
+              </div>
+            ) : (
+              <>
+                <span className="text-sm font-semibold text-foreground">
+                  Show changes in
+                </span>
+                <BranchCompareBranchDropdown
+                  selectedBranch={sourceBranch}
+                  localBranches={localBranches}
+                  remoteBranches={remoteBranches}
+                  placeholder="Select source branch"
+                  loading={branchLoading}
+                  error={branchError}
+                  onSelectBranch={setSourceBranch}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-background text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                  title="Swap comparison direction"
+                  aria-label="Swap comparison direction"
+                  onClick={() => {
+                    setSourceBranch(targetBranch);
+                    setTargetBranch(sourceBranch);
+                  }}
+                >
+                  <IconExchange size={16} />
+                </button>
+                <span className="text-sm font-semibold text-foreground">
+                  against
+                </span>
+                <BranchCompareBranchDropdown
+                  selectedBranch={targetBranch}
+                  localBranches={localBranches}
+                  remoteBranches={remoteBranches}
+                  placeholder="Select target branch"
+                  loading={branchLoading}
+                  error={branchError}
+                  onSelectBranch={setTargetBranch}
+                />
+              </>
+            )}
           </div>
           <div className="ml-4 flex items-start gap-2">
             <div className="flex flex-col items-end gap-2">
@@ -374,7 +514,43 @@ export function BranchCompareModal({
                   <IconSparkles size={14} />
                   {branchReview.loading ? "Reviewing" : "Review"}
                 </button>
+                {isPullRequestMode ? (
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700"
+                      onClick={() => setCommentsOpen((current) => !current)}
+                    >
+                      Comments
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded border border-blue-500/50 bg-blue-500/20 px-2.5 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={
+                        submitCommentsLoading || draftReviewCommentCount === 0
+                      }
+                      onClick={() => {
+                        void submitDraftComments();
+                      }}
+                    >
+                      {submitCommentsLoading ? "Submitting" : "Submit comments"}
+                    </button>
+                  </>
+                ) : null}
               </div>
+              {submitCommentsNotice ? (
+                <div className="rounded border border-lime-500/30 bg-lime-500/10 px-2.5 py-1.5 text-xs text-lime-100">
+                  {submitCommentsNotice}
+                </div>
+              ) : null}
+              {submitCommentsError ? (
+                <div
+                  role="alert"
+                  className="rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-100"
+                >
+                  {submitCommentsError}
+                </div>
+              ) : null}
               <BranchAiErrorDetails
                 label="Analyze"
                 error={branchAnalysis.error}
@@ -442,6 +618,73 @@ export function BranchCompareModal({
               </div>
             )}
           </Split.Pane>
+          {commentsOpen && isPullRequestMode ? (
+            <>
+              <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
+              <Split.Pane initialWidth={360} minWidth={280} maxWidth={520}>
+                <div className="flex h-full min-h-0 flex-col border-l border-border bg-background">
+                  <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-background-emphasis px-3">
+                    <div className="text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                      Comments
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                      onClick={() => setCommentsOpen(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+                    {pullRequestCommentsLoading ? (
+                      <div className="rounded border border-border bg-background-emphasis px-3 py-2 text-xs text-zinc-300">
+                        Loading comments...
+                      </div>
+                    ) : null}
+                    {pullRequestCommentsError ? (
+                      <div
+                        role="alert"
+                        className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs leading-5 text-red-100"
+                      >
+                        {pullRequestCommentsError}
+                      </div>
+                    ) : null}
+                    {!pullRequestCommentsLoading &&
+                    !pullRequestCommentsError &&
+                    pullRequestComments.length === 0 ? (
+                      <div className="rounded border border-border bg-background-emphasis px-3 py-2 text-xs text-zinc-400">
+                        No comments.
+                      </div>
+                    ) : null}
+                    {pullRequestComments.map((comment) => (
+                      <div
+                        key={`${comment.kind}-${comment.id}`}
+                        className="rounded border border-border bg-background-emphasis p-3 text-xs"
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="font-semibold text-zinc-100">
+                            {comment.author?.login ?? "Unknown"}
+                          </span>
+                          <span className="uppercase text-zinc-500">
+                            {comment.kind}
+                          </span>
+                        </div>
+                        {comment.path ? (
+                          <div className="mb-2 truncate text-[11px] text-zinc-500">
+                            {comment.path}
+                            {comment.line ? `:${comment.line}` : ""}
+                          </div>
+                        ) : null}
+                        <div className="whitespace-pre-wrap leading-5 text-zinc-300">
+                          {comment.body}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Split.Pane>
+            </>
+          ) : null}
         </Split>
         <LocalAiResultModal
           open={

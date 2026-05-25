@@ -24,6 +24,7 @@ export {
   IconFolderPlus,
   IconGitBranch,
   IconGitMerge,
+  IconGitPullRequest,
   IconHeading,
   IconHome,
   IconItalic,

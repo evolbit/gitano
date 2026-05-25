@@ -32,9 +32,13 @@ import {
   IconCloudDownload,
   IconCloudUpload,
   IconGitBranch,
+  IconGitPullRequest,
   IconStack2,
   IconX,
 } from "@/shared/components/icons/icons";
+import { PullRequestModal, usePullRequestCount } from "@/features/pull-requests";
+import type { PullRequestReviewTarget } from "@/features/pull-requests";
+import { BranchCompareModal } from "@/features/branches";
 import type { TopToolbarProps } from "./types";
 import {
   GIT_ACTION_ERROR_SNACKBAR_MS,
@@ -67,6 +71,9 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
   const [pushMenuOpened, setPushMenuOpened] = useState(false);
+  const [pullRequestModalOpen, setPullRequestModalOpen] = useState(false);
+  const [pullRequestReviewTarget, setPullRequestReviewTarget] =
+    useState<PullRequestReviewTarget | null>(null);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
   const gitActionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -101,6 +108,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [worktreesError, setWorktreesError] = useState<string | null>(null);
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
+  const pullRequestCount = usePullRequestCount(repoPath);
   const requiresInitialCommit = repositoryState?.hasCommits === false;
 
   useEffect(() => {
@@ -417,6 +425,15 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const isGitActionDisabled = !repoPath || pendingGitAction !== null;
   const isCommitDependentActionDisabled =
     isGitActionDisabled || requiresInitialCommit;
+  const pullRequestLabel =
+    typeof pullRequestCount.count === "number"
+      ? `PRs (${pullRequestCount.count})`
+      : "PRs";
+  const pullRequestTooltip = !repoPath
+    ? "Open a repository to view pull requests"
+    : pullRequestCount.error
+      ? "Pull request count unavailable"
+      : "View pull requests";
 
   const pullRightSlot = (
     <Menu
@@ -767,8 +784,32 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
               }
             />
           </Stack>
+          <span className="mx-1 h-7 w-px bg-border" />
+          <RemoteActionButton
+            label={pullRequestLabel}
+            icon={<IconGitPullRequest size={16} />}
+            onClick={() => setPullRequestModalOpen(true)}
+            disabled={!repoPath}
+            tooltip={pullRequestTooltip}
+          />
         </Group>
       </Group>
+
+      <PullRequestModal
+        open={pullRequestModalOpen}
+        repoPath={repoPath}
+        onClose={() => setPullRequestModalOpen(false)}
+        onReviewPullRequest={setPullRequestReviewTarget}
+      />
+      {repoPath && pullRequestReviewTarget ? (
+        <BranchCompareModal
+          repoPath={repoPath}
+          initialSourceBranch={pullRequestReviewTarget.headRef}
+          initialTargetBranch={pullRequestReviewTarget.baseRef}
+          pullRequestContext={pullRequestReviewTarget}
+          onClose={() => setPullRequestReviewTarget(null)}
+        />
+      ) : null}
 
       {gitActionNotice ? (
         <div className="fixed bottom-4 left-1/2 z-[100100] w-[min(680px,calc(100vw-32px))] -translate-x-1/2 rounded-lg border border-zinc-700 bg-zinc-900/95 shadow-xl backdrop-blur">

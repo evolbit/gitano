@@ -8,6 +8,10 @@ import TopToolbar from "./top-toolbar";
 
 const fetchAllRemotesMock = vi.hoisted(() => vi.fn());
 const pushRepositoryMock = vi.hoisted(() => vi.fn());
+const integrationApiMocks = vi.hoisted(() => ({
+  getGitHubPullRequestCount: vi.fn(),
+  listProviderIntegrations: vi.fn(),
+}));
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
   tauriStorage: {
@@ -28,6 +32,8 @@ vi.mock("@/shared/api/git/sync", () => ({
   pullRepository: vi.fn().mockResolvedValue(undefined),
   pushRepository: pushRepositoryMock,
 }));
+
+vi.mock("@/shared/api/integrations", () => integrationApiMocks);
 
 vi.mock("@/shared/api/repositories", () => ({
   getRepositoryState: vi.fn().mockResolvedValue({
@@ -56,6 +62,22 @@ describe("TopToolbar", () => {
     fetchAllRemotesMock.mockResolvedValue(undefined);
     pushRepositoryMock.mockReset();
     pushRepositoryMock.mockResolvedValue(undefined);
+    integrationApiMocks.getGitHubPullRequestCount.mockReset();
+    integrationApiMocks.getGitHubPullRequestCount.mockResolvedValue({
+      repository: { owner: "acme", name: "app" },
+      count: 0,
+    });
+    integrationApiMocks.listProviderIntegrations.mockReset();
+    integrationApiMocks.listProviderIntegrations.mockResolvedValue([
+      {
+        id: "github",
+        displayName: "GitHub",
+        capabilities: ["pullRequests", "pullRequestReviews"],
+        status: "connected",
+        connection: null,
+        lastError: null,
+      },
+    ]);
     useRepoStore.setState({ tabs: [], activeTabId: null });
     useGitActionsStore.setState({ pendingAction: null, notice: null });
     useWorkspaceUiStore.setState({
@@ -73,6 +95,7 @@ describe("TopToolbar", () => {
     expect(screen.getByRole("button", { name: "Push" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Stash" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Pop" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "PRs" })).toBeDisabled();
   });
 
   it("persists the selected push mode and uses it for toolbar push", async () => {
@@ -133,5 +156,85 @@ describe("TopToolbar", () => {
         "fetch-all-prune",
       );
     });
+  });
+
+  it("shows the pending pull request count for the active repository", async () => {
+    integrationApiMocks.getGitHubPullRequestCount.mockResolvedValueOnce({
+      repository: { owner: "acme", name: "app" },
+      count: 3,
+    });
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    renderToolbar();
+
+    expect(await screen.findByRole("button", { name: "PRs (3)" })).toBeEnabled();
+    expect(integrationApiMocks.getGitHubPullRequestCount).toHaveBeenCalledWith({
+      path: "/repo",
+    });
+  });
+
+  it("opens pull requests even when count refresh is unavailable", async () => {
+    integrationApiMocks.getGitHubPullRequestCount.mockRejectedValueOnce(
+      new Error("GitHub is not connected"),
+    );
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    renderToolbar();
+
+    fireEvent.click(await screen.findByRole("button", { name: /^PRs/ }));
+
+    expect(await screen.findByRole("dialog", { name: "Pull requests" })).toBeInTheDocument();
+  });
+
+  it("does not request counts when GitHub is disconnected", async () => {
+    integrationApiMocks.listProviderIntegrations.mockResolvedValueOnce([
+      {
+        id: "github",
+        displayName: "GitHub",
+        capabilities: ["pullRequests", "pullRequestReviews"],
+        status: "disconnected",
+        connection: null,
+        lastError: null,
+      },
+    ]);
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    renderToolbar();
+
+    await waitFor(() => {
+      expect(integrationApiMocks.listProviderIntegrations).toHaveBeenCalled();
+    });
+    expect(integrationApiMocks.getGitHubPullRequestCount).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^PRs/ })).toBeEnabled();
   });
 });

@@ -95,6 +95,21 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+### GitHub OAuth local development
+
+GitHub pull request integration uses OAuth device authorization. Create a
+GitHub OAuth app, enable Device Flow, and provide its public client id before
+starting Gitano:
+
+```bash
+cp .env.example .env.local
+# Edit .env.local and set GITANO_GITHUB_OAUTH_CLIENT_ID
+pnpm tauri dev
+```
+
+The client id is not a user token or secret. Gitano stores the resulting OAuth
+access token in backend-owned secure storage after the user authorizes Gitano.
+
 ### Verificacion del bundle macOS
 
 Las builds de macOS deben validar que el ejecutable empaquetado no dependa de

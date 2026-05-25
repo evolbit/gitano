@@ -8,11 +8,17 @@ export const AI_PANES: ReadonlyArray<{ key: SettingsPane; label: string }> = [
   { key: "configuration", label: "Configuration" },
 ];
 
+export const INTEGRATION_PANES: ReadonlyArray<{
+  key: SettingsPane;
+  label: string;
+}> = [{ key: "integrations", label: "Integrations" }];
+
 export const PANE_TITLES: Record<SettingsPane, string> = {
   runtime: "Runtime",
   models: "Local Models",
   externalAgents: "External Agents",
   configuration: "Configuration",
+  integrations: "Integrations",
 };
 
 export const ACTIONS: ReadonlyArray<{

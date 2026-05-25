@@ -32,6 +32,25 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("@/shared/api/local-ai", () => apiMocks);
 
+const integrationApiMocks = vi.hoisted(() => ({
+  completeGitHubOAuthIntegration: vi.fn(),
+  disconnectProviderIntegration: vi.fn(),
+  listProviderIntegrations: vi.fn(),
+  startGitHubOAuthIntegration: vi.fn(),
+  verifyProviderIntegration: vi.fn(),
+}));
+
+vi.mock("@/shared/api/integrations", () => integrationApiMocks);
+
+const openExternalUrlMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/shared/platform/tauri/opener", () => ({
+  openExternalUrl: openExternalUrlMock,
+}));
+
+const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const execCommandMock = vi.hoisted(() => vi.fn());
+
 const models = [
   {
     id: "qwen2.5-coder:1.5b",
@@ -240,6 +259,29 @@ const copilotModelConfig = {
 describe("SettingsWindow", () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
+    Object.values(integrationApiMocks).forEach((mock) => mock.mockReset());
+    openExternalUrlMock.mockReset();
+    openExternalUrlMock.mockResolvedValue(undefined);
+    clipboardWriteTextMock.mockReset();
+    clipboardWriteTextMock.mockResolvedValue(undefined);
+    execCommandMock.mockReset();
+    execCommandMock.mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommandMock,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: clipboardWriteTextMock,
+      },
+    });
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: clipboardWriteTextMock,
+      },
+    });
     apiMocks.getLocalAiModelCatalog.mockResolvedValue(models);
     apiMocks.getExternalAiAgentCatalog.mockResolvedValue(externalAgents);
     apiMocks.getExternalAiAgentSessionConfig.mockResolvedValue(codexModelConfig);
@@ -309,6 +351,16 @@ describe("SettingsWindow", () => {
       warmedModelIds: [],
       failures: [],
     });
+    integrationApiMocks.listProviderIntegrations.mockResolvedValue([
+      {
+        id: "github",
+        displayName: "GitHub",
+        capabilities: ["pullRequests", "pullRequestReviews"],
+        status: "disconnected",
+        connection: null,
+        lastError: null,
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -328,6 +380,163 @@ describe("SettingsWindow", () => {
     expect(
       screen.getByRole("button", { name: /upgrade runtime/i }),
     ).toBeEnabled();
+  });
+
+  it("shows GitHub provider in integrations settings", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+
+    expect(await screen.findByText("Providers")).toBeInTheDocument();
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  });
+
+  it("starts GitHub OAuth from integrations settings", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.startGitHubOAuthIntegration.mockResolvedValue({
+      deviceCode: "device-code",
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 900,
+      interval: 60,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    expect(await screen.findByLabelText("GitHub user code")).toHaveTextContent(
+      "ABCD-1234",
+    );
+    expect(openExternalUrlMock).toHaveBeenCalledWith(
+      "https://github.com/login/device",
+    );
+  });
+
+  it("copies the GitHub OAuth user code from integrations settings", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.startGitHubOAuthIntegration.mockResolvedValue({
+      deviceCode: "device-code",
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 900,
+      interval: 60,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    const copyButton = await screen.findByRole("button", { name: "Copy code" });
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    await user.click(copyButton);
+
+    expect(
+      await screen.findByText("Code copied. Waiting for GitHub authorization..."),
+    ).toBeInTheDocument();
+  });
+
+  it("automatically completes GitHub OAuth from integrations settings", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.startGitHubOAuthIntegration.mockResolvedValue({
+      deviceCode: "device-code",
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 900,
+      interval: 1,
+    });
+    integrationApiMocks.completeGitHubOAuthIntegration.mockResolvedValue({
+      id: "github",
+      displayName: "GitHub",
+      capabilities: ["pullRequests", "pullRequestReviews"],
+      status: "connected",
+      connection: {
+        accountLogin: "marco",
+        avatarUrl: null,
+        scopes: ["repo"],
+      },
+      lastError: null,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(
+        integrationApiMocks.completeGitHubOAuthIntegration,
+      ).toHaveBeenCalledWith({ deviceCode: "device-code" });
+    }, { timeout: 2500 });
+    expect(await screen.findByText("Connected as marco")).toBeInTheDocument();
+  });
+
+  it("disconnects GitHub from integrations settings", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.listProviderIntegrations.mockResolvedValue([
+      {
+        id: "github",
+        displayName: "GitHub",
+        capabilities: ["pullRequests", "pullRequestReviews"],
+        status: "connected",
+        connection: {
+          accountLogin: "marco",
+          avatarUrl: null,
+          scopes: ["repo"],
+        },
+        lastError: null,
+      },
+    ]);
+    integrationApiMocks.disconnectProviderIntegration.mockResolvedValue({
+      id: "github",
+      displayName: "GitHub",
+      capabilities: ["pullRequests", "pullRequestReviews"],
+      status: "disconnected",
+      connection: null,
+      lastError: null,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+    expect(await screen.findByText("Connected as marco")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    await waitFor(() => {
+      expect(
+        integrationApiMocks.disconnectProviderIntegration,
+      ).toHaveBeenCalledWith("github");
+    });
+    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
   });
 
   it("shows model download and delete actions", async () => {

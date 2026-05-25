@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod git;
+pub mod integrations;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;
 

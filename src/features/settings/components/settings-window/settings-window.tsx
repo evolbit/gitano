@@ -27,11 +27,13 @@ import {
 } from "@/shared/api/local-ai";
 import { useAiSettingsData } from "../../hooks/use-ai-settings-data";
 import { useExternalAgentConfig } from "../../hooks/use-external-agent-config";
+import { useProviderIntegrations } from "../../hooks/use-provider-integrations";
 import { useSettingsOperations } from "../../hooks/use-settings-operations";
 import {
   ACTIONS,
   AI_PANES,
   DEFAULT_ACTION_PROMPTS,
+  INTEGRATION_PANES,
   PANE_TITLES,
   WARM_MEMORY_HIGH_SHARE,
   WARM_MEMORY_VERY_HIGH_SHARE,
@@ -40,6 +42,7 @@ import {
 import {
   ConfigurationPane,
   ExternalAgentsPane,
+  IntegrationsPane,
   ModelsPane,
   RuntimePane,
 } from "./settings-panes";
@@ -183,6 +186,16 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     selectedExternalAgentIds,
     resetKey: settingsRevision,
   });
+  const {
+    providers,
+    loading: integrationsLoading,
+    error: integrationsError,
+    busyProviderIds,
+    completeGitHubOAuth,
+    disconnectProvider,
+    startGitHubOAuth,
+    verifyProvider,
+  } = useProviderIntegrations(open && pane === "integrations");
 
   const warmModelIds = preferences?.warmModelIds ?? [];
   const warmSignature = useMemo(
@@ -529,6 +542,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
   if (!open) return null;
 
   const paneTitle = PANE_TITLES[pane];
+  const paneCategory = pane === "integrations" ? "Integrations" : "AI";
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[10060] flex items-center justify-center bg-black/65 px-4 py-6">
@@ -541,7 +555,9 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
         <aside className="flex w-56 flex-shrink-0 flex-col border-r border-border bg-background-emphasis">
           <div className="flex h-16 flex-shrink-0 flex-col justify-center border-b border-border px-4">
             <div className="text-sm font-semibold text-foreground">Settings</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">AI Engines</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Gitano
+            </div>
           </div>
 
           <nav className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -562,6 +578,23 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                 <span className="truncate">{item.label}</span>
               </button>
             ))}
+            <div className="mt-4 px-2 pb-1 text-[10px] font-semibold uppercase tracking-normal text-zinc-500">
+              Integrations
+            </div>
+            {INTEGRATION_PANES.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`mb-1 flex h-8 w-full items-center rounded px-2 text-left text-sm font-medium transition-colors ${
+                  pane === item.key
+                    ? "bg-zinc-800 text-foreground"
+                    : "text-muted-foreground hover:bg-zinc-800/70 hover:text-foreground"
+                }`}
+                onClick={() => setPane(item.key)}
+              >
+                <span className="truncate">{item.label}</span>
+              </button>
+            ))}
           </nav>
         </aside>
 
@@ -569,7 +602,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
           <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-border bg-background-emphasis px-5">
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-normal text-zinc-500">
-                AI
+                {paneCategory}
               </div>
               <h2 className="truncate text-sm font-semibold text-foreground">
                 {paneTitle}
@@ -671,6 +704,19 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                   onSetEnginePreference={handleSetEnginePreference}
                   onSetExternalConfigPreference={handleSetExternalConfigPreference}
                   onWarmToggle={handleWarmToggle}
+                />
+              ) : null}
+
+              {pane === "integrations" ? (
+                <IntegrationsPane
+                  providers={providers}
+                  loading={integrationsLoading}
+                  error={integrationsError}
+                  busyProviderIds={busyProviderIds}
+                  onCompleteGitHubOAuth={completeGitHubOAuth}
+                  onDisconnectProvider={disconnectProvider}
+                  onStartGitHubOAuth={startGitHubOAuth}
+                  onVerifyProvider={verifyProvider}
                 />
               ) : null}
             </div>

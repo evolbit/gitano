@@ -317,5 +317,6 @@ export function useBranchReviewThreads({
   return {
     interactionValue,
     renderAiFindingActions,
+    reviewThreads,
   };
 }

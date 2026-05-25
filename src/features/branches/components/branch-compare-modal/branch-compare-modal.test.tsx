@@ -28,6 +28,10 @@ const localAiMocks = vi.hoisted(() => ({
   setLocalAiAnalysisEnginePreference: vi.fn(),
   listenToLocalAiProgress: vi.fn(),
 }));
+const integrationApiMocks = vi.hoisted(() => ({
+  listGitHubPullRequestComments: vi.fn(),
+  submitGitHubPullRequestReview: vi.fn(),
+}));
 const clipboardMocks = vi.hoisted(() => ({
   writeClipboardText: vi.fn(),
 }));
@@ -35,6 +39,7 @@ const clipboardMocks = vi.hoisted(() => ({
 vi.mock("../../api", () => branchApiMocks);
 vi.mock("@/shared/api/git/diffs", () => diffApiMocks);
 vi.mock("@/shared/api/local-ai", () => localAiMocks);
+vi.mock("@/shared/api/integrations", () => integrationApiMocks);
 vi.mock("@/shared/platform/clipboard", () => clipboardMocks);
 
 describe("BranchCompareModal local AI", () => {
@@ -45,6 +50,12 @@ describe("BranchCompareModal local AI", () => {
 	    );
     diffApiMocks.getBranchComparisonFiles.mockResolvedValue([]);
     diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([]);
+    integrationApiMocks.listGitHubPullRequestComments.mockResolvedValue([]);
+    integrationApiMocks.submitGitHubPullRequestReview.mockResolvedValue({
+      id: 1,
+      state: "COMMENTED",
+      htmlUrl: null,
+    });
     localAiMocks.runLocalAiAction.mockResolvedValue({
       result: {
         kind: "analysis",
@@ -195,6 +206,125 @@ describe("BranchCompareModal local AI", () => {
       pendingAction: null,
       notice: null,
     });
+  });
+
+  it("renders pull request review mode with comments panel", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.listGitHubPullRequestComments.mockResolvedValueOnce([
+      {
+        id: 1,
+        kind: "review",
+        author: { login: "marco", avatarUrl: null },
+        body: "Please check this line.",
+        createdAt: "2026-05-21T10:00:00Z",
+        updatedAt: "2026-05-21T10:00:00Z",
+        path: "src/app.ts",
+        side: "RIGHT",
+        line: 12,
+        originalLine: 12,
+        diffHunk: "@@",
+      },
+    ]);
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByText("Pull Request #12")).toBeInTheDocument();
+    expect(screen.getByText("Improve checkout flow")).toBeInTheDocument();
+    expect(screen.getByText("acme:main <- acme:feature")).toBeInTheDocument();
+    expect(diffApiMocks.getBranchComparisonFiles).toHaveBeenCalledWith({
+      path: "/repo",
+      baseRef: "refs/remotes/origin/main",
+      headRef: "refs/remotes/origin/pull/12/head",
+      comparisonMode: "mergeBase",
+    });
+    await user.click(screen.getByRole("button", { name: "Comments" }));
+
+    expect(
+      await screen.findByText("Please check this line."),
+    ).toBeInTheDocument();
+    expect(integrationApiMocks.listGitHubPullRequestComments).toHaveBeenCalledWith({
+      path: "/repo",
+      number: 12,
+    });
+  });
+
+  it("shows pull request review comment controls in split diff mode", async () => {
+    const user = userEvent.setup();
+    diffApiMocks.getBranchComparisonFiles.mockResolvedValue([
+      { path: "package.json", status: "modified", insertions: 1, deletions: 1 },
+    ]);
+    diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([
+      {
+        header: "@@ -10,7 +10,7 @@",
+        old_start: 10,
+        old_lines: 7,
+        new_start: 10,
+        new_lines: 7,
+        is_new_file: false,
+        lines: [
+          {
+            kind: "Context",
+            content: '  "dependencies": {',
+            old_lineno: 12,
+            new_lineno: 12,
+          },
+          {
+            kind: "Del",
+            content: '    "@gfazioli/mantine-split-pane": "^2.1.2",',
+            old_lineno: 13,
+            new_lineno: null,
+          },
+          {
+            kind: "Add",
+            content: '    "@gfazioli/mantine-split-pane": "^2.5.4",',
+            old_lineno: null,
+            new_lineno: 13,
+          },
+        ],
+      },
+    ]);
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/14/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 14,
+            title: "Upgrade split pane",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/14/head",
+            baseLabel: "evolbit:main",
+            headLabel: "evolbit:snyk-upgrade",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await screen.findByText("package.json");
+    await user.click(screen.getByRole("button", { name: "Split" }));
+    await user.click(screen.getAllByRole("button", { name: "Add comment" })[0]);
+
+    expect(await screen.findByPlaceholderText("Leave a comment")).toBeInTheDocument();
   });
 
   it("runs local AI analysis for the active branch comparison", async () => {
@@ -657,6 +787,103 @@ describe("BranchCompareModal local AI", () => {
     expect(
       screen.getByText("Can we guard this call before updating state?"),
     ).toBeInTheDocument();
+  });
+
+  it("submits applied AI findings as GitHub pull request comments in PR mode", async () => {
+    const user = userEvent.setup();
+    diffApiMocks.getBranchComparisonFiles.mockResolvedValue([
+      { path: "src/app.ts", status: "modified", insertions: 1, deletions: 0 },
+    ]);
+    diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([
+      {
+        header: "@@ -1,1 +1,2 @@",
+        old_start: 1,
+        old_lines: 1,
+        new_start: 1,
+        new_lines: 2,
+        is_new_file: false,
+        lines: [
+          { kind: "Context", content: " keep", old_lineno: 1, new_lineno: 1 },
+          { kind: "Add", content: "+ risky()", old_lineno: null, new_lineno: 2 },
+        ],
+      },
+    ]);
+    localAiMocks.runLocalAiAction.mockResolvedValue({
+      actionKind: "branchReview",
+      result: {
+        kind: "branchReview",
+        data: {
+          summary: "One issue",
+          findings: [
+            {
+              severity: "high",
+              confidence: "medium",
+              title: "Missing guard",
+              explanation: "The new call can fail.",
+              impact: "The UI can become stale.",
+              recommendation: "Handle the error path.",
+              suggestedComment: "Can we guard this call before updating state?",
+              filePath: "src/app.ts",
+              side: "new",
+              line: 2,
+              endLine: null,
+            },
+          ],
+          notes: [],
+        },
+      },
+      modelId: "qwen2.5-coder:7b",
+      modelDigest: "digest",
+      promptVersion: "v1",
+      inputDigest: "input",
+      fromCache: false,
+      metadata: { omittedFiles: [], omittedSections: [] },
+    });
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await screen.findByText(/risky/);
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Missing guard").length).toBeGreaterThan(0);
+    });
+    await user.click(screen.getAllByRole("button", { name: "Apply draft" })[0]);
+    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+
+    await waitFor(() => {
+      expect(integrationApiMocks.submitGitHubPullRequestReview).toHaveBeenCalledWith({
+        path: "/repo",
+        number: 12,
+        event: "COMMENT",
+        body: null,
+        comments: [
+          {
+            path: "src/app.ts",
+            body: "Can we guard this call before updating state?",
+            side: "RIGHT",
+            line: 2,
+          },
+        ],
+      });
+    });
+    expect(await screen.findByText("Submitted 1 review comment.")).toBeInTheDocument();
   });
 
   it("renders invalid-anchor AI review findings as notes without apply controls", async () => {

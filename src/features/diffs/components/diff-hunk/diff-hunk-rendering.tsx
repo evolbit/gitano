@@ -576,7 +576,7 @@ const SplitDiffRow: React.FC<{
   return (
     <>
       <div
-        className="grid items-stretch font-mono"
+        className="group grid items-stretch font-mono"
         style={{
           fontSize: "var(--diff-font-size)",
           fontVariantNumeric: "tabular-nums",

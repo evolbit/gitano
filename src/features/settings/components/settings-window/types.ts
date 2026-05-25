@@ -2,7 +2,8 @@ export type SettingsPane =
   | "runtime"
   | "models"
   | "externalAgents"
-  | "configuration";
+  | "configuration"
+  | "integrations";
 
 export type SettingsWindowProps = {
   open: boolean;
