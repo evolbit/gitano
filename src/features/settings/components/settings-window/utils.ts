@@ -12,6 +12,7 @@ import type {
   LocalAiPreferences,
   LocalAiRuntimeSetupStatus,
 } from "@/shared/api/local-ai";
+import { externalAiAgentStatusLabel } from "@/shared/utils/external-ai-agent-status";
 import { ACTIONS, DEFAULT_ACTION_PROMPTS } from "./config";
 
 export function formatContext(tokens: number) {
@@ -307,24 +308,26 @@ export function selectableExternalConfigOptions(
   config: ExternalAiAgentSessionConfig | null | undefined,
 ) {
   return (config?.options ?? []).filter(
-    (option) => option.type === "select" && option.options.length > 0,
+    (option) =>
+      option.type === "select" &&
+      option.options.length > 0 &&
+      !externalAgentOptionRequiresUnsupportedClientService(option),
+  );
+}
+
+function externalAgentOptionRequiresUnsupportedClientService(
+  option: ExternalAiAgentConfigOption,
+) {
+  return (
+    option.id === "allow_all" ||
+    option.category === "permission" ||
+    option.category === "permissions" ||
+    option.category === "tool_permissions"
   );
 }
 
 export function statusLabel(agent: ExternalAiAgentEntry) {
-  if (agent.status.available) return agent.status.authenticated ? "Ready" : "Ready";
-  switch (agent.status.state) {
-    case "notInstalled":
-      return "Not installed";
-    case "unsupportedPlatform":
-      return "Unsupported";
-    case "unavailable":
-      return "Unavailable";
-    case "failed":
-      return "Failed";
-    default:
-      return "Unknown";
-  }
+  return externalAiAgentStatusLabel(agent);
 }
 
 export function promptDraftsFromPreferences(

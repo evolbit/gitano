@@ -307,6 +307,25 @@ describe("LocalAiResultModal", () => {
     expect(screen.queryByText("Running local model")).not.toBeInTheDocument();
   });
 
+  it("summarizes reportable error payloads in the modal", () => {
+    renderModal({
+      error:
+        "External agent output could not be parsed. Report this debug payload:\n{\n  \"kind\": \"external_agent_structured_output_error\"\n}",
+    });
+
+    const errorPayload = screen.getByText(/External agent output could not be parsed/);
+
+    expect(screen.getByText("AI action failed")).toBeInTheDocument();
+    expect(errorPayload.tagName).toBe("PRE");
+    expect(errorPayload).toHaveClass("whitespace-pre-wrap", "break-words");
+    expect(
+      screen.getByText(/See log for more details/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/external_agent_structured_output_error/),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders omitted context metadata", () => {
     const result: LocalAiRunResult = {
       actionKind: "branchReview",

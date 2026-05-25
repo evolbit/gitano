@@ -1,12 +1,14 @@
 import {
   IconCheck,
   IconCloudDownload,
+  IconX,
 } from "@/shared/components/icons/icons";
 import type {
   ExternalAiAgentEntry,
   LocalAiEntitlementStatus,
   LocalAiPreferences,
 } from "@/shared/api/local-ai";
+import { externalAiAgentAuthenticationUnverified } from "@/shared/utils/external-ai-agent-status";
 import {
   ActionButton,
   type MaybePromise,
@@ -23,8 +25,8 @@ import {
 export function ExternalAgentsPane({
   entitlement,
   externalAgents,
-  onAuthenticateExternalAgent,
   onInstallExternalAgent,
+  onAuthenticateExternalAgent,
   onRemoveExternalAgent,
   onSetExternalAgentDefault,
   preferences,
@@ -32,8 +34,8 @@ export function ExternalAgentsPane({
 }: {
   entitlement: LocalAiEntitlementStatus | null;
   externalAgents: ExternalAiAgentEntry[];
-  onAuthenticateExternalAgent: (agentId: string) => MaybePromise;
   onInstallExternalAgent: (agentId: string) => MaybePromise;
+  onAuthenticateExternalAgent: (agentId: string) => MaybePromise;
   onRemoveExternalAgent: (agentId: string) => MaybePromise;
   onSetExternalAgentDefault: (agentId: string) => MaybePromise;
   preferences: LocalAiPreferences | null;
@@ -48,14 +50,13 @@ export function ExternalAgentsPane({
         const selected =
           globalEngine?.type === "external_agent" &&
           globalEngine.agentId === agent.id;
-        const installDisabled =
-          setupInProgress ||
-          entitlement?.entitled === false ||
-          !agent.installSource;
         const setDefaultDisabled =
           selected ||
           !agent.status.available ||
           entitlement?.entitled === false;
+        const showAuthRefresh =
+          agent.status.installed &&
+          externalAiAgentAuthenticationUnverified(agent);
 
         return (
           <SettingsRow
@@ -67,9 +68,36 @@ export function ExternalAgentsPane({
             <div className="flex w-full flex-col items-end gap-2">
               <ValuePill>{selected ? "Selected" : statusLabel(agent)}</ValuePill>
               <div className="flex flex-wrap justify-end gap-2">
-                {!agent.status.installed ? (
+                {agent.status.installed ? (
+                  <>
+                    {showAuthRefresh ? (
+                      <ActionButton
+                        disabled={entitlement?.entitled === false}
+                        onClick={() => {
+                          void onAuthenticateExternalAgent(agent.id);
+                        }}
+                      >
+                        <IconCheck size={16} />
+                        Refresh status
+                      </ActionButton>
+                    ) : null}
+                    <ActionButton
+                      disabled={setupInProgress}
+                      onClick={() => {
+                        void onRemoveExternalAgent(agent.id);
+                      }}
+                    >
+                      <IconX size={16} />
+                      Remove
+                    </ActionButton>
+                  </>
+                ) : (
                   <ActionButton
-                    disabled={installDisabled}
+                    disabled={
+                      setupInProgress ||
+                      entitlement?.entitled === false ||
+                      !agent.installSource
+                    }
                     onClick={() => {
                       void onInstallExternalAgent(agent.id);
                     }}
@@ -77,27 +105,6 @@ export function ExternalAgentsPane({
                     <IconCloudDownload size={16} />
                     Install
                   </ActionButton>
-                ) : (
-                  <>
-                    <ActionButton
-                      disabled={entitlement?.entitled === false}
-                      onClick={() => {
-                        void onAuthenticateExternalAgent(agent.id);
-                      }}
-                    >
-                      <IconCheck size={16} />
-                      Authenticate
-                    </ActionButton>
-                    <ActionButton
-                      variant="danger"
-                      disabled={setupInProgress}
-                      onClick={() => {
-                        void onRemoveExternalAgent(agent.id);
-                      }}
-                    >
-                      Remove
-                    </ActionButton>
-                  </>
                 )}
                 <ActionButton
                   disabled={setDefaultDisabled}

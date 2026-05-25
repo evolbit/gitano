@@ -13,6 +13,7 @@ import {
   listenToLocalAiRunProgress,
   runLocalAiAction,
 } from "@/shared/api/local-ai";
+import { isAiSetupRequiredError } from "@/shared/utils/ai-setup-errors";
 import type { CommitListItem } from "@/shared/types/git";
 import type { CommitAiAnalysisState } from "../types/commit-list";
 import { createCommitAiRunId } from "../components/commit-list/utils";
@@ -23,15 +24,7 @@ type UseCommitAiAnalysisParams = {
 };
 
 export function shouldOpenCommitAiSetup(analysisError: unknown) {
-  const message =
-    analysisError instanceof Error
-      ? analysisError.message
-      : String(analysisError || "");
-  return (
-    message.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
-    message.toLowerCase().includes("ollama") ||
-    message.toLowerCase().includes("local ai")
-  );
+  return isAiSetupRequiredError(analysisError);
 }
 
 export function useCommitAiAnalysis({
@@ -129,8 +122,12 @@ export function useCommitAiAnalysis({
           return;
         }
         const openSetup = shouldOpenCommitAiSetup(analysisError);
+        const errorMessage =
+          analysisError instanceof Error
+            ? analysisError.message
+            : String(analysisError || "Unknown error");
         if (!openSetup) {
-          notifyError("Local AI analysis failed", analysisError);
+          notifyError("AI analysis failed", analysisError);
         }
         setCommitAiAnalysis((current) =>
           current && current.progressRunId === runId
@@ -138,7 +135,7 @@ export function useCommitAiAnalysis({
                 ...current,
                 result: null,
                 loading: false,
-                error: null,
+                error: openSetup ? null : errorMessage,
                 setupOpen: openSetup,
                 progressRunId: runId,
               }
@@ -146,7 +143,7 @@ export function useCommitAiAnalysis({
                 commit,
                 result: null,
                 loading: false,
-                error: null,
+                error: openSetup ? null : errorMessage,
                 setupOpen: openSetup,
                 progressRunId: runId,
                 progress: [],

@@ -29,6 +29,8 @@ use transport::{spawn_stdout_reader, write_message, RpcLineReceiver};
 const ACP_PROTOCOL_VERSION: u16 = 1;
 const JSON_RPC_VERSION: &str = "2.0";
 const EXTERNAL_AGENT_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const COPILOT_AGENT_ID: &str = "github-copilot-cli";
+const STRUCTURED_OUTPUT_RETRY_PROMPT: &str = "Your previous response did not include Gitano's required structured JSON result. Use the response shape and task instructions from the previous prompt. Return the final answer now as one valid JSON object only. Do not include markdown fences, prose, progress text, status text, tool plans, or tool calls.";
 
 static ACTIVE_RUNS: Lazy<Mutex<HashMap<String, ActiveRun>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -158,7 +160,17 @@ fn run_external_agent_prompt_blocking(
     let session = client.create_session()?;
     set_active_session_id(&client.request.run_id, session.session_id.clone())?;
     client.apply_session_config(&session)?;
-    let stop_reason = client.prompt(&session.session_id)?;
+    client.apply_default_action_mode(&session)?;
+    let mut stop_reason = client.prompt(&session.session_id)?;
+    if should_retry_structured_response(&client.transcript, &stop_reason) {
+        client.emit_event(
+            ExternalAiRunEventKind::Thought,
+            "External agent ended without structured JSON; requesting final JSON result."
+                .to_string(),
+            None,
+        );
+        stop_reason = client.prompt_text(&session.session_id, STRUCTURED_OUTPUT_RETRY_PROMPT)?;
+    }
     client.emit_event(
         ExternalAiRunEventKind::Completed,
         format!("External agent stopped: {}", stop_reason),
@@ -180,13 +192,19 @@ impl AcpProcessClient {
                 request.repo_path, e
             )
         })?;
-        let (program, args) = external_agent_command(&request.agent_id)?;
-        let mut child = Command::new(&program)
-            .args(args)
+        let agent_command = external_agent_command(&request.agent_id)?;
+        let mut command = Command::new(&agent_command.program);
+        command
+            .args(agent_command.args)
             .current_dir(&repo_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(path_env) = agent_command.path_env {
+            command.env("PATH", path_env);
+        }
+
+        let mut child = command
             .spawn()
             .map_err(|e| format!("Could not start external agent {}: {}", request.agent_id, e))?;
 
@@ -329,7 +347,55 @@ impl AcpProcessClient {
         Ok(())
     }
 
+    fn apply_default_action_mode(&mut self, session: &AcpSession) -> Result<(), String> {
+        if self.request.agent_id != COPILOT_AGENT_ID
+            || self
+                .request
+                .external_agent_option_overrides
+                .contains_key("mode")
+        {
+            return Ok(());
+        }
+
+        let Some(default_mode) = copilot_default_action_mode(session) else {
+            return Ok(());
+        };
+
+        let result = match default_mode {
+            DefaultActionMode::ConfigOption { config_id, value } => self.call(
+                "session/set_config_option",
+                json!({
+                    "sessionId": session.session_id.as_str(),
+                    "configId": config_id,
+                    "value": value,
+                }),
+            ),
+            DefaultActionMode::LegacyMode(value) => self.call(
+                "session/set_mode",
+                json!({
+                    "sessionId": session.session_id.as_str(),
+                    "modeId": value,
+                }),
+            ),
+        };
+
+        if let Err(error) = result {
+            self.emit_event(
+                ExternalAiRunEventKind::Thought,
+                format!("External agent default mode was not applied: {}", error),
+                None,
+            );
+        }
+
+        Ok(())
+    }
+
     fn prompt(&mut self, session_id: &str) -> Result<String, String> {
+        let prompt = self.request.prompt.clone();
+        self.prompt_text(session_id, &prompt)
+    }
+
+    fn prompt_text(&mut self, session_id: &str, prompt: &str) -> Result<String, String> {
         let result = self.call(
             "session/prompt",
             json!({
@@ -337,7 +403,7 @@ impl AcpProcessClient {
                 "prompt": [
                     {
                         "type": "text",
-                        "text": self.request.prompt
+                        "text": prompt
                     }
                 ],
             }),
@@ -364,6 +430,59 @@ impl AcpProcessClient {
         );
         emit_compatible_run_progress(&self.app, &self.request, kind, message);
     }
+}
+
+enum DefaultActionMode {
+    ConfigOption { config_id: String, value: String },
+    LegacyMode(String),
+}
+
+fn copilot_default_action_mode(session: &AcpSession) -> Option<DefaultActionMode> {
+    let mode_option = session
+        .config_options
+        .iter()
+        .find(|option| option.id == "mode" || option.category.as_deref() == Some("mode"));
+
+    if let Some(option) = mode_option {
+        if !is_plan_mode(&option.current_value) {
+            return None;
+        }
+
+        return preferred_non_plan_mode(option.options.iter().map(|option| option.value.as_str()))
+            .map(|value| DefaultActionMode::ConfigOption {
+                config_id: option.id.clone(),
+                value,
+            });
+    }
+
+    if session.mode_config_fallback {
+        return Some(DefaultActionMode::LegacyMode("agent".to_string()));
+    }
+
+    None
+}
+
+fn preferred_non_plan_mode<'a>(values: impl Iterator<Item = &'a str>) -> Option<String> {
+    let values = values.collect::<Vec<_>>();
+    for preferred in ["agent", "autopilot", "interactive", "code"] {
+        if values.iter().any(|value| *value == preferred) {
+            return Some(preferred.to_string());
+        }
+    }
+
+    values
+        .into_iter()
+        .find(|value| !is_plan_mode(value))
+        .map(ToString::to_string)
+}
+
+fn is_plan_mode(value: &str) -> bool {
+    value.eq_ignore_ascii_case("plan") || value.eq_ignore_ascii_case("architect")
+}
+
+fn should_retry_structured_response(transcript: &str, stop_reason: &str) -> bool {
+    let trimmed = transcript.trim();
+    stop_reason == "end_turn" && !trimmed.starts_with("Error:") && !trimmed.contains('{')
 }
 
 fn external_agent_config_probe_cwd(repo_path: Option<&str>) -> Result<String, String> {
@@ -500,5 +619,78 @@ mod tests {
         assert!(message.contains("stalled"));
         assert!(message.contains("internet connection"));
         assert!(message.contains(&EXTERNAL_AGENT_IDLE_TIMEOUT.as_secs().to_string()));
+    }
+
+    #[test]
+    fn structured_response_retry_runs_for_empty_end_turn() {
+        assert!(should_retry_structured_response("", "end_turn"));
+    }
+
+    #[test]
+    fn structured_response_retry_skips_json_and_errors() {
+        assert!(!should_retry_structured_response(
+            "{\"summary\":\"ok\"}",
+            "end_turn"
+        ));
+        assert!(!should_retry_structured_response(
+            "Error: not authorized",
+            "end_turn"
+        ));
+        assert!(!should_retry_structured_response("", "max_tokens"));
+    }
+
+    #[test]
+    fn copilot_default_action_mode_prefers_agent_when_current_mode_is_plan() {
+        let session = AcpSession {
+            session_id: "session-1".to_string(),
+            mode_config_fallback: false,
+            config_options: vec![ExternalAiAgentConfigOption {
+                id: "mode".to_string(),
+                name: "Mode".to_string(),
+                description: None,
+                category: Some("mode".to_string()),
+                option_type: "select".to_string(),
+                current_value: "plan".to_string(),
+                options: vec![
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "plan".to_string(),
+                        name: "Plan".to_string(),
+                        description: None,
+                    },
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "agent".to_string(),
+                        name: "Agent".to_string(),
+                        description: None,
+                    },
+                ],
+            }],
+        };
+
+        match copilot_default_action_mode(&session) {
+            Some(DefaultActionMode::ConfigOption { config_id, value }) => {
+                assert_eq!(config_id, "mode");
+                assert_eq!(value, "agent");
+            }
+            _ => panic!("expected config mode"),
+        }
+    }
+
+    #[test]
+    fn copilot_default_action_mode_preserves_non_plan_current_mode() {
+        let session = AcpSession {
+            session_id: "session-1".to_string(),
+            mode_config_fallback: false,
+            config_options: vec![ExternalAiAgentConfigOption {
+                id: "mode".to_string(),
+                name: "Mode".to_string(),
+                description: None,
+                category: Some("mode".to_string()),
+                option_type: "select".to_string(),
+                current_value: "agent".to_string(),
+                options: Vec::new(),
+            }],
+        };
+
+        assert!(copilot_default_action_mode(&session).is_none());
     }
 }

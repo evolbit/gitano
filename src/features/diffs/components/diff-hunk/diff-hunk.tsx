@@ -80,6 +80,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             displayMode={displayMode}
             lines={extraContext?.above ?? []}
             keyPrefix="above"
+            canRenderGutters={canRenderGutters}
           />
         </>
       ) : null}
@@ -123,6 +124,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
             displayMode={displayMode}
             lines={extraContext?.below ?? []}
             keyPrefix="below"
+            canRenderGutters={canRenderGutters}
           />
           <ExpandContextButton
             onClick={() => handleExpandContext?.(hunkIdx, "Below", 10)}

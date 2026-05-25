@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { LocalAiModelEntry, LocalAiPreferences } from "@/shared/api/local-ai";
+import type {
+  ExternalAiAgentEntry,
+  ExternalAiAgentSessionConfig,
+  LocalAiModelEntry,
+  LocalAiPreferences,
+} from "@/shared/api/local-ai";
 import {
   engineFromValue,
   engineValue,
   formatGigabytes,
   formatWarmMemoryDetails,
   promptDraftsFromPreferences,
+  selectableExternalConfigOptions,
+  statusLabel,
   warmDisabledReason,
   warmModelIdsWithToggle,
 } from "./utils";
@@ -85,5 +92,83 @@ describe("settings window utilities", () => {
         modelReady: true,
       }),
     ).toBe("Warmup is unavailable while an external agent is selected.");
+  });
+
+  it("hides permission-service external agent options", () => {
+    const config: ExternalAiAgentSessionConfig = {
+      agentId: "github-copilot-cli",
+      options: [
+        {
+          id: "allow_all",
+          name: "Allow all",
+          description: null,
+          category: "permissions",
+          type: "select",
+          currentValue: "off",
+          options: [
+            { value: "off", name: "Off", description: null },
+            { value: "on", name: "On", description: null },
+          ],
+        },
+        {
+          id: "model",
+          name: "Model",
+          description: null,
+          category: "model",
+          type: "select",
+          currentValue: "copilot-sonnet",
+          options: [
+            {
+              value: "copilot-sonnet",
+              name: "Copilot Sonnet",
+              description: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(selectableExternalConfigOptions(config).map((option) => option.id)).toEqual([
+      "model",
+    ]);
+  });
+
+  it("distinguishes adapter availability from verified authentication", () => {
+    const agent: ExternalAiAgentEntry = {
+      id: "github-copilot-cli",
+      displayName: "GitHub Copilot",
+      provider: "GitHub",
+      description: "GitHub's official coding agent CLI",
+      version: "1.0.51",
+      repository: null,
+      license: "proprietary",
+      installSource: null,
+      status: {
+        agentId: "github-copilot-cli",
+        installed: true,
+        authenticated: false,
+        available: true,
+        state: "ready",
+        version: "1.0.51",
+        authMethods: [
+          {
+            id: "github_copilot_cli",
+            displayName: "GitHub Copilot account",
+          },
+        ],
+        error: null,
+      },
+    };
+
+    expect(statusLabel(agent)).toBe("Installed");
+    expect(
+      statusLabel({
+        ...agent,
+        status: {
+          ...agent.status,
+          authenticated: true,
+        },
+      }),
+    ).toBe("Ready");
   });
 });

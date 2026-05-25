@@ -227,7 +227,7 @@ describe("local AI API", () => {
     );
   });
 
-  it("installs external agents through the backend command", async () => {
+  it("sends external agent install requests through the backend command", async () => {
     invokeCommandMock.mockResolvedValueOnce({ operationId: "agent-op" });
 
     await installExternalAiAgent({ agentId: "codex-acp" });

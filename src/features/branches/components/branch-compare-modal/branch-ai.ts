@@ -16,6 +16,7 @@ import {
   listenToLocalAiRunProgress,
   runLocalAiAction,
 } from "@/shared/api/local-ai";
+import { isAiSetupRequiredMessage } from "@/shared/utils/ai-setup-errors";
 import type {
   ExternalAiRunEvent,
   LocalAiActionKind,
@@ -85,24 +86,12 @@ export function describeAiError(error: unknown) {
 }
 
 export function shouldOpenAiSetup(errorMessage: string) {
-  const normalized = errorMessage.toLowerCase();
-  return (
-    errorMessage.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
-    normalized.includes("no ai model selected") ||
-    normalized.includes("no ai models available") ||
-    normalized.includes("ollama runtime is unavailable") ||
-    normalized.includes("ollama did not respond") ||
-    normalized.includes("local ai runtime is unavailable") ||
-    normalized.includes("local ai runtime could not be started")
-  );
+  return isAiSetupRequiredMessage(errorMessage);
 }
 
-export function branchAiFailureTitle(
-  action: BranchAiAction,
-  errorMessage: string,
-) {
+export function branchAiFailureTitle(action: BranchAiAction) {
   const actionLabel = action === "review" ? "review" : "analysis";
-  return `Local AI ${actionLabel} failed: ${errorMessage}`;
+  return `AI ${actionLabel} failed`;
 }
 
 export function branchAiSetter(
@@ -275,7 +264,7 @@ export function useBranchAiRunner({
         notifyAiError(
           opensSetup
             ? "Local AI setup required"
-            : branchAiFailureTitle(action, errorMessage),
+            : branchAiFailureTitle(action),
           analysisError,
           true,
         );
@@ -291,7 +280,7 @@ export function useBranchAiRunner({
                 ...current,
                 result: null,
                 loading: false,
-                error: null,
+                error: opensSetup ? null : errorMessage,
                 progressRunId: runId,
               }
             : current,

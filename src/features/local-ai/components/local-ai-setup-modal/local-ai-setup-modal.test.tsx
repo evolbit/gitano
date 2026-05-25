@@ -57,7 +57,7 @@ const codexAgent = {
     available: true,
     state: "ready",
     version: "0.14.0",
-    authMethods: [],
+    authMethods: [{ id: "chatgpt", displayName: "ChatGPT account" }],
     error: null,
   },
 };
@@ -258,6 +258,7 @@ describe("LocalAiSetupModal", () => {
       );
     });
     expect(screen.getByText("Codex CLI")).toBeInTheDocument();
+    expect(screen.getByText("Installed")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ready" }));
 

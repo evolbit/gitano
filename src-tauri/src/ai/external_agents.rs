@@ -7,12 +7,16 @@ use super::types::{
     ExternalAiAgentProgressState, ExternalAiAgentStatus, ExternalAiAgentStatusState,
     EXTERNAL_AI_AGENT_PROGRESS_EVENT,
 };
+#[cfg(test)]
+use catalog::npm_exec_args;
 use catalog::{
     auth_methods_for, curated_agents, find_curated_agent, install_source_for,
-    install_source_to_api, ArchiveKind, CuratedAgent, CuratedInstall,
+    install_source_to_api, ArchiveKind, CuratedAgent, CuratedBinarySource, CuratedInstallSource,
+    CuratedNpxSource,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,7 +26,14 @@ use tauri::{AppHandle, Emitter};
 
 mod catalog;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalAgentCommand {
+    pub program: String,
+    pub args: Vec<String>,
+    pub path_env: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct NpxAgentManifest {
     package: String,
@@ -32,74 +43,33 @@ struct NpxAgentManifest {
 pub fn external_agent_catalog() -> Vec<ExternalAiAgentEntry> {
     curated_agents()
         .iter()
-        .map(|agent| {
-            let install_source = install_source_for(agent).map(install_source_to_api);
-            ExternalAiAgentEntry {
-                id: agent.id.to_string(),
-                display_name: agent.display_name.to_string(),
-                provider: agent.provider.to_string(),
-                description: agent.description.to_string(),
-                version: agent.version.to_string(),
-                repository: Some(agent.repository.to_string()),
-                license: Some(agent.license.to_string()),
-                install_source,
-                status: external_agent_status(agent.id)
-                    .unwrap_or_else(|error| failed_status(agent.id, error)),
-            }
+        .map(|agent| ExternalAiAgentEntry {
+            id: agent.id.to_string(),
+            display_name: agent.display_name.to_string(),
+            provider: agent.provider.to_string(),
+            description: agent.description.to_string(),
+            version: agent.version.to_string(),
+            repository: Some(agent.repository.to_string()),
+            license: Some(agent.license.to_string()),
+            install_source: install_source_for(agent).map(install_source_to_api),
+            status: external_agent_status(agent.id)
+                .unwrap_or_else(|error| failed_status(agent.id, error)),
         })
         .collect()
 }
 
 pub fn external_agent_status(agent_id: &str) -> Result<ExternalAiAgentStatus, String> {
     let agent = find_curated_agent(agent_id)?;
-    let Some(source) = install_source_for(agent) else {
-        return Ok(ExternalAiAgentStatus {
-            agent_id: agent.id.to_string(),
-            installed: false,
-            authenticated: false,
-            available: false,
-            state: ExternalAiAgentStatusState::UnsupportedPlatform,
-            version: None,
-            auth_methods: auth_methods_for(agent.id),
-            error: Some("This external agent is not supported on this platform.".to_string()),
-        });
-    };
-
-    match source {
-        CuratedInstall::Binary { .. } => binary_status(agent),
-        CuratedInstall::Npx { .. } => npx_status(agent),
-    }
+    external_install_status(agent)
 }
 
-pub fn external_agent_command(agent_id: &str) -> Result<(String, Vec<String>), String> {
+pub fn external_agent_command(agent_id: &str) -> Result<ExternalAgentCommand, String> {
     let agent = find_curated_agent(agent_id)?;
-    let source = install_source_for(agent).ok_or_else(|| {
-        format!(
-            "External agent {} is unsupported on this platform.",
-            agent_id
-        )
-    })?;
+    let source = install_source_for(agent).ok_or_else(|| unsupported_platform_error(agent))?;
 
     match source {
-        CuratedInstall::Binary { cmd, .. } => {
-            let path = agent_dir(agent.id).join(command_relative_path(cmd));
-            if !path.exists() {
-                return Err(format!(
-                    "External agent {} is not installed.",
-                    agent.display_name
-                ));
-            }
-            Ok((path.to_string_lossy().to_string(), Vec::new()))
-        }
-        CuratedInstall::Npx { package, args } => {
-            let manifest = read_npx_manifest(agent.id).unwrap_or_else(|| NpxAgentManifest {
-                package: package.to_string(),
-                args: args.iter().map(|arg| arg.to_string()).collect(),
-            });
-            let mut command_args = vec!["-y".to_string(), manifest.package];
-            command_args.extend(manifest.args);
-            Ok(("npx".to_string(), command_args))
-        }
+        CuratedInstallSource::Binary(source) => binary_external_agent_command(agent, source),
+        CuratedInstallSource::Npx(source) => npx_external_agent_command(agent, source),
     }
 }
 
@@ -107,26 +77,22 @@ pub fn install_external_agent(
     app: AppHandle,
     request: ExternalAiAgentInstallRequest,
 ) -> Result<ExternalAiAgentInstallResponse, String> {
-    let agent = *find_curated_agent(&request.agent_id)?;
-    let source = install_source_for(&agent).ok_or_else(|| {
-        format!(
-            "External agent {} is unsupported on this platform.",
-            agent.id
-        )
-    })?;
+    let agent = find_curated_agent(&request.agent_id)?;
+    let source = install_source_for(agent).ok_or_else(|| unsupported_platform_error(agent))?;
     let operation_id = external_agent_operation_id(agent.id);
-    let task_operation_id = operation_id.clone();
+    let install_app = app.clone();
+    let install_operation_id = operation_id.clone();
 
     tauri::async_runtime::spawn(async move {
-        if let Err(error) =
-            install_external_agent_inner(&app, &task_operation_id, agent, source).await
-        {
+        let result =
+            install_external_agent_inner(&install_app, &install_operation_id, agent, source).await;
+        if let Err(error) = result {
             emit_agent_progress(
-                &app,
-                &task_operation_id,
+                &install_app,
+                &install_operation_id,
                 agent.id,
                 ExternalAiAgentProgressState::Failed,
-                "External agent install failed",
+                "External agent setup failed.",
                 None,
                 None,
                 None,
@@ -152,37 +118,96 @@ pub fn remove_external_agent(request: ExternalAiAgentCommandRequest) -> Result<(
 pub fn set_external_agent_as_default(
     request: ExternalAiAgentCommandRequest,
 ) -> Result<super::types::LocalAiPreferences, String> {
-    find_curated_agent(&request.agent_id)?;
-    set_analysis_engine_preference(AnalysisEngine::external_agent(request.agent_id), None)
+    let agent = find_curated_agent(&request.agent_id)?;
+    set_analysis_engine_preference(AnalysisEngine::external_agent(agent.id.to_string()), None)
 }
 
 pub fn authenticate_external_agent(
     request: ExternalAiAgentCommandRequest,
 ) -> Result<ExternalAiAgentStatus, String> {
-    find_curated_agent(&request.agent_id)?;
-    external_agent_status(&request.agent_id)
+    let agent = find_curated_agent(&request.agent_id)?;
+    external_agent_status(agent.id)
 }
 
 pub fn logout_external_agent(
     request: ExternalAiAgentCommandRequest,
 ) -> Result<ExternalAiAgentStatus, String> {
-    find_curated_agent(&request.agent_id)?;
-    external_agent_status(&request.agent_id)
+    let agent = find_curated_agent(&request.agent_id)?;
+    external_agent_status(agent.id)
 }
 
-fn binary_status(agent: &CuratedAgent) -> Result<ExternalAiAgentStatus, String> {
-    let Some(CuratedInstall::Binary { cmd, .. }) = install_source_for(agent) else {
-        return Ok(failed_status(
-            agent.id,
-            "Binary install metadata is unavailable.".to_string(),
-        ));
+fn external_install_status(agent: &CuratedAgent) -> Result<ExternalAiAgentStatus, String> {
+    let Some(source) = install_source_for(agent) else {
+        return Ok(ExternalAiAgentStatus {
+            agent_id: agent.id.to_string(),
+            installed: false,
+            authenticated: false,
+            available: false,
+            state: ExternalAiAgentStatusState::UnsupportedPlatform,
+            version: None,
+            auth_methods: auth_methods_for(agent.id),
+            error: Some(unsupported_platform_error(agent)),
+        });
     };
-    let binary_path = agent_dir(agent.id).join(command_relative_path(cmd));
-    if !binary_path.exists() {
-        return Ok(not_installed_status(agent.id));
+
+    match source {
+        CuratedInstallSource::Binary(source) => binary_status(agent, source),
+        CuratedInstallSource::Npx(source) => npx_status(agent, source),
+    }
+}
+
+fn binary_status(
+    agent: &CuratedAgent,
+    source: CuratedBinarySource,
+) -> Result<ExternalAiAgentStatus, String> {
+    let Some(command_path) = binary_command_path(agent, source)? else {
+        return Ok(not_installed_status(agent, None));
+    };
+
+    if !command_path.is_file() {
+        return Ok(not_installed_status(agent, None));
     }
 
-    Ok(ExternalAiAgentStatus {
+    Ok(ready_status(agent))
+}
+
+fn npx_status(
+    agent: &CuratedAgent,
+    source: CuratedNpxSource,
+) -> Result<ExternalAiAgentStatus, String> {
+    npx_status_from_dirs(agent, source, &command_search_dirs())
+}
+
+fn npx_status_from_dirs(
+    agent: &CuratedAgent,
+    source: CuratedNpxSource,
+    dirs: &[PathBuf],
+) -> Result<ExternalAiAgentStatus, String> {
+    if !npx_manifest_path(agent.id).is_file() {
+        return Ok(not_installed_status(
+            agent,
+            npm_missing_error_if_unresolved(agent, source, dirs),
+        ));
+    }
+
+    if resolve_external_program_from_dirs("npm", dirs).is_none() {
+        return Ok(ExternalAiAgentStatus {
+            agent_id: agent.id.to_string(),
+            installed: true,
+            authenticated: false,
+            available: false,
+            state: ExternalAiAgentStatusState::Unavailable,
+            version: Some(agent.version.to_string()),
+            auth_methods: auth_methods_for(agent.id),
+            error: Some(missing_npm_error(agent, source.package)),
+        });
+    }
+
+    Ok(ready_status(agent))
+}
+
+fn ready_status(agent: &CuratedAgent) -> ExternalAiAgentStatus {
+    ExternalAiAgentStatus {
         agent_id: agent.id.to_string(),
         installed: true,
         authenticated: false,
@@ -191,79 +216,122 @@ fn binary_status(agent: &CuratedAgent) -> Result<ExternalAiAgentStatus, String> 
         version: Some(agent.version.to_string()),
         auth_methods: auth_methods_for(agent.id),
         error: None,
+    }
+}
+
+fn not_installed_status(agent: &CuratedAgent, error: Option<String>) -> ExternalAiAgentStatus {
+    ExternalAiAgentStatus {
+        agent_id: agent.id.to_string(),
+        installed: false,
+        authenticated: false,
+        available: false,
+        state: ExternalAiAgentStatusState::NotInstalled,
+        version: None,
+        auth_methods: auth_methods_for(agent.id),
+        error,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedExternalProgram {
+    program: PathBuf,
+    path_env: Option<String>,
+}
+
+fn binary_external_agent_command(
+    agent: &CuratedAgent,
+    source: CuratedBinarySource,
+) -> Result<ExternalAgentCommand, String> {
+    let command_path = binary_command_path(agent, source)?
+        .filter(|path| path.is_file())
+        .ok_or_else(|| {
+            format!(
+                "Install {} from Gitano before running it.",
+                agent.display_name
+            )
+        })?;
+
+    Ok(ExternalAgentCommand {
+        program: command_path.to_string_lossy().to_string(),
+        args: source.args.iter().map(|arg| arg.to_string()).collect(),
+        path_env: None,
     })
 }
 
-fn npx_status(agent: &CuratedAgent) -> Result<ExternalAiAgentStatus, String> {
-    if read_npx_manifest(agent.id).is_none() {
-        return Ok(not_installed_status(agent.id));
-    }
+fn npx_external_agent_command(
+    agent: &CuratedAgent,
+    source: CuratedNpxSource,
+) -> Result<ExternalAgentCommand, String> {
+    let manifest = read_npx_manifest(agent.id)?.ok_or_else(|| {
+        format!(
+            "Install {} from Gitano before running it.",
+            agent.display_name
+        )
+    })?;
+    let resolved =
+        resolve_external_program("npm").ok_or_else(|| missing_npm_error(agent, source.package))?;
 
-    match Command::new("npx").arg("--version").output() {
-        Ok(output) if output.status.success() => Ok(ExternalAiAgentStatus {
-            agent_id: agent.id.to_string(),
-            installed: true,
-            authenticated: false,
-            available: true,
-            state: ExternalAiAgentStatusState::Ready,
-            version: Some(agent.version.to_string()),
-            auth_methods: auth_methods_for(agent.id),
-            error: None,
-        }),
-        Ok(output) => Ok(ExternalAiAgentStatus {
-            agent_id: agent.id.to_string(),
-            installed: true,
-            authenticated: false,
-            available: false,
-            state: ExternalAiAgentStatusState::Unavailable,
-            version: Some(agent.version.to_string()),
-            auth_methods: auth_methods_for(agent.id),
-            error: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
-        }),
-        Err(error) => Ok(ExternalAiAgentStatus {
-            agent_id: agent.id.to_string(),
-            installed: true,
-            authenticated: false,
-            available: false,
-            state: ExternalAiAgentStatusState::Unavailable,
-            version: Some(agent.version.to_string()),
-            auth_methods: auth_methods_for(agent.id),
-            error: Some(format!("npx is required to run this agent: {}", error)),
-        }),
+    Ok(npx_external_agent_command_from_manifest(
+        &manifest,
+        resolved,
+        npx_prefix_dir(agent.id),
+    ))
+}
+
+fn npx_external_agent_command_from_manifest(
+    manifest: &NpxAgentManifest,
+    resolved: ResolvedExternalProgram,
+    prefix_dir: PathBuf,
+) -> ExternalAgentCommand {
+    let mut args = vec![
+        "--prefix".to_string(),
+        prefix_dir.to_string_lossy().to_string(),
+        "exec".to_string(),
+        "--yes".to_string(),
+        "--".to_string(),
+        catalog::bounded_npm_package_spec(&manifest.package),
+    ];
+    args.extend(manifest.args.iter().cloned());
+
+    ExternalAgentCommand {
+        program: resolved.program.to_string_lossy().to_string(),
+        args,
+        path_env: resolved.path_env,
     }
+}
+
+#[cfg(test)]
+fn npx_external_agent_command_from_source(
+    source: CuratedNpxSource,
+    resolved: ResolvedExternalProgram,
+    prefix_dir: PathBuf,
+) -> ExternalAgentCommand {
+    ExternalAgentCommand {
+        program: resolved.program.to_string_lossy().to_string(),
+        args: npm_exec_args(source, &prefix_dir.to_string_lossy()),
+        path_env: resolved.path_env,
+    }
+}
+
+fn binary_command_path(
+    agent: &CuratedAgent,
+    source: CuratedBinarySource,
+) -> Result<Option<PathBuf>, String> {
+    let relative_path = command_relative_path(source.command)?;
+    Ok(Some(agent_dir(agent.id).join(relative_path)))
 }
 
 async fn install_external_agent_inner(
     app: &AppHandle,
     operation_id: &str,
-    agent: CuratedAgent,
-    source: CuratedInstall,
+    agent: &CuratedAgent,
+    source: CuratedInstallSource,
 ) -> Result<(), String> {
-    emit_agent_progress(
-        app,
-        operation_id,
-        agent.id,
-        ExternalAiAgentProgressState::Queued,
-        "Preparing external agent install",
-        None,
-        None,
-        None,
-        None,
-    );
-
-    fs::create_dir_all(agent_dir(agent.id)).map_err(|e| e.to_string())?;
-
     match source {
-        CuratedInstall::Binary {
-            archive,
-            cmd,
-            archive_kind,
-        } => {
-            install_binary_agent(app, operation_id, agent.id, archive, cmd, archive_kind).await?;
+        CuratedInstallSource::Binary(source) => {
+            install_binary_agent(app, operation_id, agent, source).await?
         }
-        CuratedInstall::Npx { package, args } => {
-            install_npx_agent(agent.id, package, args)?;
-        }
+        CuratedInstallSource::Npx(source) => install_npx_agent(app, operation_id, agent, source)?,
     }
 
     emit_agent_progress(
@@ -271,70 +339,103 @@ async fn install_external_agent_inner(
         operation_id,
         agent.id,
         ExternalAiAgentProgressState::Completed,
-        "External agent ready",
+        "External agent setup complete.",
         None,
         None,
         Some(100.0),
         None,
     );
-
     Ok(())
 }
 
 async fn install_binary_agent(
     app: &AppHandle,
     operation_id: &str,
-    agent_id: &str,
-    archive: &str,
-    cmd: &str,
-    archive_kind: ArchiveKind,
+    agent: &CuratedAgent,
+    source: CuratedBinarySource,
 ) -> Result<(), String> {
-    let dir = agent_dir(agent_id);
-    let archive_path = dir.join(archive.rsplit('/').next().unwrap_or("agent-archive"));
-    download_agent_archive(app, operation_id, agent_id, archive, &archive_path).await?;
+    let dir = agent_dir(agent.id);
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let archive_path = dir.join(archive_file_name(source.archive)?);
+    download_agent_archive(app, operation_id, agent, source.archive, &archive_path).await?;
+
     emit_agent_progress(
         app,
         operation_id,
-        agent_id,
+        agent.id,
         ExternalAiAgentProgressState::Installing,
-        "Installing external agent",
+        "Installing external agent...",
         None,
         None,
         None,
         None,
     );
-    extract_archive(&archive_path, &dir, archive_kind)?;
+    extract_archive(&archive_path, &dir, source.archive_kind)?;
     let _ = fs::remove_file(&archive_path);
-    make_executable(&dir.join(command_relative_path(cmd)))?;
+
+    let command_path = binary_command_path(agent, source)?
+        .ok_or_else(|| "External agent archive did not define a command path.".to_string())?;
+    if !command_path.is_file() {
+        return Err(format!(
+            "External agent archive did not contain {}.",
+            source.command
+        ));
+    }
+    make_executable(&command_path)?;
+
     Ok(())
 }
 
-fn install_npx_agent(agent_id: &str, package: &str, args: &[&str]) -> Result<(), String> {
-    let manifest = NpxAgentManifest {
-        package: package.to_string(),
-        args: args.iter().map(|arg| arg.to_string()).collect(),
-    };
-    let path = npx_manifest_path(agent_id);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+fn install_npx_agent(
+    app: &AppHandle,
+    operation_id: &str,
+    agent: &CuratedAgent,
+    source: CuratedNpxSource,
+) -> Result<(), String> {
+    if resolve_external_program("npm").is_none() {
+        return Err(missing_npm_error(agent, source.package));
     }
-    let contents = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
-    fs::write(path, contents).map_err(|e| e.to_string())
+
+    emit_agent_progress(
+        app,
+        operation_id,
+        agent.id,
+        ExternalAiAgentProgressState::Installing,
+        "Installing external agent adapter metadata...",
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let dir = agent_dir(agent.id);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(npx_prefix_dir(agent.id)).map_err(|e| e.to_string())?;
+    let manifest = NpxAgentManifest {
+        package: source.package.to_string(),
+        args: source.args.iter().map(|arg| arg.to_string()).collect(),
+    };
+    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(npx_manifest_path(agent.id), manifest_json).map_err(|e| e.to_string())
 }
 
 async fn download_agent_archive(
     app: &AppHandle,
     operation_id: &str,
-    agent_id: &str,
-    archive: &str,
+    agent: &CuratedAgent,
+    url: &str,
     archive_path: &Path,
 ) -> Result<(), String> {
     emit_agent_progress(
         app,
         operation_id,
-        agent_id,
+        agent.id,
         ExternalAiAgentProgressState::Downloading,
-        "Downloading external agent",
+        "Downloading external agent...",
         None,
         None,
         None,
@@ -342,7 +443,7 @@ async fn download_agent_archive(
     );
 
     let response = reqwest::Client::new()
-        .get(archive)
+        .get(url)
         .send()
         .await
         .map_err(|e| format!("External agent download failed: {}", e))?
@@ -364,9 +465,9 @@ async fn download_agent_archive(
         emit_agent_progress(
             app,
             operation_id,
-            agent_id,
+            agent.id,
             ExternalAiAgentProgressState::Downloading,
-            "Downloading external agent",
+            "Downloading external agent...",
             Some(completed_bytes),
             total_bytes,
             percentage,
@@ -379,7 +480,7 @@ async fn download_agent_archive(
 
 fn extract_archive(
     archive_path: &Path,
-    destination_dir: &Path,
+    target_dir: &Path,
     archive_kind: ArchiveKind,
 ) -> Result<(), String> {
     let output = match archive_kind {
@@ -387,13 +488,13 @@ fn extract_archive(
             .arg("-xzf")
             .arg(archive_path)
             .arg("-C")
-            .arg(destination_dir)
+            .arg(target_dir)
             .output(),
         ArchiveKind::Zip => Command::new("unzip")
             .arg("-q")
             .arg(archive_path)
             .arg("-d")
-            .arg(destination_dir)
+            .arg(target_dir)
             .output(),
     }
     .map_err(|e| format!("External agent extraction failed: {}", e))?;
@@ -401,11 +502,256 @@ fn extract_archive(
     if output.status.success() {
         Ok(())
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!(
             "External agent extraction failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr.trim()
         ))
     }
+}
+
+fn resolve_external_program(program: &str) -> Option<ResolvedExternalProgram> {
+    let dirs = command_search_dirs();
+    let path = resolve_external_program_from_dirs(program, &dirs)?;
+    Some(ResolvedExternalProgram {
+        program: path,
+        path_env: join_path_env(&dirs),
+    })
+}
+
+fn command_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Some(path) = env::var_os("PATH") {
+        for dir in env::split_paths(&path) {
+            push_unique_dir(&mut dirs, dir);
+        }
+    }
+
+    push_platform_command_dirs(&mut dirs);
+    push_user_command_dirs(&mut dirs);
+
+    dirs
+}
+
+#[cfg(target_os = "macos")]
+fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
+    for dir in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/opt/local/bin",
+    ] {
+        push_unique_dir(dirs, PathBuf::from(dir));
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
+    for dir in [
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/opt/local/bin",
+        "/snap/bin",
+    ] {
+        push_unique_dir(dirs, PathBuf::from(dir));
+    }
+}
+
+#[cfg(windows)]
+fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
+    for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(base) = env::var_os(key) {
+            push_unique_dir(dirs, PathBuf::from(base).join("nodejs"));
+        }
+    }
+
+    if let Some(appdata) = env::var_os("APPDATA") {
+        push_unique_dir(dirs, PathBuf::from(appdata).join("npm"));
+    }
+
+    if let Some(local_appdata) = env::var_os("LOCALAPPDATA") {
+        let local_appdata = PathBuf::from(local_appdata);
+        push_unique_dir(dirs, local_appdata.join("Microsoft").join("WindowsApps"));
+        push_unique_dir(dirs, local_appdata.join("Programs"));
+        push_unique_dir(dirs, local_appdata.join("Programs").join("nodejs"));
+        push_unique_dir(dirs, local_appdata.join("Volta").join("bin"));
+    }
+
+    if let Some(nvm_symlink) = env::var_os("NVM_SYMLINK") {
+        push_unique_dir(dirs, PathBuf::from(nvm_symlink));
+    }
+}
+
+fn push_user_command_dirs(dirs: &mut Vec<PathBuf>) {
+    if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
+        push_user_home_command_dirs(dirs, &PathBuf::from(home));
+    }
+}
+
+#[cfg(not(windows))]
+fn push_user_home_command_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
+    push_unique_dir(dirs, home.join(".local/bin"));
+    push_unique_dir(dirs, home.join(".volta/bin"));
+    push_unique_dir(dirs, home.join(".asdf/shims"));
+    push_unique_dir(dirs, home.join(".nvm/current/bin"));
+    push_nvm_version_dirs(dirs, home);
+}
+
+#[cfg(windows)]
+fn push_user_home_command_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
+    push_unique_dir(dirs, home.join(".local").join("bin"));
+    push_unique_dir(dirs, home.join("AppData").join("Roaming").join("npm"));
+    push_unique_dir(
+        dirs,
+        home.join("AppData")
+            .join("Local")
+            .join("Microsoft")
+            .join("WindowsApps"),
+    );
+    push_unique_dir(
+        dirs,
+        home.join("AppData").join("Local").join("Volta").join("bin"),
+    );
+}
+
+fn push_unique_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+    if !dirs.iter().any(|existing| existing == &dir) {
+        dirs.push(dir);
+    }
+}
+
+fn push_nvm_version_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
+    let base = home.join(".nvm/versions/node");
+    let Ok(entries) = fs::read_dir(base) else {
+        return;
+    };
+
+    let mut version_dirs = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("bin"))
+        .collect::<Vec<_>>();
+    version_dirs.sort();
+
+    for dir in version_dirs {
+        push_unique_dir(dirs, dir);
+    }
+}
+
+fn resolve_external_program_from_dirs(program: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let program_path = Path::new(program);
+    if program_path.components().count() > 1 && program_path.is_file() {
+        return Some(program_path.to_path_buf());
+    }
+
+    for dir in dirs {
+        for name in external_program_names(program) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn external_program_names(program: &str) -> Vec<String> {
+    let path = Path::new(program);
+    if path.extension().is_some() {
+        return vec![program.to_string()];
+    }
+
+    vec![
+        format!("{program}.cmd"),
+        format!("{program}.exe"),
+        program.to_string(),
+    ]
+}
+
+#[cfg(not(windows))]
+fn external_program_names(program: &str) -> Vec<String> {
+    vec![program.to_string()]
+}
+
+fn join_path_env(dirs: &[PathBuf]) -> Option<String> {
+    env::join_paths(dirs)
+        .ok()
+        .map(|paths| paths.to_string_lossy().to_string())
+}
+
+fn archive_file_name(url: &str) -> Result<&str, String> {
+    url.rsplit('/')
+        .next()
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| format!("External agent archive URL is invalid: {url}"))
+}
+
+fn command_relative_path(command: &str) -> Result<PathBuf, String> {
+    let trimmed = command.trim();
+    let relative = trimmed
+        .strip_prefix("./")
+        .or_else(|| trimmed.strip_prefix(".\\"))
+        .unwrap_or(trimmed);
+    let path = Path::new(relative);
+    if path.is_absolute() || relative.contains("..") || relative.is_empty() {
+        return Err(format!("External agent command path is invalid: {command}"));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn read_npx_manifest(agent_id: &str) -> Result<Option<NpxAgentManifest>, String> {
+    let path = npx_manifest_path(agent_id);
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let contents = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&contents)
+        .map(Some)
+        .map_err(|e| format!("External agent manifest is invalid: {e}"))
+}
+
+fn npx_manifest_path(agent_id: &str) -> PathBuf {
+    agent_dir(agent_id).join("agent.json")
+}
+
+fn npx_prefix_dir(agent_id: &str) -> PathBuf {
+    external_agent_data_dir()
+        .join("registry")
+        .join("npx")
+        .join(agent_id)
+}
+
+fn missing_npm_error(agent: &CuratedAgent, package: &str) -> String {
+    format!(
+        "npm is required to run the {} ACP adapter package `{}`. Install Node.js/npm or make `npm` available in Gitano's PATH.",
+        agent.display_name, package
+    )
+}
+
+fn npm_missing_error_if_unresolved(
+    agent: &CuratedAgent,
+    source: CuratedNpxSource,
+    dirs: &[PathBuf],
+) -> Option<String> {
+    if resolve_external_program_from_dirs("npm", dirs).is_some() {
+        None
+    } else {
+        Some(missing_npm_error(agent, source.package))
+    }
+}
+
+fn unsupported_platform_error(agent: &CuratedAgent) -> String {
+    format!(
+        "{} is not available for {}-{} through the curated ACP registry.",
+        agent.display_name,
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
 }
 
 fn remove_agent_from_preferences(agent_id: &str) -> Result<(), String> {
@@ -423,19 +769,6 @@ fn remove_agent_from_preferences(agent_id: &str) -> Result<(), String> {
     save_preferences(&preferences)
 }
 
-fn not_installed_status(agent_id: &str) -> ExternalAiAgentStatus {
-    ExternalAiAgentStatus {
-        agent_id: agent_id.to_string(),
-        installed: false,
-        authenticated: false,
-        available: false,
-        state: ExternalAiAgentStatusState::NotInstalled,
-        version: None,
-        auth_methods: auth_methods_for(agent_id),
-        error: None,
-    }
-}
-
 fn failed_status(agent_id: &str, error: String) -> ExternalAiAgentStatus {
     ExternalAiAgentStatus {
         agent_id: agent_id.to_string(),
@@ -449,33 +782,12 @@ fn failed_status(agent_id: &str, error: String) -> ExternalAiAgentStatus {
     }
 }
 
-fn read_npx_manifest(agent_id: &str) -> Option<NpxAgentManifest> {
-    let contents = fs::read_to_string(npx_manifest_path(agent_id)).ok()?;
-    serde_json::from_str(&contents).ok()
-}
-
-fn agent_dir(agent_id: &str) -> PathBuf {
-    external_agent_data_dir().join(agent_id)
-}
-
-fn external_agent_data_dir() -> PathBuf {
-    local_ai_data_dir().join("external-agents")
-}
-
-fn npx_manifest_path(agent_id: &str) -> PathBuf {
-    agent_dir(agent_id).join("agent.json")
-}
-
-fn command_relative_path(cmd: &str) -> &str {
-    cmd.strip_prefix("./").unwrap_or(cmd)
-}
-
 fn external_agent_operation_id(agent_id: &str) -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0);
-    format!("external-agent-{}-{}", agent_id, now)
+    format!("external-ai-{}-{}", agent_id.replace([':', '/'], "-"), now)
 }
 
 fn emit_agent_progress(
@@ -509,7 +821,7 @@ fn make_executable(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
 
     let mut permissions = fs::metadata(path).map_err(|e| e.to_string())?.permissions();
-    permissions.set_mode(0o755);
+    permissions.set_mode(permissions.mode() | 0o755);
     fs::set_permissions(path, permissions).map_err(|e| e.to_string())
 }
 
@@ -518,63 +830,248 @@ fn make_executable(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn agent_dir(agent_id: &str) -> PathBuf {
+    external_agent_data_dir().join(agent_id)
+}
+
+fn external_agent_data_dir() -> PathBuf {
+    local_ai_data_dir().join("external-agents")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::catalog::{CODEX_AGENT_ID, GEMINI_AGENT_ID};
+    use super::catalog::{CODEX_AGENT_ID, COPILOT_AGENT_ID};
     use super::*;
 
-    #[test]
-    fn npx_manifest_marks_agent_installed() {
-        let _guard = crate::ai::local_ai_env_lock()
-            .lock()
-            .expect("lock local AI env");
-        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
-        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
-        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+    fn write_fake_command(dir: &Path, name: &str) -> PathBuf {
+        write_fake_command_with_body(dir, name, "#!/bin/sh\n")
+    }
 
-        install_npx_agent(GEMINI_AGENT_ID, "@google/gemini-cli@0.42.0", &["--acp"])
-            .expect("write manifest");
+    fn write_fake_command_with_body(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(external_program_names(name)[0].as_str());
+        fs::write(&path, body).expect("write fake command");
 
-        let status = external_agent_status(GEMINI_AGENT_ID).expect("agent status");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
 
-        assert!(status.installed);
-        assert_ne!(status.state, ExternalAiAgentStatusState::NotInstalled);
+            let mut permissions = fs::metadata(&path)
+                .expect("fake command metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).expect("fake command permissions");
+        }
 
-        match previous_home {
-            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
-            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+        path
+    }
+
+    struct LocalAiHomeGuard {
+        previous_home: Option<std::ffi::OsString>,
+    }
+
+    impl LocalAiHomeGuard {
+        fn new(path: &Path) -> Self {
+            let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
+            std::env::set_var("GITANO_LOCAL_AI_HOME", path);
+            Self { previous_home }
         }
     }
 
+    impl Drop for LocalAiHomeGuard {
+        fn drop(&mut self) {
+            match &self.previous_home {
+                Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
+                None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
     #[test]
-    fn binary_status_does_not_require_version_flag_support() {
+    fn non_windows_search_dirs_include_platform_fallbacks() {
+        let mut dirs = Vec::new();
+
+        push_platform_command_dirs(&mut dirs);
+
+        assert!(dirs.contains(&PathBuf::from("/usr/local/bin")));
+        assert!(dirs.contains(&PathBuf::from("/usr/bin")));
+        assert!(dirs.contains(&PathBuf::from("/bin")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_user_dirs_include_shell_manager_locations() {
+        let mut dirs = Vec::new();
+        let temp_dir = tempfile::tempdir().expect("temp home dir");
+
+        push_user_home_command_dirs(&mut dirs, temp_dir.path());
+
+        assert!(dirs.contains(&temp_dir.path().join(".local/bin")));
+        assert!(dirs.contains(&temp_dir.path().join(".volta/bin")));
+        assert!(dirs.contains(&temp_dir.path().join(".asdf/shims")));
+        assert!(dirs.contains(&temp_dir.path().join(".nvm/current/bin")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_user_dirs_include_common_cli_locations() {
+        let mut dirs = Vec::new();
+        let home = PathBuf::from(r"C:\Users\gitano");
+
+        push_user_home_command_dirs(&mut dirs, &home);
+
+        assert!(dirs.contains(&home.join(".local").join("bin")));
+        assert!(dirs.contains(&home.join("AppData").join("Roaming").join("npm")));
+        assert!(dirs.contains(
+            &home
+                .join("AppData")
+                .join("Local")
+                .join("Microsoft")
+                .join("WindowsApps")
+        ));
+        assert!(dirs.contains(&home.join("AppData").join("Local").join("Volta").join("bin")));
+    }
+
+    #[test]
+    fn resolves_npm_from_explicit_search_dirs() {
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let fake_npm = write_fake_command(temp_dir.path(), "npm");
+
+        let resolved = resolve_external_program_from_dirs("npm", &[temp_dir.path().to_path_buf()]);
+
+        assert_eq!(resolved.as_deref(), Some(fake_npm.as_path()));
+    }
+
+    #[test]
+    fn npx_manifest_marks_agent_installed_when_npm_is_available() {
         let _guard = crate::ai::local_ai_env_lock()
             .lock()
             .expect("lock local AI env");
-        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
-        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
-        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
-
-        let agent = find_curated_agent(CODEX_AGENT_ID).expect("codex agent exists");
-        let source = install_source_for(agent).expect("codex install source exists");
-        let CuratedInstall::Binary { cmd, .. } = source else {
-            panic!("codex should use a binary install source on supported test platforms");
+        let temp_home = tempfile::tempdir().expect("temp local AI dir");
+        let _home_guard = LocalAiHomeGuard::new(temp_home.path());
+        let npm_dir = tempfile::tempdir().expect("temp npm dir");
+        write_fake_command(npm_dir.path(), "npm");
+        let agent = find_curated_agent(COPILOT_AGENT_ID).expect("copilot agent");
+        let CuratedInstallSource::Npx(source) =
+            install_source_for(agent).expect("copilot npx source")
+        else {
+            panic!("copilot should be npx distributed");
         };
-        let binary_path = agent_dir(agent.id).join(command_relative_path(cmd));
-        fs::create_dir_all(binary_path.parent().expect("binary parent")).expect("create agent dir");
-        fs::write(&binary_path, "not an executable with --version support").expect("write binary");
+        fs::create_dir_all(agent_dir(agent.id)).expect("agent dir");
+        fs::write(
+            npx_manifest_path(agent.id),
+            serde_json::to_string(&NpxAgentManifest {
+                package: source.package.to_string(),
+                args: source.args.iter().map(|arg| arg.to_string()).collect(),
+            })
+            .expect("manifest json"),
+        )
+        .expect("write manifest");
 
-        let status = external_agent_status(agent.id).expect("agent status");
+        let status =
+            npx_status_from_dirs(agent, source, &[npm_dir.path().to_path_buf()]).expect("status");
 
-        assert_eq!(status.state, ExternalAiAgentStatusState::Ready);
+        assert!(status.installed);
         assert!(status.available);
         assert_eq!(status.version.as_deref(), Some(agent.version));
-        assert!(status.error.is_none());
+    }
 
-        match previous_home {
-            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
-            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
-        }
+    #[test]
+    fn missing_npm_marks_npx_agent_unavailable_with_adapter_error() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_home = tempfile::tempdir().expect("temp local AI dir");
+        let _home_guard = LocalAiHomeGuard::new(temp_home.path());
+        let agent = find_curated_agent(COPILOT_AGENT_ID).expect("copilot agent");
+        let CuratedInstallSource::Npx(source) =
+            install_source_for(agent).expect("copilot npx source")
+        else {
+            panic!("copilot should be npx distributed");
+        };
+        fs::create_dir_all(agent_dir(agent.id)).expect("agent dir");
+        fs::write(
+            npx_manifest_path(agent.id),
+            serde_json::to_string(&NpxAgentManifest {
+                package: source.package.to_string(),
+                args: vec!["--acp".to_string()],
+            })
+            .expect("manifest json"),
+        )
+        .expect("write manifest");
+
+        let status = npx_status_from_dirs(agent, source, &[]).expect("status");
+
+        assert!(status.installed);
+        assert!(!status.available);
+        assert!(status.error.unwrap().contains("ACP adapter package"));
+    }
+
+    #[test]
+    fn copilot_command_uses_registry_npm_exec_args() {
+        let temp_dir = tempfile::tempdir().expect("temp local AI dir");
+        let fake_npm = write_fake_command(temp_dir.path(), "npm");
+        let agent = find_curated_agent(COPILOT_AGENT_ID).expect("copilot agent");
+        let CuratedInstallSource::Npx(source) =
+            install_source_for(agent).expect("copilot npx source")
+        else {
+            panic!("copilot should be npx distributed");
+        };
+        let prefix_dir = temp_dir.path().join("prefix");
+        let command = npx_external_agent_command_from_source(
+            source,
+            ResolvedExternalProgram {
+                program: fake_npm.clone(),
+                path_env: Some(temp_dir.path().to_string_lossy().to_string()),
+            },
+            prefix_dir.clone(),
+        );
+
+        assert_eq!(command.program, fake_npm.to_string_lossy().to_string());
+        assert_eq!(
+            command.args,
+            vec![
+                "--prefix".to_string(),
+                prefix_dir.to_string_lossy().to_string(),
+                "exec".to_string(),
+                "--yes".to_string(),
+                "--".to_string(),
+                "@github/copilot@0.0.0 - 1.0.51".to_string(),
+                "--acp".to_string(),
+            ]
+        );
+        let expected_path = temp_dir.path().to_string_lossy().to_string();
+        assert_eq!(command.path_env.as_deref(), Some(expected_path.as_str()));
+    }
+
+    #[test]
+    fn binary_status_uses_registry_version_without_version_probe() {
+        let _guard = crate::ai::local_ai_env_lock()
+            .lock()
+            .expect("lock local AI env");
+        let temp_home = tempfile::tempdir().expect("temp local AI dir");
+        let _home_guard = LocalAiHomeGuard::new(temp_home.path());
+        let agent = find_curated_agent(CODEX_AGENT_ID).expect("codex agent");
+        let CuratedInstallSource::Binary(source) =
+            install_source_for(agent).expect("codex binary source")
+        else {
+            return;
+        };
+        let command_path = binary_command_path(agent, source)
+            .expect("command path")
+            .expect("command path exists");
+        fs::create_dir_all(command_path.parent().expect("command parent")).expect("agent dir");
+        write_fake_command_with_body(
+            command_path.parent().expect("command parent"),
+            command_path.file_name().unwrap().to_string_lossy().as_ref(),
+            "#!/bin/sh\nexit 42\n",
+        );
+
+        let status = binary_status(agent, source).expect("status");
+
+        assert!(status.installed);
+        assert!(status.available);
+        assert_eq!(status.version.as_deref(), Some("0.14.0"));
     }
 
     #[test]
@@ -583,8 +1080,7 @@ mod tests {
             .lock()
             .expect("lock local AI env");
         let temp_dir = tempfile::tempdir().expect("temp local AI dir");
-        let previous_home = std::env::var_os("GITANO_LOCAL_AI_HOME");
-        std::env::set_var("GITANO_LOCAL_AI_HOME", temp_dir.path());
+        let _home_guard = LocalAiHomeGuard::new(temp_dir.path());
 
         set_analysis_engine_preference(
             AnalysisEngine::ExternalAgent {
@@ -598,10 +1094,5 @@ mod tests {
 
         let preferences = load_preferences();
         assert!(preferences.analysis_engine.is_local_model());
-
-        match previous_home {
-            Some(value) => std::env::set_var("GITANO_LOCAL_AI_HOME", value),
-            None => std::env::remove_var("GITANO_LOCAL_AI_HOME"),
-        }
     }
 }

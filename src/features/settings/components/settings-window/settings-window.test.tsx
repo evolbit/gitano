@@ -86,87 +86,163 @@ const legacyModels = models.map(
     model,
 );
 
-const externalAgents = [
-  {
-    id: "codex-acp",
-    displayName: "Codex CLI",
-    provider: "OpenAI",
-    description: "ACP adapter for Codex",
+const codexAgent = {
+  id: "codex-acp",
+  displayName: "Codex CLI",
+  provider: "OpenAI",
+  description: "ACP adapter for Codex",
+  version: "0.14.0",
+  repository: "https://github.com/zed-industries/codex-acp",
+  license: "Apache-2.0",
+  installSource: {
+    kind: "binary",
+    package: null,
+    archive:
+      "https://github.com/zed-industries/codex-acp/releases/download/v0.14.0/codex-acp-0.14.0-aarch64-apple-darwin.tar.gz",
+    command: ["./codex-acp"],
+  },
+  status: {
+    agentId: "codex-acp",
+    installed: true,
+    authenticated: true,
+    available: true,
+    state: "ready",
     version: "0.14.0",
-    repository: "https://github.com/zed-industries/codex-acp",
-    license: "Apache-2.0",
-    installSource: {
-      kind: "binary",
-      package: null,
-      archive: "https://example.test/codex.tar.gz",
-      command: ["codex-acp"],
-    },
-    status: {
-      agentId: "codex-acp",
-      installed: true,
-      authenticated: true,
-      available: true,
-      state: "ready",
-      version: "0.14.0",
-      error: null,
-    },
+    authMethods: [{ id: "chatgpt", displayName: "ChatGPT account" }],
+    error: null,
   },
-  {
-    id: "gemini",
-    displayName: "Gemini CLI",
-    provider: "Google",
-    description: "ACP adapter for Gemini",
-    version: "0.42.0",
-    repository: "https://github.com/google-gemini/gemini-cli",
-    license: "Apache-2.0",
-    installSource: {
-      kind: "npx",
-      package: "@google/gemini-cli@0.42.0",
-      archive: null,
-      command: ["npx", "-y", "@google/gemini-cli@0.42.0", "--acp"],
-    },
-    status: {
-      agentId: "gemini",
-      installed: false,
-      authenticated: false,
-      available: false,
-      state: "notInstalled",
-      version: null,
-      error: null,
-    },
+};
+
+const geminiAgent = {
+  id: "gemini",
+  displayName: "Gemini CLI",
+  provider: "Google",
+  description: "ACP adapter for Gemini",
+  version: "0.43.0",
+  repository: "https://github.com/google-gemini/gemini-cli",
+  license: "Apache-2.0",
+  installSource: {
+    kind: "npx",
+    package: "@google/gemini-cli@0.43.0",
+    archive: null,
+    command: [
+      "npm",
+      "exec",
+      "--yes",
+      "--",
+      "@google/gemini-cli@0.0.0 - 0.43.0",
+      "--acp",
+    ],
   },
-];
+  status: {
+    agentId: "gemini",
+    installed: false,
+    authenticated: false,
+    available: false,
+    state: "notInstalled",
+    version: null,
+    error:
+      "npm is required to run the Gemini CLI ACP adapter package `@google/gemini-cli@0.43.0`.",
+  },
+};
+
+const copilotAgent = {
+  id: "github-copilot-cli",
+  displayName: "GitHub Copilot",
+  provider: "GitHub",
+  description: "GitHub's official coding agent CLI",
+  version: "1.0.51",
+  repository: "https://github.com/github/copilot-cli",
+  license: "proprietary",
+  installSource: {
+    kind: "npx",
+    package: "@github/copilot@1.0.51",
+    archive: null,
+    command: [
+      "npm",
+      "exec",
+      "--yes",
+      "--",
+      "@github/copilot@0.0.0 - 1.0.51",
+      "--acp",
+    ],
+  },
+  status: {
+    agentId: "github-copilot-cli",
+    installed: true,
+    authenticated: false,
+    available: true,
+    state: "ready",
+    version: "1.0.51",
+    authMethods: [
+      { id: "github_copilot_cli", displayName: "GitHub Copilot account" },
+      { id: "github_token", displayName: "GITHUB_TOKEN" },
+      { id: "gh_token", displayName: "GH_TOKEN" },
+    ],
+    error: null,
+  },
+};
+
+const externalAgents = [codexAgent, geminiAgent, copilotAgent];
+
+const codexModelConfig = {
+  agentId: "codex-acp",
+  options: [
+    {
+      id: "model",
+      name: "Model",
+      description: "Model used by the agent.",
+      category: "model",
+      type: "select",
+      currentValue: "gpt-5.5",
+      options: [
+        {
+          value: "gpt-5.5",
+          name: "GPT-5.5",
+          description: null,
+        },
+        {
+          value: "gpt-5",
+          name: "GPT-5",
+          description: null,
+        },
+      ],
+    },
+  ],
+};
+
+const copilotModelConfig = {
+  agentId: "github-copilot-cli",
+  options: [
+    {
+      id: "model",
+      name: "Model",
+      description: "Model used by Copilot.",
+      category: "model",
+      type: "select",
+      currentValue: "copilot-sonnet",
+      options: [
+        {
+          value: "copilot-sonnet",
+          name: "Copilot Sonnet",
+          description: null,
+        },
+        {
+          value: "copilot-gpt",
+          name: "Copilot GPT",
+          description: null,
+        },
+      ],
+    },
+  ],
+};
 
 describe("SettingsWindow", () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
     apiMocks.getLocalAiModelCatalog.mockResolvedValue(models);
     apiMocks.getExternalAiAgentCatalog.mockResolvedValue(externalAgents);
-    apiMocks.getExternalAiAgentSessionConfig.mockResolvedValue({
-      agentId: "codex-acp",
-      options: [
-        {
-          id: "model",
-          name: "Model",
-          description: "Model used by the agent.",
-          category: "model",
-          type: "select",
-          currentValue: "gpt-5.5",
-          options: [
-            {
-              value: "gpt-5.5",
-              name: "GPT-5.5",
-              description: null,
-            },
-            {
-              value: "gpt-5",
-              name: "GPT-5",
-              description: null,
-            },
-          ],
-        },
-      ],
-    });
+    apiMocks.getExternalAiAgentSessionConfig.mockResolvedValue(codexModelConfig);
     apiMocks.getLocalAiModelPreferences.mockResolvedValue({
       globalModelId: "qwen2.5-coder:7b",
       actionModelIds: {
@@ -417,10 +493,10 @@ describe("SettingsWindow", () => {
     );
   });
 
-  it("renders external agents and installs unavailable agents", async () => {
+  it("renders external agents with registry install actions", async () => {
     const user = userEvent.setup();
-    apiMocks.installExternalAiAgent.mockResolvedValue({
-      operationId: "external-agent-gemini-1",
+    apiMocks.installExternalAiAgent.mockResolvedValueOnce({
+      operationId: "external-ai-gemini-1",
     });
 
     render(
@@ -435,13 +511,49 @@ describe("SettingsWindow", () => {
     );
     expect(screen.getByText("Codex CLI")).toBeInTheDocument();
     expect(screen.getByText("Gemini CLI")).toBeInTheDocument();
+    expect(screen.getByText("GitHub Copilot")).toBeInTheDocument();
+    expect(screen.getByText("Installed")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /refresh status/i }),
+    ).toBeEnabled();
 
-    const installButton = screen.getByRole("button", { name: /install/i });
-    await user.click(installButton);
+    await user.click(screen.getByRole("button", { name: /install/i }));
 
     expect(apiMocks.installExternalAiAgent).toHaveBeenCalledWith({
       agentId: "gemini",
     });
+  });
+
+  it("groups Copilot with external agents and disables unavailable entries", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    const selector = screen.getByLabelText(
+      "Global default analysis engine",
+    ) as HTMLSelectElement;
+    const externalGroup = selector.querySelector(
+      "optgroup[label='External agents']",
+    );
+
+    expect(externalGroup).not.toBeNull();
+    const externalOptions = Array.from(
+      externalGroup?.querySelectorAll("option") ?? [],
+    );
+    expect(externalOptions.map((option) => option.textContent)).toContain(
+      "GitHub Copilot",
+    );
+    expect(
+      externalOptions.find((option) => option.textContent === "Gemini CLI")
+        ?.disabled,
+    ).toBe(true);
   });
 
   it("persists an external agent selection from the grouped selector", async () => {
@@ -479,6 +591,101 @@ describe("SettingsWindow", () => {
         agentId: "codex-acp",
       },
       actionKind: null,
+    });
+  });
+
+  it("uses selected external agent ACP options when agents expose different models", async () => {
+    const user = userEvent.setup();
+    apiMocks.getExternalAiAgentSessionConfig.mockImplementation(
+      async (request: { agentId: string }) =>
+        request.agentId === "github-copilot-cli"
+          ? copilotModelConfig
+          : codexModelConfig,
+    );
+    apiMocks.getLocalAiModelPreferences.mockResolvedValueOnce({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {
+        branchReview: {
+          type: "external_agent",
+          agentId: "github-copilot-cli",
+        },
+      },
+      externalAgentOptionValues: {
+        "codex-acp": {
+          model: "gpt-5.5",
+        },
+      },
+      actionExternalAgentOptionValues: {},
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+    apiMocks.setExternalAiAgentConfigPreference.mockResolvedValue({
+      globalModelId: "qwen2.5-coder:7b",
+      actionModelIds: {},
+      analysisEngine: {
+        type: "external_agent",
+        agentId: "codex-acp",
+      },
+      actionEngines: {
+        branchReview: {
+          type: "external_agent",
+          agentId: "github-copilot-cli",
+        },
+      },
+      externalAgentOptionValues: {
+        "codex-acp": {
+          model: "gpt-5.5",
+        },
+      },
+      actionExternalAgentOptionValues: {
+        branchReview: {
+          "github-copilot-cli": {
+            model: "copilot-gpt",
+          },
+        },
+      },
+      warmModelIds: [],
+      keepAliveMinutes: 30,
+    });
+
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+        repoPath="/repo"
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Configuration" }),
+    );
+    const modelSelect = await screen.findByLabelText(
+      "Branch review Model",
+    ) as HTMLSelectElement;
+    const branchReviewModelLabels = Array.from(modelSelect.options).map(
+      (option) => option.textContent,
+    );
+
+    expect(apiMocks.getExternalAiAgentSessionConfig).toHaveBeenCalledWith({
+      agentId: "github-copilot-cli",
+      repoPath: "/repo",
+    });
+    expect(branchReviewModelLabels).toContain("Copilot Sonnet");
+    expect(branchReviewModelLabels).toContain("Copilot GPT");
+    expect(branchReviewModelLabels).not.toContain("GPT-5.5");
+
+    await user.selectOptions(modelSelect, "copilot-gpt");
+
+    expect(apiMocks.setExternalAiAgentConfigPreference).toHaveBeenCalledWith({
+      agentId: "github-copilot-cli",
+      actionKind: "branchReview",
+      configId: "model",
+      value: "copilot-gpt",
     });
   });
 

@@ -16,6 +16,8 @@ import type {
 export const EMPTY_SET = new Set<number>();
 const SOURCE_WRAP_CLASS = "min-w-0 whitespace-pre-wrap break-words";
 const SOURCE_WRAP_STYLE: React.CSSProperties = { overflowWrap: "anywhere" };
+const CENTER_GUTTER_CLASS =
+  "flex min-h-7 self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out";
 
 type StageState = {
   isFullyStaged: boolean;
@@ -267,7 +269,8 @@ export const ContextRows: React.FC<{
   displayMode: DiffDisplayMode;
   lines: DiffLine[];
   keyPrefix: string;
-}> = ({ displayMode, lines, keyPrefix }) => (
+  canRenderGutters?: boolean;
+}> = ({ displayMode, lines, keyPrefix, canRenderGutters = false }) => (
   <>
     {lines.map((line, index) =>
       displayMode === "split" ? (
@@ -276,7 +279,7 @@ export const ContextRows: React.FC<{
         <UnifiedLineRow
           key={`${keyPrefix}-${index}`}
           line={line}
-          showHunkGutter={false}
+          showHunkGutter={canRenderGutters}
           showLineGutter={false}
         />
       ),
@@ -462,12 +465,14 @@ const UnifiedLineRow: React.FC<{
               isBlockFullyStaged={isBlockFullyStaged}
               isBlockPartiallyStaged={isBlockPartiallyStaged}
               onMouseDown={onBlockMouseDown}
+              inactiveTone={contentTone}
             />
             <CenterLineGutter
               show={showLineGutter}
               isChecked={isStaged}
               isIndeterminate={false}
               onMouseDown={onMouseDown}
+              inactiveTone={contentTone}
             />
           </>
         ) : null}
@@ -710,6 +715,7 @@ const CenterBlockGutter: React.FC<{
   isBlockPartiallyStaged: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
   className?: string;
+  inactiveTone?: string;
 }> = ({
   show,
   isBlockStart,
@@ -717,74 +723,103 @@ const CenterBlockGutter: React.FC<{
   isBlockPartiallyStaged,
   onMouseDown,
   className = "",
-}) => (
-  <span
-    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${getBlockGutterTone(
-      show,
-      !!onMouseDown,
-      isBlockFullyStaged || isBlockPartiallyStaged,
-    )} ${className}`}
-  >
-    {show ? (
-      <button
-        type="button"
-        aria-label={isBlockFullyStaged ? "Deselect block" : "Select block"}
-        className="flex h-full w-full items-center justify-center"
-        onMouseDown={onMouseDown}
-      >
-        {isBlockStart ? (
-          isBlockFullyStaged ? (
-            <IconCheck size={12} className="text-white" />
-          ) : isBlockPartiallyStaged ? (
-            <span className="block h-0.5 w-2 rounded bg-white" />
-          ) : null
-        ) : null}
-      </button>
-    ) : null}
-  </span>
-);
+  inactiveTone,
+}) => {
+  const indicator = isBlockStart ? (
+    isBlockFullyStaged ? (
+      <IconCheck size={12} className="text-white" />
+    ) : isBlockPartiallyStaged ? (
+      <span className="block h-0.5 w-2 rounded bg-white" />
+    ) : null
+  ) : null;
+
+  return (
+    <span
+      className={`${CENTER_GUTTER_CLASS} ${getBlockGutterTone(
+        show,
+        !!onMouseDown,
+        isBlockFullyStaged || isBlockPartiallyStaged,
+        inactiveTone,
+      )} ${className}`}
+    >
+      {show && onMouseDown ? (
+        <button
+          type="button"
+          aria-label={isBlockFullyStaged ? "Deselect block" : "Select block"}
+          className="flex min-h-7 w-full flex-1 self-stretch items-center justify-center"
+          onMouseDown={onMouseDown}
+        >
+          {indicator}
+        </button>
+      ) : show ? (
+        indicator
+      ) : null}
+    </span>
+  );
+};
 
 const CenterLineGutter: React.FC<{
   show: boolean;
   isChecked: boolean;
   isIndeterminate: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
-}> = ({ show, isChecked, isIndeterminate, onMouseDown }) => (
-  <span
-    className={`flex min-h-7 h-full self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out ${getLineGutterTone(
-      show,
-      isChecked || isIndeterminate,
-    )}`}
-  >
-    {show ? (
-      <button
-        type="button"
-        className="flex h-full w-full items-center justify-center"
-        onMouseDown={onMouseDown}
-      >
-        {isChecked ? (
-          <IconCheck size={14} className="text-white" />
-        ) : isIndeterminate ? (
-          <span className="block h-0.5 w-2 rounded bg-white" />
-        ) : null}
-      </button>
-    ) : null}
-  </span>
-);
+  inactiveTone?: string;
+}> = ({ show, isChecked, isIndeterminate, onMouseDown, inactiveTone }) => {
+  const indicator = isChecked ? (
+    <IconCheck size={14} className="text-white" />
+  ) : isIndeterminate ? (
+    <span className="block h-0.5 w-2 rounded bg-white" />
+  ) : null;
+
+  return (
+    <span
+      className={`${CENTER_GUTTER_CLASS} ${getLineGutterTone(
+        show,
+        isChecked || isIndeterminate,
+        inactiveTone,
+      )}`}
+    >
+      {show && onMouseDown ? (
+        <button
+          type="button"
+          className="flex min-h-7 w-full flex-1 self-stretch items-center justify-center"
+          onMouseDown={onMouseDown}
+        >
+          {indicator}
+        </button>
+      ) : show ? (
+        indicator
+      ) : null}
+    </span>
+  );
+};
 
 function getBlockGutterTone(
   show: boolean,
   hasMouseHandler: boolean,
   hasStagedLines: boolean,
+  inactiveTone?: string,
 ) {
-  if (!show || !hasMouseHandler) return "bg-zinc-800 text-zinc-500";
   if (hasStagedLines) return "bg-blue-600 text-white";
+  if (!show || !hasMouseHandler) {
+    return `${inactiveTone ?? "bg-zinc-800"} text-zinc-500`;
+  }
+  if (inactiveTone) {
+    return `${inactiveTone} text-zinc-400 group-hover:bg-zinc-600/30`;
+  }
   return "bg-zinc-600/30 text-zinc-400";
 }
 
-function getLineGutterTone(show: boolean, hasStagedLines: boolean) {
-  if (!show) return "bg-zinc-800 text-zinc-500";
+function getLineGutterTone(
+  show: boolean,
+  hasStagedLines: boolean,
+  inactiveTone?: string,
+) {
   if (hasStagedLines) return "bg-blue-600 text-white";
+  if (!show) return `${inactiveTone ?? "bg-zinc-800"} text-zinc-500`;
+  if (inactiveTone) {
+    return `${inactiveTone} text-zinc-500 group-hover:bg-zinc-600/30`;
+  }
   return "bg-zinc-600/30 text-zinc-500";
 }
 

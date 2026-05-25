@@ -22,7 +22,7 @@ use super::super::types::{
 use super::action_context::{build_external_agent_context, build_local_action_context};
 use super::branch_review::{merge_branch_review_blocks, BRANCH_REVIEW_PARALLEL_CALLS};
 use super::external_agent::{
-    external_agent_digest, external_unstructured_result, selected_external_agent_id,
+    external_agent_digest, external_agent_unstructured_output_error, selected_external_agent_id,
 };
 use super::model_helpers::{
     ensure_model_supports_action, ensure_supported_model, keep_alive_duration, operation_id,
@@ -375,7 +375,7 @@ async fn run_external_agent_action(
             run_id,
             action_kind: request.action_kind,
             prompt,
-            external_agent_option_overrides: external_agent_option_values,
+            external_agent_option_overrides: external_agent_option_values.clone(),
         },
     )
     .await?;
@@ -387,10 +387,17 @@ async fn run_external_agent_action(
         formatting_message(request.action_kind),
         None,
     );
-    let structured = parse_structured_result(request.action_kind, &response.transcript)
-        .unwrap_or_else(|error| {
-            external_unstructured_result(request.action_kind, &response.transcript, &error)
-        });
+    let structured =
+        parse_structured_result(request.action_kind, &response.transcript).map_err(|error| {
+            external_agent_unstructured_output_error(
+                request,
+                agent_id,
+                status.version.as_deref(),
+                &response.transcript,
+                &error,
+                &external_agent_option_values,
+            )
+        })?;
     let pipeline = AiRunPipeline::from_context(
         EXTERNAL_AGENT_PROMPT_VERSION,
         format!("external:{}", agent_id),

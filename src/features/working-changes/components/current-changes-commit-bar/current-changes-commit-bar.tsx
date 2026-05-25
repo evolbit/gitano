@@ -16,6 +16,7 @@ import {
 } from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
+import { isAiSetupRequiredError } from "@/shared/utils/ai-setup-errors";
 import { useEffect, useState } from "react";
 import { useStageAndCommit } from "../../hooks/use-stage-and-commit";
 
@@ -271,12 +272,7 @@ export default function CurrentChangesCommitBar({
   };
 
   const shouldOpenAiSetup = (error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    return (
-      message.includes("LOCAL_AI_MODEL_SETUP_REQUIRED") ||
-      message.toLowerCase().includes("ollama") ||
-      message.toLowerCase().includes("local ai")
-    );
+    return isAiSetupRequiredError(error);
   };
 
   const getAiErrorMessage = (actionError: unknown, fallback: string) =>

@@ -60,11 +60,8 @@ pub fn build_prompt_with_instruction(context: &LocalAiGitContext, instruction: &
     }
 }
 
-pub fn build_external_agent_prompt_with_instruction(
-    context: &LocalAiGitContext,
-    instruction: &str,
-) -> String {
-    let output_shape = match context.action_kind {
+fn output_shape_for_action(action_kind: LocalAiActionKind) -> &'static str {
+    match action_kind {
         LocalAiActionKind::CommitMessage => "{\"message\":\"...\",\"alternatives\":[\"...\"]}",
         LocalAiActionKind::CommitAnalysis => {
             "{\"summary\":\"...\",\"riskAssessment\":\"...\",\"changedAreas\":[\"...\"],\"findings\":[{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}]}"
@@ -78,68 +75,92 @@ pub fn build_external_agent_prompt_with_instruction(
         LocalAiActionKind::MergeConflictSuggestions => {
             "{\"summary\":\"...\",\"files\":[{\"filePath\":\"...\",\"summary\":\"...\",\"suggestion\":\"...\"}]}"
         }
-    };
+    }
+}
+
+fn json_output_contract(output_shape: &str) -> String {
+    format!(
+        "Return only valid JSON with this shape: {output_shape}\n\
+         Do not include markdown fences, headings, progress text, status text, explanations, or any text before or after the JSON object."
+    )
+}
+
+pub fn build_external_agent_prompt_with_instruction(
+    context: &LocalAiGitContext,
+    instruction: &str,
+) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
 
     format!(
         "You are Gitano's selected external ACP coding agent. The user explicitly selected this agent for repository analysis.\n\
          Use the Git descriptor below to identify the exact repository scope, then inspect the code yourself with read-only repository commands such as git diff, git status, git show, git log, git ls-files, git rev-parse, and git merge-base. Do not modify files, run write/destructive commands, or submit remote feedback.\n\
          Be specific, evidence-oriented, and concise. Do not claim certainty without file or line evidence.\n\
          {}\n\n\
-         Return only JSON with this shape: {}\n\n\
+         {}\n\n\
          Git descriptor:\n{}",
-        instruction, output_shape, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
 fn build_commit_message_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+
     format!(
-         "You are Gitano's local coding assistant.\n\
+        "You are Gitano's local coding assistant.\n\
          {}\n\
-         Return only compact JSON with this shape: {{\"message\":\"...\",\"alternatives\":[\"...\"]}}\n\
+         {}\n\
          Staged Git context:\n{}",
-        instruction, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
 fn build_analysis_prompt(instruction: &str, context: &LocalAiGitContext) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
          Be specific, evidence-oriented, and concise. Do not claim certainty without file or line evidence.\n\
          {}\n\n\
-         Return only JSON with this shape: {{\"summary\":\"...\",\"riskAssessment\":\"...\",\"changedAreas\":[\"...\"],\"findings\":[{{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}}]}}\n\n\
+         {}\n\n\
          Git context:\n{}",
-        instruction, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
 fn build_branch_analysis_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
          {}\n\n\
-         Return only JSON with this shape: {{\"summary\":\"...\",\"riskAssessment\":\"...\",\"behavioralChanges\":[\"...\"],\"potentialRegressions\":[\"...\"],\"testGaps\":[\"...\"],\"recommendations\":[\"...\"],\"actionItems\":[\"...\"],\"findings\":[{{\"severity\":\"info|low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"filePath\":\"optional\",\"line\":123,\"suggestion\":\"optional\"}}]}}\n\n\
+         {}\n\n\
          Git context:\n{}",
-        instruction, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
 fn build_branch_review_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
          {}\n\n\
-         Return only JSON with this shape: {{\"summary\":\"...\",\"findings\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"impact\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"...\",\"filePath\":\"path/to/file\",\"side\":\"old|new\",\"line\":123,\"endLine\":124}}],\"notes\":[{{\"severity\":\"low|medium|high\",\"confidence\":\"low|medium|high\",\"title\":\"...\",\"explanation\":\"...\",\"recommendation\":\"...\",\"suggestedComment\":\"optional\",\"filePath\":\"optional\"}}]}}\n\n\
+         {}\n\n\
          Git context:\n{}",
-        instruction, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
 fn build_conflict_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
+    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+
     format!(
         "You are Gitano's local coding assistant.\n\
          {}\n\
-         Return only JSON with this shape: {{\"summary\":\"...\",\"files\":[{{\"filePath\":\"...\",\"summary\":\"...\",\"suggestion\":\"...\"}}]}}\n\
+         {}\n\
          Do not provide an auto-applied patch.\n\n\
          Git context:\n{}",
-        instruction, context.prompt_context
+        instruction, output_contract, context.prompt_context
     )
 }
 
@@ -169,7 +190,8 @@ mod tests {
         );
 
         assert!(prompt.contains("Focus only on authorization regressions."));
-        assert!(prompt.contains("Return only JSON with this shape"));
+        assert!(prompt.contains("Return only valid JSON with this shape"));
+        assert!(prompt.contains("Do not include markdown fences"));
         assert!(prompt.contains("Git context:"));
         assert!(prompt.contains("file.txt changed"));
     }
@@ -183,7 +205,33 @@ mod tests {
 
         assert!(prompt.contains("Use a short conventional commit subject."));
         assert!(prompt.contains("Do not modify files"));
-        assert!(prompt.contains("Return only JSON with this shape"));
+        assert!(prompt.contains("progress text, status text"));
+        assert!(prompt.contains("Return only valid JSON with this shape"));
         assert!(prompt.contains("Git descriptor:"));
+    }
+
+    #[test]
+    fn all_action_prompts_append_json_output_contract() {
+        let action_kinds = [
+            LocalAiActionKind::CommitMessage,
+            LocalAiActionKind::CommitAnalysis,
+            LocalAiActionKind::BranchAnalysis,
+            LocalAiActionKind::BranchReview,
+            LocalAiActionKind::MergeConflictSuggestions,
+        ];
+
+        for action_kind in action_kinds {
+            let local_prompt =
+                build_prompt_with_instruction(&test_context(action_kind), "Custom instruction.");
+            let external_prompt = build_external_agent_prompt_with_instruction(
+                &test_context(action_kind),
+                "Custom instruction.",
+            );
+
+            assert!(local_prompt.contains("Return only valid JSON with this shape"));
+            assert!(local_prompt.contains("Do not include markdown fences"));
+            assert!(external_prompt.contains("Return only valid JSON with this shape"));
+            assert!(external_prompt.contains("Do not include markdown fences"));
+        }
     }
 }

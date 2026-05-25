@@ -7,6 +7,7 @@ import type {
   LocalAiActionKind,
   LocalAiModelEntry,
 } from "@/shared/api/local-ai";
+import { externalAiAgentStatusLabel } from "@/shared/utils/external-ai-agent-status";
 import { useLocalAiStore } from "../../stores/local-ai-store";
 
 type LocalAiSetupModalProps = {
@@ -408,7 +409,7 @@ export function LocalAiSetupModal({
                 <div>
                   <div className="text-zinc-500">Status</div>
                   <div className="font-medium text-zinc-100">
-                    {selectedAgent.status.available ? "Ready" : "Not ready"}
+                    {externalAiAgentStatusLabel(selectedAgent)}
                   </div>
                 </div>
               </div>

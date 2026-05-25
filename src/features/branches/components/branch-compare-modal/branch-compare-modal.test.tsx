@@ -481,10 +481,23 @@ describe("BranchCompareModal local AI", () => {
     ).toBeInTheDocument();
   });
 
-  it("reports branch review model output errors through the bottom notice", async () => {
+  it("shows branch review output errors beside the action buttons with report data", async () => {
     const user = userEvent.setup();
+    const debugError =
+      "External agent output could not be parsed. Report this debug payload:\n" +
+      JSON.stringify(
+        {
+          kind: "external_agent_structured_output_error",
+          agentId: "github-copilot-cli",
+          actionKind: "branchReview",
+          parseError: "Local AI returned invalid JSON: expected value",
+          transcript: "SUMMARY\nInspecting the commit directly.",
+        },
+        null,
+        2,
+      );
     localAiMocks.runLocalAiAction.mockRejectedValue(
-      new Error("Local AI returned invalid JSON: expected value"),
+      new Error(debugError),
     );
 
     render(
@@ -506,12 +519,23 @@ describe("BranchCompareModal local AI", () => {
     await waitFor(() => {
       expect(useGitActionsStore.getState().notice).toMatchObject({
         kind: "error",
-        title:
-          "Local AI review failed: Local AI returned invalid JSON: expected value",
-        details: "Local AI returned invalid JSON: expected value",
+        title: "AI review failed",
+        details: debugError,
         expanded: true,
       });
     });
+    expect(screen.getByText("Review failed")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/External agent output could not be parsed/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/See log for more details/).length).toBeGreaterThan(0);
+    expect(screen.getByText("AI action failed")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/external_agent_structured_output_error/),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy report data" }));
+
+    expect(clipboardMocks.writeClipboardText).toHaveBeenCalledWith(debugError);
     expect(screen.queryByText("Analysis engine setup")).not.toBeInTheDocument();
     expect(
       screen.queryByText("No actionable review findings returned."),

@@ -122,11 +122,11 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
   } = useAiSettingsData(open);
   const {
     setProgressByOperationId,
-    setExternalProgressByOperationId,
     setActiveOperationId,
-    setActiveExternalOperationId,
     activeProgress,
     activeExternalProgress,
+    setExternalProgressByOperationId,
+    setActiveExternalOperationId,
     setupInProgress,
   } = useSettingsOperations(open, loadSettings);
   const [warmSavingModelIds, setWarmSavingModelIds] = useState<
@@ -308,21 +308,11 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
         [response.operationId]: queuedExternalProgress(
           response.operationId,
           agentId,
-          `Starting install for ${agentId}...`,
+          `Starting setup for ${agentId}...`,
         ),
       }));
     } catch (installError) {
-      showSettingsError("External agent install failed", installError);
-    }
-  };
-
-  const handleAuthenticateExternalAgent = async (agentId: string) => {
-    setSettingsError(null);
-    try {
-      await authenticateExternalAiAgent({ agentId });
-      await loadSettings();
-    } catch (authError) {
-      showSettingsError("External agent authentication failed", authError);
+      showSettingsError("External agent setup failed", installError);
     }
   };
 
@@ -333,6 +323,16 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
       await loadSettings();
     } catch (removeError) {
       showSettingsError("External agent removal failed", removeError);
+    }
+  };
+
+  const handleAuthenticateExternalAgent = async (agentId: string) => {
+    setSettingsError(null);
+    try {
+      await authenticateExternalAiAgent({ agentId });
+      await loadSettings();
+    } catch (authError) {
+      showSettingsError("External agent authentication failed", authError);
     }
   };
 
@@ -645,8 +645,8 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                   externalAgents={externalAgents}
                   preferences={preferences}
                   setupInProgress={setupInProgress}
-                  onAuthenticateExternalAgent={handleAuthenticateExternalAgent}
                   onInstallExternalAgent={handleInstallExternalAgent}
+                  onAuthenticateExternalAgent={handleAuthenticateExternalAgent}
                   onRemoveExternalAgent={handleRemoveExternalAgent}
                   onSetExternalAgentDefault={handleSetExternalAgentDefault}
                 />

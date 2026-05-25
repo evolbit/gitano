@@ -59,6 +59,9 @@ impl AcpProcessClient {
             ("session/request_permission", Some(params)) => {
                 self.handle_permission_request(id, params)
             }
+            (method, params) if method == "report_intent" || method.ends_with("/report_intent") => {
+                self.handle_report_intent(id, params)
+            }
             (method, params) if method.starts_with("terminal/") => {
                 self.handle_terminal_request(id, method, params)
             }
@@ -68,6 +71,12 @@ impl AcpProcessClient {
                 &format!("Unsupported ACP client method: {}", method),
             ),
         }
+    }
+
+    fn handle_report_intent(&mut self, id: Value, params: Option<Value>) -> Result<(), String> {
+        let message = report_intent_message(params.as_ref());
+        self.emit_event(ExternalAiRunEventKind::Thought, message, params);
+        self.respond_result(id, json!({}))
     }
 
     fn handle_terminal_request(
@@ -293,5 +302,46 @@ impl AcpProcessClient {
         let id = self.next_terminal_id;
         self.next_terminal_id += 1;
         format!("gitano-terminal-{}", id)
+    }
+}
+
+fn report_intent_message(params: Option<&Value>) -> String {
+    let Some(params) = params else {
+        return "External agent reported intent.".to_string();
+    };
+
+    for key in ["intent", "message", "text", "summary"] {
+        if let Some(value) = params.get(key).and_then(Value::as_str) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    "External agent reported intent.".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn report_intent_message_uses_intent_field() {
+        assert_eq!(
+            report_intent_message(Some(&json!({
+                "intent": "Collect commit details with git show."
+            }))),
+            "Collect commit details with git show."
+        );
+    }
+
+    #[test]
+    fn report_intent_message_falls_back_for_empty_payload() {
+        assert_eq!(
+            report_intent_message(Some(&json!({ "intent": "   " }))),
+            "External agent reported intent."
+        );
     }
 }

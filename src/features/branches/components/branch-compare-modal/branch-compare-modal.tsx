@@ -24,6 +24,7 @@ import {
   type LocalAiBranchReviewFinding,
   type LocalAiBranchReviewNote,
 } from "@/shared/api/local-ai";
+import { summarizeAiErrorForDisplay } from "@/shared/utils/ai-error-summary";
 import { writeClipboardText } from "@/shared/platform/clipboard";
 import {
   LocalAiResultModal,
@@ -61,6 +62,35 @@ type BranchCompareModalProps = {
 const DIFF_CONTEXT_LINES = 3;
 const BRANCH_COMPARE_MODE = "direct" as const;
 const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
+
+function BranchAiErrorDetails({
+  error,
+  label,
+  onCopy,
+}: {
+  error: string | null;
+  label: string;
+  onCopy: (error: string) => void;
+}) {
+  if (!error) return null;
+  const displayError = summarizeAiErrorForDisplay(error);
+
+  return (
+    <div className="max-w-[34rem] rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-100">
+      <div className="font-semibold">{label} failed</div>
+      <div className="mt-1 whitespace-pre-wrap leading-5">{displayError}</div>
+      <div className="mt-2">
+        <button
+          type="button"
+          className="h-7 rounded border border-red-500/40 px-2 text-xs font-semibold text-red-50 transition-colors hover:bg-red-500/20"
+          onClick={() => onCopy(error)}
+        >
+          Copy report data
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function BranchCompareModal({
   repoPath,
@@ -239,6 +269,17 @@ export function BranchCompareModal({
     },
     [notifyAiError, notifyAiSuccess],
   );
+  const copyAiErrorReport = useCallback(
+    async (text: string) => {
+      try {
+        await writeClipboardText(text);
+        notifyAiSuccess("AI error copied", "AI error report data copied to the clipboard.");
+      } catch (copyError) {
+        notifyAiError("Copy failed", copyError);
+      }
+    },
+    [notifyAiError, notifyAiSuccess],
+  );
 
   const { interactionValue, renderAiFindingActions } = useBranchReviewThreads({
     branchReviewAnchorIndex,
@@ -308,29 +349,47 @@ export function BranchCompareModal({
               onSelectBranch={setTargetBranch}
             />
           </div>
-          <div className="ml-4 flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!comparisonReady || branchAiLoading}
-              onClick={() => {
-                void runBranchAiAction("analysis");
-              }}
-            >
-              <IconSparkles size={14} />
-              {branchAnalysis.loading ? "Analyzing" : "Analyze"}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!comparisonReady || branchAiLoading}
-              onClick={() => {
-                void runBranchAiAction("review");
-              }}
-            >
-              <IconSparkles size={14} />
-              {branchReview.loading ? "Reviewing" : "Review"}
-            </button>
+          <div className="ml-4 flex items-start gap-2">
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!comparisonReady || branchAiLoading}
+                  onClick={() => {
+                    void runBranchAiAction("analysis");
+                  }}
+                >
+                  <IconSparkles size={14} />
+                  {branchAnalysis.loading ? "Analyzing" : "Analyze"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!comparisonReady || branchAiLoading}
+                  onClick={() => {
+                    void runBranchAiAction("review");
+                  }}
+                >
+                  <IconSparkles size={14} />
+                  {branchReview.loading ? "Reviewing" : "Review"}
+                </button>
+              </div>
+              <BranchAiErrorDetails
+                label="Analyze"
+                error={branchAnalysis.error}
+                onCopy={(error) => {
+                  void copyAiErrorReport(error);
+                }}
+              />
+              <BranchAiErrorDetails
+                label="Review"
+                error={branchReview.error}
+                onCopy={(error) => {
+                  void copyAiErrorReport(error);
+                }}
+              />
+            </div>
             <button
               type="button"
               className="rounded p-2 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
@@ -385,7 +444,11 @@ export function BranchCompareModal({
           </Split.Pane>
         </Split>
         <LocalAiResultModal
-          open={Boolean(branchAnalysis.result) || branchAnalysis.loading}
+          open={
+            Boolean(branchAnalysis.result) ||
+            branchAnalysis.loading ||
+            Boolean(branchAnalysis.error)
+          }
           title={`Analyze ${comparisonTitle}`}
           result={branchAnalysis.result}
           loading={branchAnalysis.loading}
@@ -401,7 +464,11 @@ export function BranchCompareModal({
           }}
         />
         <LocalAiResultModal
-          open={Boolean(visibleReviewResult) || branchReview.loading}
+          open={
+            Boolean(visibleReviewResult) ||
+            branchReview.loading ||
+            Boolean(branchReview.error)
+          }
           title={`Review ${comparisonTitle}`}
           result={visibleReviewResult}
           loading={branchReview.loading}

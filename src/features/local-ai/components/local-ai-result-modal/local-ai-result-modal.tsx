@@ -17,6 +17,7 @@ import type {
   LocalAiRunProgress,
   LocalAiRunResult,
 } from "@/shared/api/local-ai";
+import { summarizeAiErrorForDisplay } from "@/shared/utils/ai-error-summary";
 
 type LocalAiResultModalProps = {
   open: boolean;
@@ -650,6 +651,7 @@ export function LocalAiResultModal({
       ? "External Agent"
       : "Local AI";
   const displayProgress = progressForDisplay(progress, externalEvents);
+  const displayError = summarizeAiErrorForDisplay(error);
 
   if (!open) return null;
 
@@ -694,9 +696,14 @@ export function LocalAiResultModal({
               </div>
             )
           ) : null}
-          {error ? (
+          {displayError ? (
             <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-              {error}
+              <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-red-100">
+                AI action failed
+              </div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-red-50">
+                {displayError}
+              </pre>
             </div>
           ) : null}
           {!loading && !error && result ? (
