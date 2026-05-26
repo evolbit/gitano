@@ -1,4 +1,5 @@
 import { Split } from "@gfazioli/mantine-split-pane";
+import { useMutation } from "@tanstack/react-query";
 import ReactDOM from "react-dom";
 import {
   useCallback,
@@ -32,12 +33,15 @@ import {
 } from "@/features/local-ai";
 import {
   listGitHubPullRequestComments,
+  resolveGitHubPullRequestReviewThread,
+  submitGitHubPullRequestReviewReply,
   submitGitHubPullRequestReview,
+  updateGitHubPullRequestComment,
   type GitHubPullRequestComment,
   type GitHubPullRequestReviewCommentDraft,
 } from "@/shared/api/integrations";
 import { useGitActionsStore } from "@/features/repository-workspace";
-import { getReviewComparisonPairKey } from "@/features/review-comments";
+import { getReviewComparisonPairKey } from "@/features/pull-requests";
 import { BranchCompareBranchDropdown } from "../branch-compare-target-dropdown/branch-compare-target-dropdown";
 import {
   useBranchComparisonData,
@@ -76,6 +80,21 @@ type BranchCompareModalProps = {
 const DIFF_CONTEXT_LINES = 3;
 const EMPTY_BRANCH_REVIEW_FINDINGS: LocalAiBranchReviewFinding[] = [];
 
+function PullRequestCommentsProgressBar() {
+  return (
+    <div
+      className="pointer-events-none absolute left-0 right-0 top-0 z-30 h-0.5 overflow-hidden bg-blue-500/10"
+      role="progressbar"
+      aria-label="Loading pull request comments"
+    >
+      <div
+        className="h-full w-1/3 rounded-r bg-blue-400/90"
+        style={{ animation: "panel-progress 1.1s ease-in-out infinite" }}
+      />
+    </div>
+  );
+}
+
 function BranchAiErrorDetails({
   error,
   label,
@@ -105,6 +124,12 @@ function BranchAiErrorDetails({
   );
 }
 
+function parseSubmittedReviewCommentId(commentId: string | null) {
+  if (!commentId) return null;
+  const match = /^github-review-comment-(\d+)$/.exec(commentId);
+  return match ? Number(match[1]) : null;
+}
+
 export function BranchCompareModal({
   repoPath,
   initialSourceBranch,
@@ -113,6 +138,9 @@ export function BranchCompareModal({
   onClose,
 }: BranchCompareModalProps) {
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
+  const { mutateAsync: resolveReviewThread } = useMutation({
+    mutationFn: resolveGitHubPullRequestReviewThread,
+  });
   const { localBranches, remoteBranches, branchLoading, branchError } =
     useBranchLists(repoPath);
   const [sourceBranch, setSourceBranch] = useState<string | null>(
@@ -134,12 +162,6 @@ export function BranchCompareModal({
     string | null
   >(null);
   const [submitCommentsLoading, setSubmitCommentsLoading] = useState(false);
-  const [submitCommentsError, setSubmitCommentsError] = useState<string | null>(
-    null,
-  );
-  const [submitCommentsNotice, setSubmitCommentsNotice] = useState<string | null>(
-    null,
-  );
   const {
     dismissAiFinding,
     dismissedAiFindingKeys,
@@ -251,6 +273,14 @@ export function BranchCompareModal({
     () => buildAnchorIndex(reviewHunksByPath),
     [reviewHunksByPath],
   );
+  const pullRequestCommentCountsByPath = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const comment of pullRequestComments) {
+      if (comment.kind !== "review" || !comment.path) continue;
+      counts[comment.path] = (counts[comment.path] ?? 0) + 1;
+    }
+    return counts;
+  }, [pullRequestComments]);
 
   const visibleReviewResult = useMemo(
     () =>
@@ -285,7 +315,7 @@ export function BranchCompareModal({
   }, [pairKey, resetBranchAiRuns, setReviewHunksByPath]);
 
   useEffect(() => {
-    if (!commentsOpen || !pullRequestContext) return;
+    if (!pullRequestContext) return;
 
     let cancelled = false;
     setPullRequestCommentsLoading(true);
@@ -313,7 +343,7 @@ export function BranchCompareModal({
     return () => {
       cancelled = true;
     };
-  }, [commentsOpen, pullRequestContext, repoPath]);
+  }, [pullRequestContext, repoPath]);
 
   useEffect(() => {
     if (branchReview.loading && branchReview.progressRunId) {
@@ -344,38 +374,130 @@ export function BranchCompareModal({
     [notifyAiError, notifyAiSuccess],
   );
 
-  const { interactionValue, renderAiFindingActions, reviewThreads } =
+  const resolveSubmittedReviewThread = useCallback(
+    async (threadId: string, resolved: boolean) => {
+      if (!pullRequestContext) return;
+
+      try {
+        const threadState = await resolveReviewThread({
+          path: repoPath,
+          number: pullRequestContext.number,
+          threadId,
+          resolved,
+        });
+        setPullRequestComments((current) =>
+          current.map((comment) =>
+            comment.reviewThreadId === threadState.threadId
+              ? { ...comment, reviewThreadResolved: threadState.resolved }
+              : comment,
+          ),
+        );
+        setGitActionNotice({
+          kind: "success",
+          title: resolved ? "Conversation resolved" : "Conversation reopened",
+          details: `${resolved ? "Resolved" : "Reopened"} review conversation on pull request #${pullRequestContext.number}.`,
+          expanded: false,
+        });
+      } catch (resolveError) {
+        setGitActionNotice({
+          kind: "error",
+          title: resolved
+            ? "Conversation not resolved"
+            : "Conversation not reopened",
+          details:
+            resolveError instanceof Error
+              ? resolveError.message
+              : String(resolveError),
+          expanded: false,
+        });
+        throw resolveError;
+      }
+    },
+    [pullRequestContext, repoPath, resolveReviewThread, setGitActionNotice],
+  );
+
+  const {
+    clearDraftReviewThreads,
+    draftReviewThreads,
+    interactionValue,
+    pendingSubmittedCommentEdits,
+    renderAiFindingActions,
+  } =
     useBranchReviewThreads({
     branchReviewAnchorIndex,
     branchReviewData,
     dismissAiFinding,
     dismissedAiFindingKeys,
     onCopyAiFeedback: copyAiFeedback,
+    onResolveSubmittedReviewThread: resolveSubmittedReviewThread,
     pairKey,
+    pullRequestComments,
   });
 
-  const draftReviewCommentCount = reviewThreads.reduce(
+  const draftReviewCommentCount = draftReviewThreads.reduce(
     (total, thread) => total + thread.comments.length,
     0,
   );
+  const pendingSubmittedCommentEditCount = Object.keys(
+    pendingSubmittedCommentEdits,
+  ).length;
+  const pendingReviewChangeCount =
+    draftReviewCommentCount + pendingSubmittedCommentEditCount;
 
   const submitDraftComments = useCallback(async () => {
     if (!pullRequestContext || !repoPath) return;
 
     const comments: GitHubPullRequestReviewCommentDraft[] = [];
-    for (const thread of reviewThreads) {
+    const replies: Array<{ parentCommentId: number; body: string }> = [];
+    const edits = Object.entries(pendingSubmittedCommentEdits).map(
+      ([commentId, body]) => ({
+        commentId: Number(commentId),
+        body,
+      }),
+    );
+    for (const thread of draftReviewThreads) {
+      if (thread.anchor.side === "file") {
+        for (const comment of thread.comments) {
+          const parentCommentId = parseSubmittedReviewCommentId(
+            comment.parentCommentId,
+          );
+          if (parentCommentId) {
+            replies.push({ parentCommentId, body: comment.bodyMarkdown });
+            continue;
+          }
+
+          comments.push({
+            path: thread.anchor.filePath,
+            body: comment.bodyMarkdown,
+            subjectType: "file",
+          });
+        }
+        continue;
+      }
+
       const line =
         thread.anchor.side === "old"
           ? thread.anchor.oldLine
           : thread.anchor.newLine;
       if (!line) {
-        setSubmitCommentsError(
-          `Cannot submit a comment on ${thread.anchor.filePath} because its line anchor is unavailable.`,
-        );
+        setGitActionNotice({
+          kind: "error",
+          title: "PR comments not submitted",
+          details: `Cannot submit a comment on ${thread.anchor.filePath} because its line anchor is unavailable.`,
+          expanded: false,
+        });
         return;
       }
 
       for (const comment of thread.comments) {
+        const parentCommentId = parseSubmittedReviewCommentId(
+          comment.parentCommentId,
+        );
+        if (parentCommentId) {
+          replies.push({ parentCommentId, body: comment.bodyMarkdown });
+          continue;
+        }
+
         comments.push({
           path: thread.anchor.filePath,
           body: comment.bodyMarkdown,
@@ -385,31 +507,95 @@ export function BranchCompareModal({
       }
     }
 
-    if (comments.length === 0) {
-      setSubmitCommentsError("Add at least one draft comment before submitting.");
+    if (comments.length === 0 && replies.length === 0 && edits.length === 0) {
+      setGitActionNotice({
+        kind: "error",
+        title: "PR comments not submitted",
+        details: "Add at least one draft comment before submitting.",
+        expanded: false,
+      });
       return;
     }
 
     setSubmitCommentsLoading(true);
-    setSubmitCommentsError(null);
-    setSubmitCommentsNotice(null);
     try {
-      await submitGitHubPullRequestReview({
-        path: repoPath,
-        number: pullRequestContext.number,
-        event: "COMMENT",
-        body: null,
-        comments,
+      const submittedReplies: GitHubPullRequestComment[] = [];
+      for (const reply of replies) {
+        const submittedReply = await submitGitHubPullRequestReviewReply({
+          path: repoPath,
+          number: pullRequestContext.number,
+          commentId: reply.parentCommentId,
+          body: reply.body,
+        });
+        submittedReplies.push(submittedReply);
+      }
+
+      if (comments.length > 0) {
+        await submitGitHubPullRequestReview({
+          path: repoPath,
+          number: pullRequestContext.number,
+          event: "COMMENT",
+          body: null,
+          comments,
+        });
+      }
+      const updatedComments: GitHubPullRequestComment[] = [];
+      for (const edit of edits) {
+        const updatedComment = await updateGitHubPullRequestComment({
+          path: repoPath,
+          number: pullRequestContext.number,
+          kind: "review",
+          commentId: edit.commentId,
+          body: edit.body,
+        });
+        updatedComments.push(updatedComment);
+      }
+      if (submittedReplies.length > 0) {
+        setPullRequestComments((current) => [...current, ...submittedReplies]);
+      }
+      if (updatedComments.length > 0) {
+        setPullRequestComments((current) =>
+          current.map((comment) => {
+            const updatedComment = updatedComments.find(
+              (nextComment) =>
+                nextComment.kind === comment.kind && nextComment.id === comment.id,
+            );
+            return updatedComment ?? comment;
+          }),
+        );
+      }
+      clearDraftReviewThreads();
+      const submittedChangeCount = comments.length + replies.length + edits.length;
+      const submittedCommentCount = comments.length + replies.length;
+      const submittedTitle =
+        edits.length === 0
+          ? `Submitted ${submittedCommentCount} review comment${submittedCommentCount === 1 ? "" : "s"}`
+          : `Submitted ${submittedChangeCount} review change${submittedChangeCount === 1 ? "" : "s"}`;
+      setGitActionNotice({
+        kind: "success",
+        title: submittedTitle,
+        details: `Submitted review changes to pull request #${pullRequestContext.number}.`,
+        expanded: false,
       });
-      setSubmitCommentsNotice(`Submitted ${comments.length} review comment${comments.length === 1 ? "" : "s"}.`);
     } catch (submitError) {
-      setSubmitCommentsError(
-        submitError instanceof Error ? submitError.message : String(submitError),
-      );
+      setGitActionNotice({
+        kind: "error",
+        title: "PR comments not submitted",
+        details:
+          submitError instanceof Error ? submitError.message : String(submitError),
+        expanded: false,
+      });
     } finally {
       setSubmitCommentsLoading(false);
     }
-  }, [pullRequestContext, repoPath, reviewThreads]);
+  }, [
+    clearDraftReviewThreads,
+    draftReviewThreads,
+    pendingSubmittedCommentEdits,
+    pullRequestContext,
+    repoPath,
+    setGitActionNotice,
+  ]);
 
   const renderAiNoteActions = useCallback(
     (note: LocalAiBranchReviewNote) => (
@@ -433,6 +619,7 @@ export function BranchCompareModal({
     <div className="fixed inset-0 z-[10000]">
       <div className="absolute inset-0 bg-black/60" />
       <div className="relative mx-auto my-6 flex h-[96vh] w-[96vw] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+        {pullRequestCommentsLoading ? <PullRequestCommentsProgressBar /> : null}
         <div className="flex min-w-0 items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {isPullRequestMode && pullRequestContext ? (
@@ -527,7 +714,7 @@ export function BranchCompareModal({
                       type="button"
                       className="inline-flex h-8 items-center gap-1.5 rounded border border-blue-500/50 bg-blue-500/20 px-2.5 text-xs font-semibold text-blue-100 transition-colors hover:bg-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={
-                        submitCommentsLoading || draftReviewCommentCount === 0
+                        submitCommentsLoading || pendingReviewChangeCount === 0
                       }
                       onClick={() => {
                         void submitDraftComments();
@@ -538,19 +725,6 @@ export function BranchCompareModal({
                   </>
                 ) : null}
               </div>
-              {submitCommentsNotice ? (
-                <div className="rounded border border-lime-500/30 bg-lime-500/10 px-2.5 py-1.5 text-xs text-lime-100">
-                  {submitCommentsNotice}
-                </div>
-              ) : null}
-              {submitCommentsError ? (
-                <div
-                  role="alert"
-                  className="rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-100"
-                >
-                  {submitCommentsError}
-                </div>
-              ) : null}
               <BranchAiErrorDetails
                 label="Analyze"
                 error={branchAnalysis.error}
@@ -597,6 +771,7 @@ export function BranchCompareModal({
               sectionMode="single"
               isLoading={filesLoading}
               emptyStateMessage={emptyStateMessage}
+              fileCommentCounts={pullRequestCommentCountsByPath}
             />
           </Split.Pane>
           <Split.Resizer className="!bg-border hover:!bg-primary [--split-resizer-size:1px]" />
@@ -672,12 +847,19 @@ export function BranchCompareModal({
                         {comment.path ? (
                           <div className="mb-2 truncate text-[11px] text-zinc-500">
                             {comment.path}
-                            {comment.line ? `:${comment.line}` : ""}
+                            {comment.line && comment.subjectType !== "file"
+                              ? `:${comment.line}`
+                              : ""}
                           </div>
                         ) : null}
                         <div className="whitespace-pre-wrap leading-5 text-zinc-300">
-                          {comment.body}
+                          {pendingSubmittedCommentEdits[comment.id] ?? comment.body}
                         </div>
+                        {pendingSubmittedCommentEdits[comment.id] !== undefined ? (
+                          <div className="mt-2 text-[11px] font-semibold text-blue-200">
+                            Draft edit
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>

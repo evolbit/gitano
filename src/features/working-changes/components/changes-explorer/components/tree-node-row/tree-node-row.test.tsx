@@ -71,4 +71,10 @@ describe("TreeNodeRow", () => {
     expect(props.onToggleFolder).toHaveBeenCalledWith("Tracked:src");
     expect(props.onToggleFolderSelection).toHaveBeenCalledWith("src", [fileNode.file]);
   });
+
+  it("shows a PR comment marker before file change counts", () => {
+    renderRow(fileNode, { fileCommentCounts: { "src/app.ts": 1 } });
+
+    expect(screen.getByLabelText("1 PR comment")).toBeInTheDocument();
+  });
 });

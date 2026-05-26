@@ -1,8 +1,17 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReviewThreadView } from "./review-thread";
-import type { ReviewCommentAuthor, ReviewThread } from "../../types";
+import type {
+  ReviewCommentAuthor,
+  ReviewThread,
+} from "../../types/review-comments";
 
 const author: ReviewCommentAuthor = {
   id: "current-user",
@@ -26,6 +35,7 @@ const thread: ReviewThread = {
     {
       id: "comment-1",
       threadId: "thread-1",
+      parentCommentId: null,
       author,
       bodyMarkdown: "**First**",
       createdAt: 123,
@@ -117,5 +127,44 @@ describe("ReviewThreadView", () => {
     await user.click(screen.getByRole("button", { name: "Resolve conversation" }));
 
     expect(onResolveThread).toHaveBeenCalledWith("thread-1", true);
+  });
+
+  it("collapses resolved threads and reopens from inside the thread", async () => {
+    const user = userEvent.setup();
+    const onResolveThread = vi.fn();
+    const resolvedThread: ReviewThread = {
+      ...thread,
+      status: "resolved",
+      comments: [
+        {
+          ...thread.comments[0],
+          bodyMarkdown: "Resolved body",
+        },
+      ],
+    };
+
+    render(
+      <ReviewThreadView
+        thread={resolvedThread}
+        isCreating={false}
+        currentAuthor={author}
+        onSaveInitial={vi.fn()}
+        onCancelInitial={vi.fn()}
+        onReply={vi.fn()}
+        onResolveThread={onResolveThread}
+        onUpdateComment={vi.fn()}
+        onDeleteComment={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Resolved")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Resolved body")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Review thread" }));
+    await user.click(screen.getByRole("button", { name: "Reopen conversation" }));
+
+    expect(onResolveThread).toHaveBeenCalledWith("thread-1", false);
   });
 });

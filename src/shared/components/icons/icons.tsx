@@ -33,6 +33,7 @@ export {
   IconList,
   IconListCheck,
   IconListNumbers,
+  IconMessageCircle,
   IconMinus,
   IconMoodSmile,
   IconPaperclip,

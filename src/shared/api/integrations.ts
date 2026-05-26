@@ -99,6 +99,10 @@ export type GitHubPullRequestComment = {
   line: number | null;
   originalLine: number | null;
   diffHunk: string | null;
+  subjectType: "line" | "file" | null;
+  inReplyToId: number | null;
+  reviewThreadId?: string | null;
+  reviewThreadResolved?: boolean | null;
 };
 
 export type GitHubPullRequestReviewEvent =
@@ -109,8 +113,9 @@ export type GitHubPullRequestReviewEvent =
 export type GitHubPullRequestReviewCommentDraft = {
   path: string;
   body: string;
-  side: string;
-  line: number;
+  side?: string;
+  line?: number;
+  subjectType?: "line" | "file";
 };
 
 export type GitHubSubmitPullRequestReviewRequest =
@@ -124,6 +129,30 @@ export type GitHubSubmittedPullRequestReview = {
   id: number;
   state: string;
   htmlUrl: string | null;
+};
+
+export type GitHubUpdatePullRequestCommentRequest =
+  GitHubPullRequestNumberRequest & {
+    commentId: number;
+    kind: GitHubPullRequestCommentKind;
+    body: string;
+  };
+
+export type GitHubSubmitPullRequestReviewReplyRequest =
+  GitHubPullRequestNumberRequest & {
+    commentId: number;
+    body: string;
+  };
+
+export type GitHubResolvePullRequestReviewThreadRequest =
+  GitHubPullRequestNumberRequest & {
+    threadId: string;
+    resolved: boolean;
+  };
+
+export type GitHubPullRequestReviewThreadState = {
+  threadId: string;
+  resolved: boolean;
 };
 
 export function listProviderIntegrations() {
@@ -193,6 +222,33 @@ export function submitGitHubPullRequestReview(
 ) {
   return invokeCommand<GitHubSubmittedPullRequestReview>(
     "github_submit_pull_request_review",
+    { request },
+  );
+}
+
+export function updateGitHubPullRequestComment(
+  request: GitHubUpdatePullRequestCommentRequest,
+) {
+  return invokeCommand<GitHubPullRequestComment>(
+    "github_update_pull_request_comment",
+    { request },
+  );
+}
+
+export function submitGitHubPullRequestReviewReply(
+  request: GitHubSubmitPullRequestReviewReplyRequest,
+) {
+  return invokeCommand<GitHubPullRequestComment>(
+    "github_submit_pull_request_review_reply",
+    { request },
+  );
+}
+
+export function resolveGitHubPullRequestReviewThread(
+  request: GitHubResolvePullRequestReviewThreadRequest,
+) {
+  return invokeCommand<GitHubPullRequestReviewThreadState>(
+    "github_resolve_pull_request_review_thread",
     { request },
   );
 }

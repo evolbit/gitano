@@ -38,6 +38,7 @@ type ChangesExplorerTreeNodesProps = {
     filesInFolder: ChangesExplorerFile[],
   ) => ChangesExplorerCheckboxState;
   alignCountColumnWithHeaderActions?: boolean;
+  fileCommentCounts?: Record<string, number>;
 };
 
 export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
@@ -57,6 +58,7 @@ export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
   onToggleFolderSelection,
   getFolderCheckboxState,
   alignCountColumnWithHeaderActions = false,
+  fileCommentCounts,
 }: ChangesExplorerTreeNodesProps) {
   return (
     <>
@@ -79,6 +81,7 @@ export const ChangesExplorerTreeNodes = memo(function ChangesExplorerTreeNodes({
           onToggleFolderSelection={onToggleFolderSelection}
           getFolderCheckboxState={getFolderCheckboxState}
           alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
+          fileCommentCounts={fileCommentCounts}
         />
       ))}
     </>

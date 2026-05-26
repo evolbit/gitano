@@ -126,6 +126,9 @@ fn main() {
             integrations::github_prepare_pull_request_refs,
             integrations::github_list_pull_request_comments,
             integrations::github_submit_pull_request_review,
+            integrations::github_update_pull_request_comment,
+            integrations::github_submit_pull_request_review_reply,
+            integrations::github_resolve_pull_request_review_thread,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

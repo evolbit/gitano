@@ -52,6 +52,7 @@ function ChangesExplorer({
   isLoading = false,
   emptyStateMessage = "No files found",
   alignCountColumnWithHeaderActions = false,
+  fileCommentCounts,
 }: ChangesExplorerProps) {
   const [search, setSearch] = useState("");
   const deferredFiles = useDeferredValue(files);
@@ -263,6 +264,7 @@ function ChangesExplorer({
                   alignCountColumnWithHeaderActions={
                     alignCountColumnWithHeaderActions
                   }
+                  commentCount={fileCommentCounts?.[file.path] ?? 0}
                 />
               ))}
             </ChangesExplorerSection>
@@ -293,6 +295,7 @@ function ChangesExplorer({
                 alignCountColumnWithHeaderActions={
                   alignCountColumnWithHeaderActions
                 }
+                fileCommentCounts={fileCommentCounts}
               />
             </ChangesExplorerSection>
           ))

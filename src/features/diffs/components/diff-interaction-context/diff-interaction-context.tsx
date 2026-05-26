@@ -13,7 +13,12 @@ export type DiffLineAnchor = {
   kind: DiffLine["kind"];
 };
 
+export type DiffFileAnchor = {
+  filePath: string;
+};
+
 export type DiffInteractionContextValue = {
+  renderFileHeaderBelow?: (anchor: DiffFileAnchor) => React.ReactNode;
   renderLineAccessory?: (anchor: DiffLineAnchor) => React.ReactNode;
   renderLineBelow?: (anchor: DiffLineAnchor) => React.ReactNode;
   renderLineBelowFullWidth?: (anchor: DiffLineAnchor) => React.ReactNode;

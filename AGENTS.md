@@ -23,6 +23,7 @@ Backend stack:
 - Follow existing code structure before inventing new patterns.
 - Keep changes scoped to the requested feature or fix.
 - Prefer simple, typed, readable code over clever abstractions.
+- Prefer using named CONSTANTS (or TypeScript enums / union types) instead of raw string literals for semantic values. Comparing against a named constant (e.g., a === SUBMITTED or a === STATUS.SUBMITTED) is more legible and type-safe than a === "submitted". Place constants near the owning feature (e.g., src/features/<feature>/constants.ts) or in src/shared/constants and export typed values.
 - Do not refactor unrelated code while implementing a feature.
 - Preserve user changes. Never reset or revert unrelated files.
 

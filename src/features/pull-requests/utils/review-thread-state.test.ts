@@ -11,7 +11,7 @@ import {
   updateReviewThreadComment,
   upsertReviewThreadComment,
 } from "./review-thread-state";
-import type { ReviewCommentAuthor } from "../types";
+import type { ReviewCommentAuthor } from "../types/review-comments";
 
 const anchor: DiffLineAnchor = {
   filePath: "src/file.ts",

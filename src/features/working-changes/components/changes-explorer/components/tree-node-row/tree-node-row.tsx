@@ -2,6 +2,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconFolder,
+  IconMessageCircle,
 } from "@/shared/components/icons/icons";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import {
@@ -53,6 +54,7 @@ type TreeNodeRowProps = {
     filesInFolder: ChangesExplorerFile[],
   ) => ChangesExplorerCheckboxState;
   alignCountColumnWithHeaderActions?: boolean;
+  fileCommentCounts?: Record<string, number>;
 };
 
 export const TreeNodeRow = memo(function TreeNodeRow({
@@ -72,6 +74,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   onToggleFolderSelection,
   getFolderCheckboxState,
   alignCountColumnWithHeaderActions = false,
+  fileCommentCounts,
 }: TreeNodeRowProps) {
   if (node.kind === "folder") {
     const expansionKey = getFolderExpansionKey(sectionName, node.path);
@@ -144,6 +147,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             alignCountColumnWithHeaderActions={
               alignCountColumnWithHeaderActions
             }
+            fileCommentCounts={fileCommentCounts}
           />
         ) : null}
       </div>
@@ -152,6 +156,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
 
   const checkboxState = getFileCheckboxState(node.file);
   const isSelected = selectedPath === node.file.path;
+  const commentCount = fileCommentCounts?.[node.file.path] ?? 0;
 
   return (
     <button
@@ -179,9 +184,24 @@ export const TreeNodeRow = memo(function TreeNodeRow({
       {!isUntrackedFile(node.file) ? (
         <div
           className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
-            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+            commentCount > 0
+              ? alignCountColumnWithHeaderActions
+                ? "w-[5.75rem] pr-2"
+                : "w-[4.5rem]"
+              : alignCountColumnWithHeaderActions
+                ? "w-[4.5rem] pr-2"
+                : "w-14"
           }`}
         >
+          {commentCount > 0 ? (
+            <span
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-zinc-400"
+              title={`${commentCount} PR comment${commentCount === 1 ? "" : "s"}`}
+              aria-label={`${commentCount} PR comment${commentCount === 1 ? "" : "s"}`}
+            >
+              <IconMessageCircle size={13} />
+            </span>
+          ) : null}
           <span className="min-w-0 text-right text-lime-400">
             +{node.file.insertions}
           </span>

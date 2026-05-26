@@ -1,6 +1,7 @@
 import type { DiffLineAnchor } from "@/features/diffs";
 
 export type ReviewCommentLifecycle = "draft" | "submitted";
+export type ReviewCommentPendingOperation = "edit";
 export type ReviewThreadStatus = "open" | "resolved";
 export type ReviewAuthorKind = "user" | "bot";
 
@@ -31,22 +32,31 @@ export type ReviewAttachment = {
 export type ReviewThreadAnchor = Pick<
   DiffLineAnchor,
   "filePath" | "side" | "oldLine" | "newLine" | "kind"
->;
+> | {
+  filePath: string;
+  side: "file";
+  oldLine: null;
+  newLine: null;
+  kind: "File";
+};
 
 export type ReviewComment = {
   id: string;
   threadId: string;
+  parentCommentId: string | null;
   author: ReviewCommentAuthor;
   bodyMarkdown: string;
   createdAt: number;
   updatedAt: number | null;
   lifecycle: ReviewCommentLifecycle;
+  pendingOperation?: ReviewCommentPendingOperation;
   reactions: ReviewReaction[];
   attachments: ReviewAttachment[];
 };
 
 export type ReviewThread = {
   id: string;
+  providerThreadId?: string | null;
   pairKey: string;
   anchor: ReviewThreadAnchor;
   status: ReviewThreadStatus;

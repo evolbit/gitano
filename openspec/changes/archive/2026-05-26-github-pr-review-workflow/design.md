@@ -12,7 +12,8 @@ Settings currently focus on AI engines. GitHub should not be configured ad hoc f
 - Put GitHub OAuth connection, verification, and disconnection in settings under `Integrations`.
 - Add a repository toolbar PR entry point with a regularly refreshed pending count.
 - List GitHub pull requests for the active repository and use GitHub-native labels: `Review`, `Approve`, and `Request changes`.
-- Reuse the existing branch comparison modal for PR review mode.
+- Keep the PR review comment model, Markdown composer, review-thread UI, and provider review actions owned by `src/features/pull-requests`.
+- Reuse the existing diff comparison surface for PR review while keeping PR-only review comments out of normal branch comparison behavior.
 - Load PR comments in a comments side panel and allow local draft comments to be submitted as GitHub review feedback.
 - Keep PR count refresh lightweight and non-blocking.
 
@@ -52,6 +53,12 @@ Credential storage should use secure OS-backed storage where available. If secur
 ### Prefer native GitHub API integration over `gh` CLI dependency
 
 Gitano should call GitHub APIs through backend HTTP commands using the configured integration token. The `gh` CLI is useful for development and manual debugging, but a core in-app PR workflow should not require an external CLI to be installed or authenticated.
+
+### Keep pull request review ownership in the pull requests feature
+
+Pull request review comments are provider-backed PR data, not general branch comparison state. Review comment components, types, utilities, and provider review actions should live under `src/features/pull-requests` using that feature's normal `components`, `hooks`, `types`, and `utils` folders.
+
+The branch comparison surface can still provide the diff viewer host needed for the current implementation, but normal branch comparisons must remain local-only and must not expose GitHub submission controls. As the PR review surface grows, PR-specific orchestration should continue moving toward the pull request feature so future GitLab and Bitbucket providers can implement the same review concepts behind provider adapters.
 
 ### Fetch PR refs for local diff reuse
 

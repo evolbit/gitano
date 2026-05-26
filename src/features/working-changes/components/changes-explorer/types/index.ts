@@ -38,4 +38,5 @@ export type ChangesExplorerProps = {
   isLoading?: boolean;
   emptyStateMessage?: string;
   alignCountColumnWithHeaderActions?: boolean;
+  fileCommentCounts?: Record<string, number>;
 };

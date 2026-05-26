@@ -12,7 +12,7 @@ import {
   type GitHubPullRequestListItem,
   type GitHubPullRequestReviewEvent,
 } from "@/shared/api/integrations";
-import { MarkdownComposer } from "@/features/review-comments";
+import { MarkdownComposer } from "../markdown-composer/markdown-composer";
 import { usePullRequests } from "../../hooks/use-pull-requests";
 
 type PullRequestModalProps = {

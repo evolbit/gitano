@@ -7,8 +7,11 @@ import {
   listGitHubPullRequests,
   listProviderIntegrations,
   prepareGitHubPullRequestRefs,
+  resolveGitHubPullRequestReviewThread,
   startGitHubOAuthIntegration,
   submitGitHubPullRequestReview,
+  submitGitHubPullRequestReviewReply,
+  updateGitHubPullRequestComment,
   verifyProviderIntegration,
 } from "./integrations";
 
@@ -170,6 +173,80 @@ describe("integrations API", () => {
           event: "APPROVE",
           body: "Looks good",
           comments: [],
+        },
+      },
+    );
+  });
+
+  it("updates GitHub pull request comments", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ id: 4, body: "Updated" });
+
+    await updateGitHubPullRequestComment({
+      path: "/repo",
+      number: 7,
+      kind: "review",
+      commentId: 4,
+      body: "Updated",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "github_update_pull_request_comment",
+      {
+        request: {
+          path: "/repo",
+          number: 7,
+          kind: "review",
+          commentId: 4,
+          body: "Updated",
+        },
+      },
+    );
+  });
+
+  it("submits GitHub pull request review replies", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ id: 5, body: "Reply" });
+
+    await submitGitHubPullRequestReviewReply({
+      path: "/repo",
+      number: 7,
+      commentId: 4,
+      body: "Reply",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "github_submit_pull_request_review_reply",
+      {
+        request: {
+          path: "/repo",
+          number: 7,
+          commentId: 4,
+          body: "Reply",
+        },
+      },
+    );
+  });
+
+  it("resolves GitHub pull request review threads", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      threadId: "PRRT_kwDOExample",
+      resolved: true,
+    });
+
+    await resolveGitHubPullRequestReviewThread({
+      path: "/repo",
+      number: 7,
+      threadId: "PRRT_kwDOExample",
+      resolved: true,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "github_resolve_pull_request_review_thread",
+      {
+        request: {
+          path: "/repo",
+          number: 7,
+          threadId: "PRRT_kwDOExample",
+          resolved: true,
         },
       },
     );

@@ -43,16 +43,22 @@
 - [x] 5.3 Render pull request review header state with `Analyze`, `Review`, and `Comments` actions.
 - [x] 5.4 Add a comments side panel that loads and displays PR conversation and review comments.
 - [x] 5.5 Map loaded inline review comments to existing review thread anchors when possible.
-- [x] 5.6 Add tests for PR review mode, prepared refs, comments panel open/close, and comment load failures.
+- [x] 5.6 Map loaded file-level review comments to changed file headers when possible.
+- [x] 5.7 Add tests for PR review mode, prepared refs, comments panel open/close, inline/file comment loading, and comment load failures.
 
 ## 6. Draft Comment Submission And AI Findings
 
 - [x] 6.1 Add anchor validation and translation from Gitano review thread anchors to GitHub review comment payloads.
 - [x] 6.2 Add comment-only review submission for draft review threads created in PR review mode.
-- [x] 6.3 Preserve unsubmitted drafts when GitHub submission fails.
-- [x] 6.4 Allow applied AI review findings to become editable draft PR comments in PR review mode.
-- [x] 6.5 Ensure normal branch comparison AI review remains local-only and does not show GitHub submission controls.
-- [x] 6.6 Add tests for applied AI findings, invalid anchors, comment-only submission, and normal branch comparison behavior.
+- [x] 6.3 Add file-level draft comments and submit them through GitHub file-level review comment payloads.
+- [x] 6.4 Preserve unsubmitted drafts when GitHub submission fails.
+- [x] 6.5 Allow applied AI review findings to become editable draft PR comments in PR review mode.
+- [x] 6.6 Ensure normal branch comparison AI review remains local-only and does not show GitHub submission controls.
+- [x] 6.7 Add tests for applied AI findings, invalid anchors, line/file comment-only submission, and normal branch comparison behavior.
+- [x] 6.8 Add draft editing support for loaded GitHub review comments and keep the file-level comment control visible when file comments are loaded.
+- [x] 6.9 Preserve GitHub review reply relationships and submit draft replies through GitHub's reply endpoint.
+- [x] 6.10 Add GitHub-backed resolve/reopen UI for review threads with collapsed resolved state.
+- [x] 6.11 Move pull request review comment components, types, and utilities under `src/features/pull-requests`.
 
 ## 7. Verification
 

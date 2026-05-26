@@ -252,6 +252,59 @@ pub async fn github_submit_pull_request_review(
     .await
 }
 
+#[tauri::command]
+pub async fn github_update_pull_request_comment(
+    request: GitHubUpdatePullRequestCommentRequest,
+) -> Result<GitHubPullRequestComment, String> {
+    let repository = resolve_github_repository(&GitHubRepositoryRequest {
+        path: request.path,
+        remote_name: request.remote_name,
+    })?;
+    let token = github_token()?;
+
+    github::update_pull_request_comment(
+        &repository,
+        &token,
+        request.kind,
+        request.comment_id,
+        request.body,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn github_submit_pull_request_review_reply(
+    request: GitHubSubmitPullRequestReviewReplyRequest,
+) -> Result<GitHubPullRequestComment, String> {
+    let repository = resolve_github_repository(&GitHubRepositoryRequest {
+        path: request.path,
+        remote_name: request.remote_name,
+    })?;
+    let token = github_token()?;
+
+    github::submit_pull_request_review_reply(
+        &repository,
+        request.number,
+        &token,
+        request.comment_id,
+        request.body,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn github_resolve_pull_request_review_thread(
+    request: GitHubResolvePullRequestReviewThreadRequest,
+) -> Result<GitHubPullRequestReviewThreadState, String> {
+    let _repository = resolve_github_repository(&GitHubRepositoryRequest {
+        path: request.path,
+        remote_name: request.remote_name,
+    })?;
+    let token = github_token()?;
+
+    github::resolve_pull_request_review_thread(&token, request.thread_id, request.resolved).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

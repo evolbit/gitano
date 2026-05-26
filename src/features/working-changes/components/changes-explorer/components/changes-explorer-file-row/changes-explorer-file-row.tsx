@@ -4,6 +4,7 @@ import { memo } from "react";
 import { ChangesExplorerStatusIcon } from "../changes-explorer-status-icon/changes-explorer-status-icon";
 import { FileSelectionCheckbox } from "../file-selection-checkbox/file-selection-checkbox";
 import { ChangesExplorerCheckboxState, isUntrackedFile } from "../../utils";
+import { IconMessageCircle } from "@/shared/components/icons/icons";
 
 type FileRowProps = {
   file: ChangesExplorerFile;
@@ -18,6 +19,7 @@ type FileRowProps = {
   ) => void;
   onToggleFileSelection: (file: ChangesExplorerFile) => void;
   alignCountColumnWithHeaderActions?: boolean;
+  commentCount?: number;
 };
 
 export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
@@ -29,6 +31,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
   onOpenFileContextMenu,
   onToggleFileSelection,
   alignCountColumnWithHeaderActions = false,
+  commentCount = 0,
 }: FileRowProps) {
   const isSelected = selectedPath === file.path;
   const fileName = getFileName(file.path);
@@ -65,9 +68,24 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
       {!isUntrackedFile(file) ? (
         <div
           className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
-            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+            commentCount > 0
+              ? alignCountColumnWithHeaderActions
+                ? "w-[5.75rem] pr-2"
+                : "w-[4.5rem]"
+              : alignCountColumnWithHeaderActions
+                ? "w-[4.5rem] pr-2"
+                : "w-14"
           }`}
         >
+          {commentCount > 0 ? (
+            <span
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-zinc-400"
+              title={`${commentCount} PR comment${commentCount === 1 ? "" : "s"}`}
+              aria-label={`${commentCount} PR comment${commentCount === 1 ? "" : "s"}`}
+            >
+              <IconMessageCircle size={13} />
+            </span>
+          ) : null}
           <span className="min-w-0 text-right text-lime-400">
             +{file.insertions}
           </span>

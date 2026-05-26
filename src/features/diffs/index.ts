@@ -3,6 +3,7 @@ export { default as DiffModal } from "./components/diff-modal/diff-modal";
 export { DiffInteractionProvider } from "./components/diff-interaction-context/diff-interaction-context";
 export type {
   DiffInteractionContextValue,
+  DiffFileAnchor,
   DiffLineAnchor,
   DiffLineSide,
 } from "./components/diff-interaction-context/diff-interaction-context";

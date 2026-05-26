@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DiffHunk from "../diff-hunk/diff-hunk";
+import { useDiffInteraction } from "../diff-interaction-context/diff-interaction-context";
 import type {
   ContextDirection,
   DiffDisplayMode,
@@ -51,6 +52,8 @@ export default function DiffViewerBase({
   canStage = false,
 }: DiffViewerBaseProps) {
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
+  const diffInteraction = useDiffInteraction();
+  const fileHeaderBelow = diffInteraction.renderFileHeaderBelow?.({ filePath });
 
   return (
     <div className="flex h-full flex-col bg-background-emphasis text-sm">
@@ -74,6 +77,7 @@ export default function DiffViewerBase({
         {loading ? <div className="text-blue-400">Loading diff...</div> : null}
         {error ? <div className="text-red-400">{error}</div> : null}
         {hunks.length === 0 && !loading && !error ? <div>No changes.</div> : null}
+        {fileHeaderBelow ? <div className="mb-3">{fileHeaderBelow}</div> : null}
         {hunks.map((hunk, idx) => (
           <DiffHunk
             key={idx}

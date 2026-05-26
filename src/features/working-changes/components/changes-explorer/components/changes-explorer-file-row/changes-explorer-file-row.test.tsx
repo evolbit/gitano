@@ -10,7 +10,10 @@ const file: ChangesExplorerFile = {
   deletions: 3,
 };
 
-function renderFileRow(alignCountColumnWithHeaderActions = false) {
+function renderFileRow(
+  alignCountColumnWithHeaderActions = false,
+  commentCount = 0,
+) {
   return render(
     <ChangesExplorerFileRow
       file={file}
@@ -21,6 +24,7 @@ function renderFileRow(alignCountColumnWithHeaderActions = false) {
       onOpenFileContextMenu={vi.fn()}
       onToggleFileSelection={vi.fn()}
       alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
+      commentCount={commentCount}
     />,
   );
 }
@@ -59,5 +63,15 @@ describe("ChangesExplorerFileRow", () => {
 
     expect(parentPath.className).toContain("truncate");
     expect(parentPath.className).toContain("[direction:rtl]");
+  });
+
+  it("shows a PR comment marker before the change counts", () => {
+    renderFileRow(false, 2);
+
+    expect(screen.getByLabelText("2 PR comments")).toBeInTheDocument();
+    const countColumn = screen.getByText("+12").parentElement;
+
+    expect(countColumn?.textContent).toContain("+12");
+    expect(countColumn?.textContent).toContain("-3");
   });
 });

@@ -146,6 +146,10 @@ pub struct GitHubPullRequestComment {
     pub line: Option<u64>,
     pub original_line: Option<u64>,
     pub diff_hunk: Option<String>,
+    pub subject_type: Option<String>,
+    pub in_reply_to_id: Option<u64>,
+    pub review_thread_id: Option<String>,
+    pub review_thread_resolved: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,8 +165,9 @@ pub enum GitHubPullRequestReviewEvent {
 pub struct GitHubPullRequestReviewCommentDraft {
     pub path: String,
     pub body: String,
-    pub side: String,
-    pub line: u64,
+    pub side: Option<String>,
+    pub line: Option<u64>,
+    pub subject_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,4 +187,42 @@ pub struct GitHubSubmittedPullRequestReview {
     pub id: u64,
     pub state: String,
     pub html_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubUpdatePullRequestCommentRequest {
+    pub path: String,
+    pub remote_name: Option<String>,
+    pub number: u64,
+    pub comment_id: u64,
+    pub kind: GitHubPullRequestCommentKind,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubSubmitPullRequestReviewReplyRequest {
+    pub path: String,
+    pub remote_name: Option<String>,
+    pub number: u64,
+    pub comment_id: u64,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubResolvePullRequestReviewThreadRequest {
+    pub path: String,
+    pub remote_name: Option<String>,
+    pub number: u64,
+    pub thread_id: String,
+    pub resolved: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestReviewThreadState {
+    pub thread_id: String,
+    pub resolved: bool,
 }
