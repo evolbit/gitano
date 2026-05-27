@@ -14,7 +14,7 @@
     "verify:macos-bundle-deps": "scripts/verify-macos-bundle-deps.sh"
   },
   "dependencies": {
-    "@gfazioli/mantine-split-pane": "^2.1.2",
+    "@gfazioli/mantine-split-pane": "^2.5.3",
     "@gitgraph/react": "^1.6.0",
     "@mantine/core": "^8.0.2",
     "@mantine/hooks": "^8.0.2",
