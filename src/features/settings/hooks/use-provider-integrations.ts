@@ -3,8 +3,10 @@ import {
   completeGitHubOAuthIntegration,
   disconnectProviderIntegration,
   listProviderIntegrations,
+  setGitHubAccessMethod,
   startGitHubOAuthIntegration,
   verifyProviderIntegration,
+  type GitHubAccessMethod,
   type GitHubOAuthStartResponse,
   type ProviderIntegration,
 } from "@/shared/api/integrations";
@@ -138,6 +140,27 @@ export function useProviderIntegrations(enabled: boolean) {
     [setProviderBusy],
   );
 
+  const setGitHubAccessMethodPreference = useCallback(
+    async (accessMethod: GitHubAccessMethod) => {
+      setProviderBusy("github", true);
+      setError(null);
+      try {
+        const provider = await setGitHubAccessMethod({ accessMethod });
+        setProviders((current) => replaceProvider(current, provider));
+      } catch (setErrorValue) {
+        setError(
+          setErrorValue instanceof Error
+            ? setErrorValue.message
+            : String(setErrorValue),
+        );
+        throw setErrorValue;
+      } finally {
+        setProviderBusy("github", false);
+      }
+    },
+    [setProviderBusy],
+  );
+
   return {
     providers,
     loading,
@@ -146,6 +169,7 @@ export function useProviderIntegrations(enabled: boolean) {
     completeGitHubOAuth,
     disconnectProvider,
     loadProviders,
+    setGitHubAccessMethodPreference,
     startGitHubOAuth,
     verifyProvider,
   };

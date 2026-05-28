@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  listGitHubPullRequests,
-  listProviderIntegrations,
-  type GitHubPullRequestListItem,
+  listProviderPullRequests,
+  type PullRequestListItem,
 } from "@/shared/api/integrations";
 
 export type PullRequestAvailability =
@@ -15,17 +14,17 @@ export type PullRequestAvailability =
 function classifyPullRequestError(error: unknown): PullRequestAvailability {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("GitHub is not connected")) return "disconnected";
+  if (
+    message.includes("GitHub CLI is not installed") ||
+    message.includes("GitHub CLI is installed but is not authenticated") ||
+    message.includes("gh auth login")
+  ) {
+    return "disconnected";
+  }
   if (message.includes("does not resolve to a GitHub repository")) {
     return "unavailable";
   }
   return "error";
-}
-
-async function hasConnectedGitHubProvider() {
-  const providers = await listProviderIntegrations();
-  return providers.some(
-    (provider) => provider.id === "github" && provider.status === "connected",
-  );
 }
 
 export function usePullRequests({
@@ -35,7 +34,7 @@ export function usePullRequests({
   open: boolean;
   repoPath: string | null | undefined;
 }) {
-  const [pullRequests, setPullRequests] = useState<GitHubPullRequestListItem[]>(
+  const [pullRequests, setPullRequests] = useState<PullRequestListItem[]>(
     [],
   );
   const [availability, setAvailability] =
@@ -54,14 +53,10 @@ export function usePullRequests({
     setLoading(true);
     setError(null);
     try {
-      const connected = await hasConnectedGitHubProvider();
-      if (!connected) {
-        setPullRequests([]);
-        setAvailability("disconnected");
-        return;
-      }
-
-      const nextPullRequests = await listGitHubPullRequests({ path: repoPath });
+      const nextPullRequests = await listProviderPullRequests({
+        providerId: "github",
+        path: repoPath,
+      });
       setPullRequests(nextPullRequests);
       setAvailability("ready");
     } catch (loadError) {

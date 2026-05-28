@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +29,12 @@ const localAiMocks = vi.hoisted(() => ({
   listenToLocalAiProgress: vi.fn(),
 }));
 const integrationApiMocks = vi.hoisted(() => ({
+  getProviderRepositoryMergeOptions: vi.fn(),
+  listProviderIntegrations: vi.fn(),
   listGitHubPullRequestComments: vi.fn(),
+  listProviderPullRequestCommits: vi.fn(),
+  submitProviderPullRequestConversationComment: vi.fn(),
+  mergeProviderPullRequest: vi.fn(),
   submitGitHubPullRequestReviewReply: vi.fn(),
   submitGitHubPullRequestReview: vi.fn(),
   updateGitHubPullRequestComment: vi.fn(),
@@ -47,13 +52,60 @@ vi.mock("@/shared/platform/clipboard", () => clipboardMocks);
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@tanstack/react-query")>();
+  const React = await import("react");
   return {
     ...actual,
+    useQuery: ({
+      enabled = true,
+      queryFn,
+    }: {
+      enabled?: boolean;
+      queryFn: () => Promise<unknown>;
+    }) => {
+      const queryFnRef = React.useRef(queryFn);
+      queryFnRef.current = queryFn;
+      const [state, setState] = React.useState<{
+        data: unknown;
+        error: unknown;
+        isLoading: boolean;
+      }>({ data: undefined, error: null, isLoading: Boolean(enabled) });
+
+      React.useEffect(() => {
+        if (!enabled) {
+          setState({ data: undefined, error: null, isLoading: false });
+          return;
+        }
+
+        let cancelled = false;
+        setState((current) => ({ ...current, isLoading: true, error: null }));
+        void queryFnRef.current()
+          .then((data) => {
+            if (!cancelled) setState({ data, error: null, isLoading: false });
+          })
+          .catch((error) => {
+            if (!cancelled) setState({ data: undefined, error, isLoading: false });
+          });
+
+        return () => {
+          cancelled = true;
+        };
+      }, [enabled]);
+
+      return state;
+    },
     useMutation: ({ mutationFn }: { mutationFn: (request: unknown) => unknown }) => ({
       mutateAsync: mutationFn,
     }),
   };
 });
+
+async function submitReviewAsComment(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Submit review" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Finish your review",
+  });
+  await user.click(within(dialog).getByRole("button", { name: "Submit review" }));
+}
 
 describe("BranchCompareModal local AI", () => {
   beforeEach(() => {
@@ -63,12 +115,61 @@ describe("BranchCompareModal local AI", () => {
 	    );
     diffApiMocks.getBranchComparisonFiles.mockResolvedValue([]);
     diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([]);
+    integrationApiMocks.getProviderRepositoryMergeOptions.mockResolvedValue({
+      mergeCommit: true,
+      squash: true,
+      rebase: true,
+    });
+    integrationApiMocks.listProviderIntegrations.mockResolvedValue([
+      {
+        id: "github",
+        displayName: "GitHub",
+        capabilities: ["pullRequests", "pullRequestReviews"],
+        status: "connected",
+        connection: { accountLogin: "reviewer", avatarUrl: null, scopes: [] },
+        lastError: null,
+        selectedAccessMethod: "autoFallback",
+        oauth: null,
+        ghCli: null,
+      },
+    ]);
     integrationApiMocks.listGitHubPullRequestComments.mockResolvedValue([]);
+    integrationApiMocks.listProviderPullRequestCommits.mockResolvedValue([
+      {
+        sha: "a1",
+        message: "First commit",
+        messageHeadline: "First commit",
+        messageBody: "",
+      },
+    ]);
+    integrationApiMocks.mergeProviderPullRequest.mockResolvedValue({
+      sha: "merge-sha",
+      merged: true,
+      message: "Pull Request successfully merged",
+    });
     integrationApiMocks.submitGitHubPullRequestReview.mockResolvedValue({
       id: 1,
       state: "COMMENTED",
       htmlUrl: null,
     });
+    integrationApiMocks.submitProviderPullRequestConversationComment.mockImplementation(
+      (request) =>
+        Promise.resolve({
+          id: 55,
+          kind: "conversation",
+          author: { login: "reviewer", avatarUrl: null },
+          body: request.body,
+          createdAt: "2026-05-21T10:08:00Z",
+          updatedAt: "2026-05-21T10:08:00Z",
+          path: null,
+          side: null,
+          line: null,
+          originalLine: null,
+          diffHunk: null,
+          subjectType: null,
+          inReplyToId: null,
+        }),
+    );
     integrationApiMocks.submitGitHubPullRequestReviewReply.mockImplementation(
       (request) =>
         Promise.resolve({
@@ -264,7 +365,7 @@ describe("BranchCompareModal local AI", () => {
     });
   });
 
-  it("renders pull request review mode with comments panel", async () => {
+  it("renders pull request review mode with pull request history", async () => {
     const user = userEvent.setup();
     integrationApiMocks.listGitHubPullRequestComments.mockResolvedValueOnce([
       {
@@ -312,15 +413,148 @@ describe("BranchCompareModal local AI", () => {
       headRef: "refs/remotes/origin/pull/12/head",
       comparisonMode: "mergeBase",
     });
-    await user.click(screen.getByRole("button", { name: "Comments" }));
+    await user.click(screen.getByRole("button", { name: "Conversation" }));
 
     expect(
       await screen.findByText("Please check this line."),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("First commit")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Add a comment" }),
     ).toBeInTheDocument();
     expect(integrationApiMocks.listGitHubPullRequestComments).toHaveBeenCalledWith({
       path: "/repo",
       number: 12,
     });
+    expect(integrationApiMocks.listProviderPullRequestCommits).toHaveBeenCalledWith({
+      providerId: "github",
+      path: "/repo",
+      number: 12,
+    });
+  });
+
+  it("adds a conversation comment from pull request conversation", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Conversation" }));
+    await user.type(
+      await screen.findByPlaceholderText("Add your comment here..."),
+      "Looks good from Gitano",
+    );
+    await user.click(screen.getByRole("button", { name: "Comment" }));
+
+    await screen.findByText("Looks good from Gitano");
+    expect(
+      integrationApiMocks.submitProviderPullRequestConversationComment,
+    ).toHaveBeenCalledWith({
+      providerId: "github",
+      path: "/repo",
+      number: 12,
+      body: "Looks good from Gitano",
+    });
+  });
+
+  it("uses the shared merge dropdown in pull request review mode", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    const chooseMergeMethod = await screen.findByRole("button", {
+      name: "Choose merge method",
+    });
+    await user.click(chooseMergeMethod);
+    await user.click(await screen.findByText("Squash and merge"));
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+    const confirmSquash = await screen.findByRole("button", {
+      name: "Confirm squash and merge",
+    });
+    await waitFor(() => expect(confirmSquash).not.toBeDisabled());
+    await user.click(confirmSquash);
+
+    await waitFor(() => {
+      expect(integrationApiMocks.mergeProviderPullRequest).toHaveBeenCalledWith({
+        providerId: "github",
+        path: "/repo",
+        number: 12,
+        mergeMethod: "squash",
+        title: "Improve checkout flow (#12)",
+        body: "* First commit",
+      });
+    });
+  });
+
+  it("keeps merge failure feedback visible in pull request review mode", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.mergeProviderPullRequest.mockRejectedValueOnce(
+      new Error("Pull request requirements have not been met"),
+    );
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    const mergeButton = await screen.findByRole("button", { name: "Merge" });
+    await waitFor(() => expect(mergeButton).not.toBeDisabled());
+    await user.click(mergeButton);
+    await user.click(screen.getByRole("button", { name: "Confirm merge" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Merge pull request",
+    });
+    expect(
+      within(dialog).getByText("Pull request requirements have not been met"),
+    ).toBeInTheDocument();
   });
 
   it("shows a top progress bar while pull request comments load", async () => {
@@ -352,7 +586,7 @@ describe("BranchCompareModal local AI", () => {
 
     expect(
       await screen.findByRole("progressbar", {
-        name: "Loading pull request comments",
+        name: "Loading pull request history",
       }),
     ).toBeInTheDocument();
 
@@ -360,7 +594,7 @@ describe("BranchCompareModal local AI", () => {
     await waitFor(() => {
       expect(
         screen.queryByRole("progressbar", {
-          name: "Loading pull request comments",
+          name: "Loading pull request history",
         }),
       ).not.toBeInTheDocument();
     });
@@ -549,7 +783,7 @@ describe("BranchCompareModal local AI", () => {
     await user.click(screen.getByRole("button", { name: "Reply..." }));
     await user.type(screen.getByPlaceholderText("Reply..."), "Reply from Gitano.");
     await user.click(screen.getByRole("button", { name: "Reply" }));
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(
@@ -679,7 +913,7 @@ describe("BranchCompareModal local AI", () => {
     await user.click(screen.getByRole("button", { name: "Reply..." }));
     await user.type(screen.getByPlaceholderText("Reply..."), "Reply to second.");
     await user.click(screen.getByRole("button", { name: "Reply" }));
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(
@@ -867,7 +1101,7 @@ describe("BranchCompareModal local AI", () => {
     expect(await screen.findByText("Updated file note.")).toBeInTheDocument();
     expect(await screen.findByText("draft edit")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(integrationApiMocks.updateGitHubPullRequestComment).toHaveBeenCalledWith({
@@ -887,6 +1121,27 @@ describe("BranchCompareModal local AI", () => {
 
   it("submits file-level pull request review comments", async () => {
     const user = userEvent.setup();
+    integrationApiMocks.listGitHubPullRequestComments
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 42,
+          kind: "review",
+          author: { login: "marco", avatarUrl: null },
+          body: "Check the whole file.",
+          createdAt: "2026-05-21T10:00:00Z",
+          updatedAt: "2026-05-21T10:00:00Z",
+          path: "src/app.ts",
+          side: "RIGHT",
+          line: null,
+          originalLine: null,
+          diffHunk: null,
+          subjectType: "file",
+          inReplyToId: null,
+          reviewThreadId: "thread-42",
+          reviewThreadResolved: false,
+        },
+      ]);
     diffApiMocks.getBranchComparisonFiles.mockResolvedValue([
       { path: "src/app.ts", status: "modified", insertions: 1, deletions: 0 },
     ]);
@@ -931,7 +1186,7 @@ describe("BranchCompareModal local AI", () => {
     await user.click(screen.getByText("File comments"));
     expect(await screen.findByText("Check the whole file.")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(integrationApiMocks.submitGitHubPullRequestReview).toHaveBeenCalledWith({
@@ -948,6 +1203,134 @@ describe("BranchCompareModal local AI", () => {
         ],
       });
     });
+    expect(integrationApiMocks.listGitHubPullRequestComments).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Check the whole file.")).toBeInTheDocument();
+  });
+
+  it("can request changes when finishing a pull request review", async () => {
+    const user = userEvent.setup();
+    diffApiMocks.getBranchComparisonFiles.mockResolvedValue([
+      { path: "src/app.ts", status: "modified", insertions: 1, deletions: 0 },
+    ]);
+    diffApiMocks.getBranchComparisonFileDiff.mockResolvedValue([
+      {
+        header: "@@ -1,1 +1,2 @@",
+        old_start: 1,
+        old_lines: 1,
+        new_start: 1,
+        new_lines: 2,
+        is_new_file: false,
+        lines: [
+          { kind: "Context", content: " keep", old_lineno: 1, new_lineno: 1 },
+          { kind: "Add", content: "+ risky()", old_lineno: null, new_lineno: 2 },
+        ],
+      },
+    ]);
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Comment on file" }));
+    await user.type(screen.getByPlaceholderText("Leave a comment"), "Check the whole file.");
+    await user.click(screen.getByRole("button", { name: "Comment" }));
+    await user.click(screen.getByRole("button", { name: "Submit review" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Finish your review",
+    });
+    await user.type(within(dialog).getByPlaceholderText("Leave a comment"), "Needs an update.");
+    await user.click(
+      within(dialog).getByRole("radio", { name: /Request changes/ }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() => {
+      expect(integrationApiMocks.submitGitHubPullRequestReview).toHaveBeenCalledWith({
+        path: "/repo",
+        number: 12,
+        event: "REQUEST_CHANGES",
+        body: "Needs an update.",
+        comments: [
+          {
+            path: "src/app.ts",
+            body: "Check the whole file.",
+            subjectType: "file",
+          },
+        ],
+      });
+    });
+  });
+
+  it("disables approve and request changes for pull requests authored by the current user", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MantineProvider>
+        <BranchCompareModal
+          repoPath="/repo"
+          initialSourceBranch="refs/remotes/origin/pull/12/head"
+          initialTargetBranch="refs/remotes/origin/main"
+          pullRequestContext={{
+            pullRequest: {
+              number: 12,
+              title: "Improve checkout flow",
+              body: null,
+              state: "open",
+              draft: false,
+              htmlUrl: "https://github.com/acme/app/pull/12",
+              user: { login: "reviewer", avatarUrl: null },
+              base: {
+                label: "acme:main",
+                refName: "main",
+                sha: "base",
+                repositoryFullName: "acme/app",
+              },
+              head: {
+                label: "acme:feature",
+                refName: "feature",
+                sha: "head",
+                repositoryFullName: "acme/app",
+              },
+              createdAt: "2026-05-20T10:00:00Z",
+              updatedAt: "2026-05-21T10:00:00Z",
+            },
+            number: 12,
+            title: "Improve checkout flow",
+            baseRef: "refs/remotes/origin/main",
+            headRef: "refs/remotes/origin/pull/12/head",
+            baseLabel: "acme:main",
+            headLabel: "acme:feature",
+          }}
+          onClose={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Submit review" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Finish your review",
+    });
+
+    expect(within(dialog).getByRole("radio", { name: /Comment/ })).toBeEnabled();
+    expect(within(dialog).getByRole("radio", { name: /Approve/ })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("radio", { name: /Request changes/ }),
+    ).toBeDisabled();
   });
 
   it("shows pull request review comment controls in split diff mode", async () => {
@@ -1550,7 +1933,7 @@ describe("BranchCompareModal local AI", () => {
       expect(screen.getAllByText("Missing guard").length).toBeGreaterThan(0);
     });
     await user.click(screen.getAllByRole("button", { name: "Apply draft" })[0]);
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(integrationApiMocks.submitGitHubPullRequestReview).toHaveBeenCalledWith({
@@ -1655,7 +2038,7 @@ describe("BranchCompareModal local AI", () => {
       expect(screen.getAllByText("Missing guard").length).toBeGreaterThan(0);
     });
     await user.click(screen.getAllByRole("button", { name: "Apply draft" })[0]);
-    await user.click(screen.getByRole("button", { name: "Submit comments" }));
+    await submitReviewAsComment(user);
 
     await waitFor(() => {
       expect(useGitActionsStore.getState().notice).toMatchObject({
@@ -1665,8 +2048,8 @@ describe("BranchCompareModal local AI", () => {
       });
     });
     expect(
-      screen.queryByText("GitHub request failed with status 403 Forbidden."),
-    ).not.toBeInTheDocument();
+      screen.getByText("GitHub request failed with status 403 Forbidden."),
+    ).toBeInTheDocument();
   });
 
   it("renders invalid-anchor AI review findings as notes without apply controls", async () => {

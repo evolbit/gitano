@@ -197,6 +197,8 @@ export const UnifiedDiffRows: React.FC<
         lineIdx,
         line,
       });
+      const lineBelowFullWidth = renderLineBelowFullWidth?.(anchor);
+      const lineBelow = lineBelowFullWidth ? null : renderLineBelow?.(anchor);
 
       return (
         <UnifiedLineRow
@@ -204,8 +206,8 @@ export const UnifiedDiffRows: React.FC<
           line={line}
           anchor={anchor}
           lineAccessory={renderLineAccessory?.(anchor)}
-          lineBelow={renderLineBelow?.(anchor)}
-          lineBelowFullWidth={renderLineBelowFullWidth?.(anchor)}
+          lineBelow={lineBelow}
+          lineBelowFullWidth={lineBelowFullWidth}
           showHunkGutter={canRenderGutters}
           showLineGutter={canRenderGutters && isStageable}
           isBlockStart={isBlockStart}
@@ -569,10 +571,15 @@ const SplitDiffRow: React.FC<{
         side: "new",
       })
     : undefined;
-  const fullWidthBelow = [
-    leftAnchor ? renderLineBelowFullWidth?.(leftAnchor) : null,
-    rightAnchor ? renderLineBelowFullWidth?.(rightAnchor) : null,
-  ].filter(Boolean);
+  const leftLineBelow = leftAnchor ? renderLineBelow?.(leftAnchor) : undefined;
+  const rightLineBelow = rightAnchor ? renderLineBelow?.(rightAnchor) : undefined;
+  const hasSideLineBelow = Boolean(leftLineBelow || rightLineBelow);
+  const fullWidthBelow = hasSideLineBelow
+    ? []
+    : [
+        leftAnchor ? renderLineBelowFullWidth?.(leftAnchor) : null,
+        rightAnchor ? renderLineBelowFullWidth?.(rightAnchor) : null,
+      ].filter(Boolean);
   return (
     <>
       <div
@@ -590,7 +597,7 @@ const SplitDiffRow: React.FC<{
           lineAccessory={
             leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
           }
-          lineBelow={leftAnchor ? renderLineBelow?.(leftAnchor) : undefined}
+          lineBelow={leftLineBelow}
           onMouseDown={onLeftMouseDown}
           onMouseEnter={onLeftMouseEnter}
         />
@@ -623,7 +630,7 @@ const SplitDiffRow: React.FC<{
           lineAccessory={
             rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
           }
-          lineBelow={rightAnchor ? renderLineBelow?.(rightAnchor) : undefined}
+          lineBelow={rightLineBelow}
           onMouseDown={onRightMouseDown}
           onMouseEnter={onRightMouseEnter}
         />

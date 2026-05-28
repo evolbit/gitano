@@ -1,18 +1,34 @@
 ## Purpose
 
-Define GitHub pull request listing, review actions, review submission feedback, and scoped pull request count refresh behavior.
+Define GitHub pull request listing, conversation, review actions, review submission feedback, merge actions, and scoped pull request count refresh behavior.
 
 ## Requirements
 
 ### Requirement: GitHub pull requests are listed for the active repository
-The system SHALL list GitHub pull requests for the active repository when the repository remote resolves to GitHub and the GitHub provider is connected.
+The system SHALL list GitHub pull requests for the active repository using the selected GitHub access method when the repository remote resolves to GitHub.
 
 #### Scenario: User opens the pull request modal
 - **WHEN** the active repository remote resolves to a GitHub repository
-- **AND** the GitHub provider is connected
+- **AND** the selected GitHub access method is available
 - **AND** the user opens the pull request modal
 - **THEN** Gitano MUST load open pull requests for that GitHub repository
 - **AND** the modal MUST present pull request rows in a dense list or table layout
+- **AND** row text MUST truncate with ellipsis instead of overflowing the table columns
+
+#### Scenario: GitHub CLI access method is selected
+- **WHEN** the active repository remote resolves to a GitHub repository
+- **AND** the GitHub access method is GitHub CLI
+- **AND** GitHub CLI is ready
+- **AND** the user opens the pull request modal
+- **THEN** Gitano MUST load open pull requests through `gh`
+- **AND** the modal MUST present the same pull request row data shape used by OAuth-backed loading
+
+#### Scenario: Automatic fallback handles OAuth access policy failure
+- **WHEN** the GitHub access method is automatic fallback
+- **AND** OAuth-backed pull request loading fails because the OAuth app cannot access the organization repository
+- **AND** GitHub CLI is ready
+- **THEN** Gitano MUST retry the operation through GitHub CLI
+- **AND** Gitano MUST avoid prompting the user to reconnect OAuth for that operation
 
 #### Scenario: Repository is not hosted on GitHub
 - **WHEN** the active repository remote does not resolve to a GitHub repository
@@ -22,9 +38,9 @@ The system SHALL list GitHub pull requests for the active repository when the re
 
 #### Scenario: GitHub is not connected
 - **WHEN** the active repository remote resolves to a GitHub repository
-- **AND** the GitHub provider is disconnected
+- **AND** no selected GitHub access method is available
 - **AND** the user opens the pull request modal
-- **THEN** Gitano MUST explain that GitHub must be connected in settings
+- **THEN** Gitano MUST explain that GitHub must be configured in settings
 - **AND** the modal MUST provide a path to the settings `Integrations` section
 
 ### Requirement: Pull request list uses GitHub-native review actions
@@ -33,18 +49,12 @@ The system SHALL present GitHub-native review actions for each pull request.
 #### Scenario: Pull request row is shown
 - **WHEN** a pull request row is rendered
 - **THEN** the row MUST show the pull request status, title, number, author or reviewer identity when available, repository and branch context, and line change counts when available
-- **AND** the row MUST expose `Review`, `Approve`, and `Request changes` actions
+- **AND** the row MUST expose `Review`, merge, and `Request changes` actions
 
 #### Scenario: User chooses Review
 - **WHEN** the user activates `Review` for a pull request
 - **THEN** Gitano MUST open the pull request in the branch comparison review surface
 - **AND** the comparison MUST use the pull request base and head context
-
-#### Scenario: User chooses Approve
-- **WHEN** the user activates `Approve` for a pull request
-- **THEN** Gitano MUST open a confirmation modal
-- **AND** the modal MUST include a Markdown comment composer
-- **AND** submitting the modal MUST create an `APPROVE` review on GitHub
 
 #### Scenario: User chooses Request changes
 - **WHEN** the user activates `Request changes` for a pull request
@@ -52,8 +62,38 @@ The system SHALL present GitHub-native review actions for each pull request.
 - **AND** the modal MUST include a Markdown comment composer
 - **AND** submitting the modal MUST create a `REQUEST_CHANGES` review on GitHub
 
+### Requirement: Pull request review comments can be submitted from draft threads
+The system SHALL allow draft review threads created in pull request review mode to be submitted through the selected GitHub access method.
+
+#### Scenario: GitHub CLI submits PR review comments
+- **WHEN** the GitHub access method is GitHub CLI
+- **AND** the user submits draft review comments
+- **THEN** Gitano MUST submit line comments, file comments, replies, and pending edits through structured `gh` commands
+- **AND** Gitano MUST preserve the same validation behavior used by OAuth-backed submission
+
+#### Scenario: GitHub CLI resolves review threads
+- **WHEN** the GitHub access method is GitHub CLI
+- **AND** the user resolves or reopens a review thread
+- **THEN** Gitano MUST persist the review thread state through `gh api graphql`
+- **AND** Gitano MUST report failures through the global action notice
+
+### Requirement: Pull request review mode shows the pull request conversation
+The system SHALL show pull request conversation history inside pull request review mode.
+
+#### Scenario: User opens the pull request conversation
+- **WHEN** the user opens the pull request review screen
+- **AND** the user activates `Conversation`
+- **THEN** Gitano MUST show the pull request description, commits, conversation comments, review comments, and review replies in the main review area
+- **AND** Markdown content MUST render GitHub-flavored tables, links, images, headings, code, and common GitHub emoji shortcodes
+
+#### Scenario: User adds a pull request conversation comment
+- **WHEN** the pull request conversation is visible
+- **AND** the user enters a general comment in the composer at the end of the conversation
+- **THEN** Gitano MUST submit the comment through the selected GitHub access method
+- **AND** Gitano MUST append the accepted comment to the visible conversation
+
 ### Requirement: GitHub review submission reports action state
-The system SHALL report GitHub pull request review submission outcomes using the existing workspace feedback pattern.
+The system SHALL report GitHub pull request review submission outcomes and access method routing using the existing workspace feedback pattern.
 
 #### Scenario: Review submission succeeds
 - **WHEN** GitHub accepts an approve, request changes, or comment-only review submission
@@ -61,11 +101,52 @@ The system SHALL report GitHub pull request review submission outcomes using the
 - **AND** Gitano MUST refresh the affected pull request data
 - **AND** Gitano MUST refresh the pending pull request count for the repository
 
+#### Scenario: Selected access method is unavailable
+- **WHEN** the selected GitHub access method is unavailable
+- **AND** the user attempts a GitHub PR action
+- **THEN** Gitano MUST block the action before submitting data
+- **AND** Gitano MUST show the access method problem and the required user action
+
+#### Scenario: Operation succeeds through fallback
+- **WHEN** a GitHub PR operation succeeds through automatic fallback
+- **THEN** Gitano MUST show the normal success state
+- **AND** detailed diagnostics MUST identify that GitHub CLI handled the operation
+
 #### Scenario: Review submission fails
 - **WHEN** GitHub rejects an approve, request changes, or comment-only review submission
 - **THEN** Gitano MUST show a compact failure message
 - **AND** detailed GitHub error information MUST be available in the action log
 - **AND** Gitano MUST NOT clear local draft review comments that were not submitted
+
+### Requirement: Pull request review submission uses explicit review decisions
+The system SHALL require users to choose the final review event before submitting a pull request review.
+
+#### Scenario: User finishes a pull request review
+- **WHEN** the user finishes a pull request review
+- **THEN** Gitano MUST show an anchored finish-review dropdown with comment, approve, and request-changes decisions
+- **AND** the comment decision MUST submit pending review feedback without approving or requesting changes
+- **AND** the approve decision MUST submit an approve review event
+- **AND** the request-changes decision MUST submit a request-changes review event with a non-empty summary body
+
+#### Scenario: Pull request was authored by the current GitHub account
+- **WHEN** the current GitHub account matches the pull request author
+- **THEN** Gitano MUST disable approve and request-changes review decisions
+- **AND** Gitano MUST keep comment-only review submission available
+- **AND** Gitano MUST keep merge available because GitHub controls merge eligibility separately
+
+#### Scenario: User submits pending review comments
+- **WHEN** GitHub accepts pending pull request review comments
+- **THEN** Gitano MUST refresh pull request review comments from the selected access method
+- **AND** the newly submitted comments MUST remain visible in the review screen
+
+### Requirement: Pull request merge actions share one merge method flow
+The system SHALL present the same merge method options and confirmation behavior wherever a pull request can be merged.
+
+#### Scenario: User merges from pull request review mode
+- **WHEN** the user opens a pull request review screen
+- **THEN** Gitano MUST show the pull request merge dropdown when repository merge methods are available
+- **AND** selecting merge, squash, or rebase MUST open the same method-specific confirmation used by the pull request list
+- **AND** submitting the confirmation MUST merge the pull request through the selected GitHub access method
 
 ### Requirement: Pull request count refresh is regular and scoped
 The system SHALL regularly refresh pending pull request counts for active GitHub repositories.

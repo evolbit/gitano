@@ -1,6 +1,7 @@
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { useWorkspaceUiStore } from "@/features/repository-workspace/stores/workspace-ui-store";
@@ -9,8 +10,10 @@ import TopToolbar from "./top-toolbar";
 const fetchAllRemotesMock = vi.hoisted(() => vi.fn());
 const pushRepositoryMock = vi.hoisted(() => vi.fn());
 const integrationApiMocks = vi.hoisted(() => ({
-  getGitHubPullRequestCount: vi.fn(),
+  getProviderRepositoryMergeOptions: vi.fn(),
+  getProviderPullRequestCount: vi.fn(),
   listProviderIntegrations: vi.fn(),
+  listProviderPullRequests: vi.fn(),
 }));
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
@@ -48,24 +51,38 @@ vi.mock("@/shared/api/repositories", () => ({
 }));
 
 function renderToolbar() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
   return render(
-    <MantineProvider>
-      <TopToolbar />
-    </MantineProvider>,
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider>
+        <TopToolbar />
+      </MantineProvider>
+    </QueryClientProvider>,
   );
 }
 
 describe("TopToolbar", () => {
-  afterEach(() => {
-    cleanup();
+  beforeEach(() => {
     fetchAllRemotesMock.mockReset();
     fetchAllRemotesMock.mockResolvedValue(undefined);
     pushRepositoryMock.mockReset();
     pushRepositoryMock.mockResolvedValue(undefined);
-    integrationApiMocks.getGitHubPullRequestCount.mockReset();
-    integrationApiMocks.getGitHubPullRequestCount.mockResolvedValue({
+    integrationApiMocks.getProviderPullRequestCount.mockReset();
+    integrationApiMocks.getProviderPullRequestCount.mockResolvedValue({
       repository: { owner: "acme", name: "app" },
       count: 0,
+    });
+    integrationApiMocks.getProviderRepositoryMergeOptions.mockReset();
+    integrationApiMocks.getProviderRepositoryMergeOptions.mockResolvedValue({
+      mergeCommit: true,
+      squash: true,
+      rebase: true,
     });
     integrationApiMocks.listProviderIntegrations.mockReset();
     integrationApiMocks.listProviderIntegrations.mockResolvedValue([
@@ -74,16 +91,25 @@ describe("TopToolbar", () => {
         displayName: "GitHub",
         capabilities: ["pullRequests", "pullRequestReviews"],
         status: "connected",
-        connection: null,
+        connection: { accountLogin: "reviewer", avatarUrl: null, scopes: [] },
         lastError: null,
+        selectedAccessMethod: "autoFallback",
+        oauth: null,
+        ghCli: null,
       },
     ]);
+    integrationApiMocks.listProviderPullRequests.mockReset();
+    integrationApiMocks.listProviderPullRequests.mockResolvedValue([]);
     useRepoStore.setState({ tabs: [], activeTabId: null });
     useGitActionsStore.setState({ pendingAction: null, notice: null });
     useWorkspaceUiStore.setState({
       pullStrategy: "pull-ff-if-possible",
       pushMode: "push-branch",
     });
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it("shows empty workspace labels and disables repository actions without an active repo", () => {
@@ -159,7 +185,7 @@ describe("TopToolbar", () => {
   });
 
   it("shows the pending pull request count for the active repository", async () => {
-    integrationApiMocks.getGitHubPullRequestCount.mockResolvedValueOnce({
+    integrationApiMocks.getProviderPullRequestCount.mockResolvedValueOnce({
       repository: { owner: "acme", name: "app" },
       count: 3,
     });
@@ -178,13 +204,14 @@ describe("TopToolbar", () => {
     renderToolbar();
 
     expect(await screen.findByRole("button", { name: "PRs (3)" })).toBeEnabled();
-    expect(integrationApiMocks.getGitHubPullRequestCount).toHaveBeenCalledWith({
+    expect(integrationApiMocks.getProviderPullRequestCount).toHaveBeenCalledWith({
+      providerId: "github",
       path: "/repo",
     });
   });
 
   it("opens pull requests even when count refresh is unavailable", async () => {
-    integrationApiMocks.getGitHubPullRequestCount.mockRejectedValueOnce(
+    integrationApiMocks.getProviderPullRequestCount.mockRejectedValueOnce(
       new Error("GitHub is not connected"),
     );
     useRepoStore.setState({
@@ -206,17 +233,10 @@ describe("TopToolbar", () => {
     expect(await screen.findByRole("dialog", { name: "Pull requests" })).toBeInTheDocument();
   });
 
-  it("does not request counts when GitHub is disconnected", async () => {
-    integrationApiMocks.listProviderIntegrations.mockResolvedValueOnce([
-      {
-        id: "github",
-        displayName: "GitHub",
-        capabilities: ["pullRequests", "pullRequestReviews"],
-        status: "disconnected",
-        connection: null,
-        lastError: null,
-      },
-    ]);
+  it("requests counts directly and leaves pull requests available when count fails", async () => {
+    integrationApiMocks.getProviderPullRequestCount.mockRejectedValueOnce(
+      new Error("GitHub is not connected"),
+    );
     useRepoStore.setState({
       tabs: [
         {
@@ -232,9 +252,11 @@ describe("TopToolbar", () => {
     renderToolbar();
 
     await waitFor(() => {
-      expect(integrationApiMocks.listProviderIntegrations).toHaveBeenCalled();
+      expect(integrationApiMocks.getProviderPullRequestCount).toHaveBeenCalledWith({
+        providerId: "github",
+        path: "/repo",
+      });
     });
-    expect(integrationApiMocks.getGitHubPullRequestCount).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /^PRs/ })).toBeEnabled();
   });
 });

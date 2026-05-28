@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  getGitHubPullRequestCount,
-  listProviderIntegrations,
-} from "@/shared/api/integrations";
+import { getProviderPullRequestCount } from "@/shared/api/integrations";
 
 const PULL_REQUEST_COUNT_REFRESH_MS = 60_000;
 
@@ -15,13 +12,6 @@ const countCache = new Map<string, CachedPullRequestCount>();
 
 function cacheKey(repoPath: string) {
   return repoPath;
-}
-
-async function githubConnected() {
-  const providers = await listProviderIntegrations();
-  return providers.some(
-    (provider) => provider.id === "github" && provider.status === "connected",
-  );
 }
 
 export function usePullRequestCount(repoPath: string | null | undefined) {
@@ -44,18 +34,16 @@ export function usePullRequestCount(repoPath: string | null | undefined) {
 
     setLoading(true);
     try {
-      const connected = await githubConnected();
-      setEligible(connected);
-      if (!connected) {
-        setError(null);
-        return;
-      }
-
-      const result = await getGitHubPullRequestCount({ path: repoPath });
+      const result = await getProviderPullRequestCount({
+        providerId: "github",
+        path: repoPath,
+      });
       countCache.set(key, { count: result.count, loadedAt: Date.now() });
       setCount(result.count);
       setError(null);
+      setEligible(true);
     } catch (refreshError) {
+      setEligible(false);
       setError(
         refreshError instanceof Error
           ? refreshError.message

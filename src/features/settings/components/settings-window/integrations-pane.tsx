@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  type GitHubAccessMethod,
   type GitHubOAuthStartResponse,
   type ProviderIntegration,
 } from "@/shared/api/integrations";
@@ -22,6 +23,7 @@ type IntegrationsPaneProps = {
     options?: { silent?: boolean },
   ) => MaybePromise;
   onDisconnectProvider: (providerId: string) => MaybePromise;
+  onSetGitHubAccessMethod: (accessMethod: GitHubAccessMethod) => MaybePromise;
   onStartGitHubOAuth: () => Promise<GitHubOAuthStartResponse>;
   onVerifyProvider: (providerId: string) => MaybePromise;
 };
@@ -46,6 +48,112 @@ function ProviderStatus({ provider }: { provider: ProviderIntegration }) {
   }
 
   return <ValuePill>Disconnected</ValuePill>;
+}
+
+const GITHUB_ACCESS_METHOD_LABELS: Record<GitHubAccessMethod, string> = {
+  autoFallback: "Automatic fallback",
+  oauth: "OAuth",
+  ghCli: "GitHub CLI",
+};
+
+function GitHubAccessMethodSelector({
+  busy,
+  provider,
+  onSetAccessMethod,
+}: {
+  busy: boolean;
+  provider: ProviderIntegration;
+  onSetAccessMethod: (accessMethod: GitHubAccessMethod) => MaybePromise;
+}) {
+  const selected = provider.selectedAccessMethod ?? "autoFallback";
+
+  return (
+    <div className="w-full rounded border border-border bg-background px-3 py-2 text-xs text-zinc-300">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-normal text-zinc-500">
+        Access method
+      </div>
+      <div className="grid gap-1">
+        {(["autoFallback", "oauth", "ghCli"] as GitHubAccessMethod[]).map(
+          (method) => (
+            <label
+              key={method}
+              className="flex items-center gap-2 rounded px-2 py-1.5 transition-colors hover:bg-zinc-800"
+            >
+              <input
+                type="radio"
+                name="github-access-method"
+                value={method}
+                checked={selected === method}
+                disabled={busy}
+                onChange={() => {
+                  void onSetAccessMethod(method);
+                }}
+              />
+              <span>{GITHUB_ACCESS_METHOD_LABELS[method]}</span>
+            </label>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GitHubAccessStatuses({ provider }: { provider: ProviderIntegration }) {
+  const oauth = provider.oauth;
+  const ghCli = provider.ghCli;
+  const oauthLabel =
+    oauth?.status === "connected"
+      ? oauth.connection?.accountLogin
+        ? `Connected as ${oauth.connection.accountLogin}`
+        : "Connected"
+      : "Disconnected";
+  const ghCliLabel = (() => {
+    if (!ghCli) return "Unknown";
+    if (ghCli.availability === "ready") {
+      return ghCli.connection?.accountLogin
+        ? `Ready as ${ghCli.connection.accountLogin}`
+        : "Ready";
+    }
+    if (ghCli.availability === "notAuthenticated") {
+      return "Installed, not authenticated";
+    }
+    return "Not installed";
+  })();
+  const ghCliDetails = (() => {
+    if (!ghCli) return null;
+    if (ghCli.availability === "notInstalled") {
+      return ghCli.message ?? "Install GitHub CLI externally to use this method.";
+    }
+    if (ghCli.availability === "notAuthenticated") {
+      return ghCli.message ?? "Authenticate with `gh auth login`.";
+    }
+    return ghCli.version ? `Version ${ghCli.version}` : null;
+  })();
+
+  return (
+    <div className="w-full rounded border border-border bg-background px-3 py-2 text-xs leading-5 text-zinc-300">
+      <div className="grid gap-2 md:grid-cols-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-normal text-zinc-500">
+            OAuth
+          </div>
+          <div className="font-medium text-zinc-100">{oauthLabel}</div>
+          {oauth?.lastError ? (
+            <div className="mt-1 text-red-200">{oauth.lastError}</div>
+          ) : null}
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-normal text-zinc-500">
+            GitHub CLI
+          </div>
+          <div className="font-medium text-zinc-100">{ghCliLabel}</div>
+          {ghCliDetails ? (
+            <div className="mt-1 text-zinc-400">{ghCliDetails}</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 type GitHubOAuthSession = GitHubOAuthStartResponse & {
@@ -286,6 +394,7 @@ export function IntegrationsPane({
   busyProviderIds,
   onCompleteGitHubOAuth,
   onDisconnectProvider,
+  onSetGitHubAccessMethod,
   onStartGitHubOAuth,
   onVerifyProvider,
 }: IntegrationsPaneProps) {
@@ -321,6 +430,16 @@ export function IntegrationsPane({
           >
             <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
               <ProviderStatus provider={provider} />
+              {provider.id === "github" ? (
+                <>
+                  <GitHubAccessMethodSelector
+                    busy={busy}
+                    provider={provider}
+                    onSetAccessMethod={onSetGitHubAccessMethod}
+                  />
+                  <GitHubAccessStatuses provider={provider} />
+                </>
+              ) : null}
               {provider.id === "github" && !connected ? (
                 <GitHubOAuthConnect
                   busy={busy}

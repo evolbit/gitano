@@ -1,6 +1,3 @@
-import { ActionIcon, Menu, Tabs } from "@mantine/core";
-import { useState } from "react";
-import { classNames } from "@/shared/ui";
 import {
   IconDotsVertical,
   IconGitBranch,
@@ -8,6 +5,9 @@ import {
   IconPlus,
   IconX,
 } from "@/shared/components/icons/icons";
+import { classNames } from "@/shared/ui";
+import { ActionIcon, Menu, Tabs } from "@mantine/core";
+import { useState } from "react";
 import type { TabBarProps } from "./types";
 
 const branchIcon = (
@@ -37,28 +37,29 @@ const TabBar = ({
   };
 
   return (
-    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-11 border-b border-border">
+    <Tabs.List className="bg-background-emphasis flex w-full sticky top-0 z-30 h-9 border-b border-border">
       {tabs.map((tab) => (
         <Tabs.Tab
           key={tab.id}
           value={tab.id}
-          className={classNames("px-4 py-1 font-medium")}
+          className={classNames(
+            "px-4 py-1 font-medium",
+            activeTab === tab.id ? "bg-background" : "bg-transparent",
+          )}
           classNames={{
             tabLabel: classNames(
               "flex items-center gap-1 text-sm",
-              activeTab === tab.id ? "text-white" : "text-zinc-400"
+              activeTab === tab.id ? "text-white" : "text-zinc-400",
             ),
             tab: "border-r !border-r-border",
           }}
-          style={{ borderRadius: 0 }}>
+          style={{ borderRadius: 0 }}
+        >
           {/* Git branch icon on the left for all tabs except home */}
           {tab.id !== "home" && branchIcon}
           {/* Home icon for home tab */}
           {tab.id === "home" && (
-            <IconHome
-              size={18}
-              style={{ marginRight: 0 }}
-            />
+            <IconHome size={18} style={{ marginRight: 0 }} />
           )}
           {tab.id !== "home" && (
             <span style={{ marginLeft: 0 }}>
@@ -73,11 +74,10 @@ const TabBar = ({
               size={18}
               variant="subtle"
               component="span"
-              className={
-                activeTab === tab.id ? "text-white" : "text-zinc-400"
-              }
+              className={activeTab === tab.id ? "text-white" : "text-zinc-400"}
               onClick={(e) => onTabClose(tab.id, e)}
-              style={{ marginLeft: 6 }}>
+              style={{ marginLeft: 6 }}
+            >
               <IconX size={12} />
             </ActionIcon>
           )}
@@ -92,14 +92,16 @@ const TabBar = ({
         opened={menuOpened}
         onOpen={() => setMenuOpened(true)}
         onClose={() => setMenuOpened(false)}
-        withinPortal>
+        withinPortal
+      >
         <Menu.Target>
           <ActionIcon
             variant="subtle"
             color="gray"
             ml="xs"
             size="lg"
-            aria-label="Open application menu">
+            aria-label="Open application menu"
+          >
             <IconDotsVertical size={18} />
           </ActionIcon>
         </Menu.Target>
@@ -107,17 +109,16 @@ const TabBar = ({
           <button
             type="button"
             className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-zinc-200 transition-colors hover:bg-zinc-700"
-            onClick={handleAddTab}>
-            <IconPlus
-              size={15}
-              className="shrink-0"
-            />
+            onClick={handleAddTab}
+          >
+            <IconPlus size={15} className="shrink-0" />
             New tab
           </button>
           <button
             type="button"
             className="flex w-full cursor-pointer items-center px-4 py-2 text-left text-zinc-200 transition-colors hover:bg-zinc-700"
-            onClick={handleOpenSettings}>
+            onClick={handleOpenSettings}
+          >
             Settings
           </button>
         </Menu.Dropdown>

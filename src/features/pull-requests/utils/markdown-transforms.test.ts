@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyMarkdownToolbarAction,
   type MarkdownEditorState,
-} from "./markdown-transforms";
+} from "@/shared/lib/markdown/markdown-transforms";
 
 function state(
   value: string,

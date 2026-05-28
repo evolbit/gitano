@@ -109,6 +109,10 @@ pnpm tauri dev
 
 The client id is not a user token or secret. Gitano stores the resulting OAuth
 access token in backend-owned secure storage after the user authorizes Gitano.
+Production builds also need this value at build time. The Tauri build script
+embeds `GITANO_GITHUB_OAUTH_CLIENT_ID` from the build environment, `.env.local`,
+or `.env` into the binary so installed copies can start the GitHub device flow
+without requiring users to set an environment variable.
 
 ### Verificacion del bundle macOS
 

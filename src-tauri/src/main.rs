@@ -4,6 +4,7 @@
 mod ai;
 mod git;
 mod integrations;
+mod platform;
 
 use std::time::Duration;
 
@@ -121,14 +122,31 @@ fn main() {
             integrations::integration_complete_github_oauth,
             integrations::integration_verify_provider,
             integrations::integration_disconnect_provider,
+            integrations::integration_set_github_access_method,
             integrations::github_pull_request_count,
             integrations::github_list_pull_requests,
+            integrations::github_list_pull_request_commits,
             integrations::github_prepare_pull_request_refs,
             integrations::github_list_pull_request_comments,
             integrations::github_submit_pull_request_review,
+            integrations::github_submit_pull_request_conversation_comment,
+            integrations::github_merge_pull_request,
+            integrations::github_repository_merge_options,
             integrations::github_update_pull_request_comment,
             integrations::github_submit_pull_request_review_reply,
             integrations::github_resolve_pull_request_review_thread,
+            integrations::provider_pull_request_count,
+            integrations::provider_list_pull_requests,
+            integrations::provider_list_pull_request_commits,
+            integrations::provider_prepare_pull_request_refs,
+            integrations::provider_list_pull_request_comments,
+            integrations::provider_submit_pull_request_review,
+            integrations::provider_submit_pull_request_conversation_comment,
+            integrations::provider_merge_pull_request,
+            integrations::provider_repository_merge_options,
+            integrations::provider_update_pull_request_comment,
+            integrations::provider_submit_pull_request_review_reply,
+            integrations::provider_resolve_pull_request_review_thread,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

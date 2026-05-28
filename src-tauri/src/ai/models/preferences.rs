@@ -57,6 +57,7 @@ pub fn load_preferences() -> LocalAiPreferences {
     let mut preferences: LocalAiPreferences =
         serde_json::from_str(&contents).unwrap_or_else(|_| default_preferences());
     preferences.migrate_legacy_model_fields();
+    sanitize_external_agent_option_values(&mut preferences);
     preferences.sync_legacy_model_fields();
     preferences
 }
@@ -64,6 +65,7 @@ pub fn load_preferences() -> LocalAiPreferences {
 pub fn save_preferences(preferences: &LocalAiPreferences) -> Result<(), String> {
     let mut preferences = preferences.clone();
     preferences.migrate_legacy_model_fields();
+    sanitize_external_agent_option_values(&mut preferences);
     if preferences.has_external_agent_engine() {
         preferences.warm_model_ids.clear();
     }
@@ -274,14 +276,39 @@ pub fn external_agent_effective_option_values(
     values.extend(overrides.iter().filter_map(|(config_id, value)| {
         let config_id = config_id.trim();
         let value = value.trim();
-        if config_id.is_empty() || value.is_empty() {
+        if config_id.is_empty() || value.is_empty() || read_only_external_agent_config_id(config_id)
+        {
             None
         } else {
             Some((config_id.to_string(), value.to_string()))
         }
     }));
+    values.retain(|config_id, _| !read_only_external_agent_config_id(config_id));
 
     values
+}
+
+fn sanitize_external_agent_option_values(preferences: &mut LocalAiPreferences) {
+    preferences
+        .external_agent_option_values
+        .retain(|_, values| retain_supported_external_agent_options(values));
+    preferences
+        .action_external_agent_option_values
+        .retain(|_, agent_values| {
+            agent_values.retain(|_, values| retain_supported_external_agent_options(values));
+            !agent_values.is_empty()
+        });
+}
+
+fn retain_supported_external_agent_options(values: &mut HashMap<String, String>) -> bool {
+    values.retain(|config_id, value| {
+        !value.trim().is_empty() && !read_only_external_agent_config_id(config_id)
+    });
+    !values.is_empty()
+}
+
+fn read_only_external_agent_config_id(config_id: &str) -> bool {
+    matches!(config_id.trim(), "allow_all" | "mode")
 }
 
 fn validate_analysis_engine(engine: &AnalysisEngine) -> Result<(), String> {
@@ -517,6 +544,73 @@ mod tests {
             assert!(!cleared
                 .action_prompt_overrides
                 .contains_key(LocalAiActionKind::BranchReview.as_key()));
+        });
+    }
+
+    #[test]
+    fn external_agent_effective_options_drop_read_only_mode_values() {
+        let mut preferences = default_preferences();
+        preferences.external_agent_option_values.insert(
+            "github-copilot-cli".to_string(),
+            HashMap::from([
+                (
+                    "mode".to_string(),
+                    "https://agentclientprotocol.com/protocol/session-modes#autopilot".to_string(),
+                ),
+                ("model".to_string(), "copilot-sonnet".to_string()),
+            ]),
+        );
+        preferences.action_external_agent_option_values.insert(
+            LocalAiActionKind::BranchReview.as_key().to_string(),
+            HashMap::from([(
+                "github-copilot-cli".to_string(),
+                HashMap::from([
+                    ("allow_all".to_string(), "on".to_string()),
+                    ("mode".to_string(), "agent".to_string()),
+                ]),
+            )]),
+        );
+
+        let values = external_agent_effective_option_values(
+            &preferences,
+            "github-copilot-cli",
+            LocalAiActionKind::BranchReview,
+            &HashMap::from([("mode".to_string(), "autopilot".to_string())]),
+        );
+
+        assert_eq!(
+            values,
+            HashMap::from([("model".to_string(), "copilot-sonnet".to_string())])
+        );
+    }
+
+    #[test]
+    fn saved_preferences_prune_read_only_external_agent_options() {
+        with_temp_local_ai_home(|| {
+            let mut preferences = default_preferences();
+            preferences.external_agent_option_values.insert(
+                "github-copilot-cli".to_string(),
+                HashMap::from([
+                    ("mode".to_string(), "autopilot".to_string()),
+                    ("model".to_string(), "copilot-sonnet".to_string()),
+                ]),
+            );
+
+            save_preferences(&preferences).expect("save preferences");
+            let loaded = load_preferences();
+
+            assert_eq!(
+                loaded
+                    .external_agent_option_values
+                    .get("github-copilot-cli")
+                    .and_then(|values| values.get("model"))
+                    .map(String::as_str),
+                Some("copilot-sonnet")
+            );
+            assert!(!loaded
+                .external_agent_option_values
+                .get("github-copilot-cli")
+                .is_some_and(|values| values.contains_key("mode")));
         });
     }
 

@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDiffHunk, createDiffLine } from "@/test/fixtures/git";
+import { DiffInteractionProvider } from "../diff-interaction-context/diff-interaction-context";
 import DiffHunk from "./diff-hunk";
 
 const longLine =
@@ -173,6 +174,48 @@ describe("DiffHunk", () => {
     );
 
     screen.getAllByText(longLine).forEach(expectWrappedSource);
+  });
+
+  it("renders split line content inside each side instead of full-width rows", () => {
+    render(
+      <DiffInteractionProvider
+        value={{
+          renderLineBelow: (anchor) =>
+            anchor.side === "old" ? "Old side thread" : "New side thread",
+          renderLineBelowFullWidth: (anchor) =>
+            `Full width ${anchor.side} thread`,
+        }}
+      >
+        <DiffHunk
+          hunk={createDiffHunk({
+            lines: [
+              createDiffLine({
+                kind: "Del",
+                content: '- "pkg": "1.0.0",',
+                old_lineno: 13,
+                new_lineno: null,
+              }),
+              createDiffLine({
+                kind: "Add",
+                content: '+ "pkg": "2.0.0",',
+                old_lineno: null,
+                new_lineno: 13,
+              }),
+            ],
+          })}
+          filePath="package.json"
+          hunkIdx={0}
+          isHovered={false}
+          setHoveredHunkIdx={vi.fn()}
+          displayMode="split"
+        />
+      </DiffInteractionProvider>,
+    );
+
+    expect(screen.getByText("Old side thread")).toBeInTheDocument();
+    expect(screen.getByText("New side thread")).toBeInTheDocument();
+    expect(screen.queryByText("Full width old thread")).not.toBeInTheDocument();
+    expect(screen.queryByText("Full width new thread")).not.toBeInTheDocument();
   });
 
   it("reserves staging gutters for expanded unified context in editable diffs", () => {

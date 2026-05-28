@@ -5,10 +5,7 @@ import type {
   ReviewThread,
   ReviewThreadAnchor,
 } from "../types/review-comments";
-
-export function getReviewComparisonPairKey(baseRef: string, headRef: string) {
-  return `${baseRef}...${headRef}`;
-}
+export { getReviewComparisonPairKey } from "@/shared/lib/pull-requests/review-comparison";
 
 export function getReviewThreadAnchorKey(
   pairKey: string,

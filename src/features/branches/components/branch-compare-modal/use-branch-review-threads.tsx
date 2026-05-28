@@ -108,6 +108,10 @@ export function useBranchReviewThreads({
     reviewThreadResolutionOverrides,
     setReviewThreadResolutionOverrides,
   ] = useState<Record<string, boolean>>({});
+  const [
+    expandedSubmittedAnchorKeys,
+    setExpandedSubmittedAnchorKeys,
+  ] = useState<Set<string>>(() => new Set());
   const [activeReviewAnchor, setActiveReviewAnchor] =
     useState<DiffLineAnchor | null>(null);
   const [activeFileReviewPath, setActiveFileReviewPath] = useState<string | null>(
@@ -120,6 +124,7 @@ export function useBranchReviewThreads({
     setDraftReviewThreads([]);
     setPendingSubmittedCommentEdits({});
     setReviewThreadResolutionOverrides({});
+    setExpandedSubmittedAnchorKeys(new Set());
   }, [pairKey]);
 
   const submittedReviewThreads = useMemo(
@@ -209,6 +214,21 @@ export function useBranchReviewThreads({
     [onResolveSubmittedReviewThread],
   );
 
+  const keepReviewThreadsExpanded = useCallback(
+    (threads: ReviewThread[]) => {
+      if (!pairKey || threads.length === 0) return;
+
+      setExpandedSubmittedAnchorKeys((current) => {
+        const next = new Set(current);
+        threads.forEach((thread) => {
+          next.add(getReviewThreadAnchorKey(pairKey, thread.anchor));
+        });
+        return next;
+      });
+    },
+    [pairKey],
+  );
+
   const renderAiFindingActions = useCallback(
     (finding: LocalAiBranchReviewFinding) => {
       const canApply = branchReviewAnchorIndex.has(findingAnchorKey(finding));
@@ -280,8 +300,144 @@ export function useBranchReviewThreads({
     [pullRequestComments],
   );
 
-  const interactionValue = useMemo<DiffInteractionContextValue>(
-    () => ({
+  const interactionValue = useMemo<DiffInteractionContextValue>(() => {
+    const renderLineReviewContent = (anchor: DiffLineAnchor) => {
+      if (!pairKey) return null;
+      const line = anchor.side === "old" ? anchor.oldLine : anchor.newLine;
+      const anchorFindings =
+        line === null
+          ? []
+          : (branchReviewData?.findings ?? []).filter(
+              (finding) =>
+                !dismissedAiFindingKeys.has(findingKey(finding)) &&
+                findingAnchorKey(finding) ===
+                  findingAnchorKey({
+                    filePath: anchor.filePath,
+                    side: anchor.side,
+                    line,
+                  }),
+            );
+      const threadAnchor = toReviewThreadAnchor(anchor);
+      const threads = findReviewThreadsForAnchor(
+        reviewThreads,
+        pairKey,
+        threadAnchor,
+      );
+      const isCreating =
+        !!activeReviewAnchor &&
+        threads.length === 0 &&
+        getReviewThreadAnchorKey(
+          pairKey,
+          toReviewThreadAnchor(activeReviewAnchor),
+        ) === getReviewThreadAnchorKey(pairKey, threadAnchor);
+
+      if (!isCreating && threads.length === 0 && anchorFindings.length === 0) {
+        return null;
+      }
+
+      return (
+        <div className="space-y-3">
+          {anchorFindings.map((finding) => (
+            <div
+              key={findingKey(finding)}
+              className="rounded border border-blue-500/30 bg-blue-500/10 p-3 text-sm"
+            >
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="rounded border border-blue-400/40 px-1.5 py-0.5 text-[10px] uppercase text-blue-100">
+                  AI review
+                </span>
+                <span className="font-medium text-zinc-100">
+                  {finding.title}
+                </span>
+              </div>
+              <p className="text-zinc-300">{finding.explanation}</p>
+              {finding.suggestedComment ? (
+                <div className="mt-2 rounded border border-border bg-background px-2 py-1.5 text-xs text-zinc-300">
+                  {finding.suggestedComment}
+                </div>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {renderAiFindingActions(finding)}
+              </div>
+            </div>
+          ))}
+          {threads.map((thread) => (
+            <ReviewThreadView
+              key={thread.id}
+              thread={thread}
+              isCreating={false}
+              currentAuthor={CURRENT_REVIEW_AUTHOR}
+              onSaveInitial={() => undefined}
+              onCancelInitial={() => setActiveReviewAnchor(null)}
+              onReply={(_, bodyMarkdown) =>
+                setDraftReviewThreads((current) =>
+                  appendDraftReplyToThread({
+                    current,
+                    pairKey,
+                    anchor: thread.anchor,
+                    author: CURRENT_REVIEW_AUTHOR,
+                    bodyMarkdown,
+                    parentCommentId: firstSubmittedReviewCommentId(thread),
+                    threadId: thread.id,
+                  }),
+                )
+              }
+              onResolveThread={(_, resolved) =>
+                setReviewThreadResolved(thread, resolved)
+              }
+              onUpdateComment={updateDraftOrSubmittedComment}
+              onDeleteComment={(commentId) => {
+                setDraftReviewThreads((current) =>
+                  deleteReviewThreadComment({ threads: current, commentId }),
+                );
+              }}
+              allowSubmittedCommentEditing
+              defaultCollapsed={
+                thread.comments.every(
+                  (comment) => comment.lifecycle === "submitted",
+                ) &&
+                !expandedSubmittedAnchorKeys.has(
+                  getReviewThreadAnchorKey(pairKey, thread.anchor),
+                )
+              }
+              title="Review thread"
+            />
+          ))}
+          {isCreating ? (
+            <ReviewThreadView
+              thread={null}
+              isCreating
+              currentAuthor={CURRENT_REVIEW_AUTHOR}
+              onSaveInitial={(bodyMarkdown) => {
+                setDraftReviewThreads((current) =>
+                  upsertReviewThreadComment({
+                    threads: current,
+                    pairKey,
+                    anchor,
+                    author: CURRENT_REVIEW_AUTHOR,
+                    bodyMarkdown,
+                  }),
+                );
+                setActiveReviewAnchor(null);
+              }}
+              onCancelInitial={() => setActiveReviewAnchor(null)}
+              onReply={() => undefined}
+              onResolveThread={() => undefined}
+              onUpdateComment={updateDraftOrSubmittedComment}
+              onDeleteComment={(commentId) => {
+                setDraftReviewThreads((current) =>
+                  deleteReviewThreadComment({ threads: current, commentId }),
+                );
+              }}
+              allowSubmittedCommentEditing
+              title="Review thread"
+            />
+          ) : null}
+        </div>
+      );
+    };
+
+    return {
       renderFileHeaderBelow: ({ filePath }) => {
         if (!pairKey) return null;
         const threadAnchor = createFileReviewThreadAnchor(filePath);
@@ -315,6 +471,9 @@ export function useBranchReviewThreads({
                 currentAuthor={CURRENT_REVIEW_AUTHOR}
                 defaultCollapsed={
                   !isReplying &&
+                  !expandedSubmittedAnchorKeys.has(
+                    getReviewThreadAnchorKey(pairKey, thread.anchor),
+                  ) &&
                   (!thread.comments.some(
                     (comment) => comment.lifecycle === "submitted",
                   ) ||
@@ -416,139 +575,10 @@ export function useBranchReviewThreads({
           </button>
         );
       },
-      renderLineBelowFullWidth: (anchor) => {
-        if (!pairKey) return null;
-        const line = anchor.side === "old" ? anchor.oldLine : anchor.newLine;
-        const anchorFindings =
-          line === null
-            ? []
-            : (branchReviewData?.findings ?? []).filter(
-                (finding) =>
-                  !dismissedAiFindingKeys.has(findingKey(finding)) &&
-                  findingAnchorKey(finding) ===
-                    findingAnchorKey({
-                      filePath: anchor.filePath,
-                      side: anchor.side,
-                      line,
-                    }),
-              );
-        const threadAnchor = toReviewThreadAnchor(anchor);
-        const threads = findReviewThreadsForAnchor(
-          reviewThreads,
-          pairKey,
-          threadAnchor,
-        );
-        const isCreating =
-          !!activeReviewAnchor &&
-          threads.length === 0 &&
-          getReviewThreadAnchorKey(
-            pairKey,
-            toReviewThreadAnchor(activeReviewAnchor),
-          ) === getReviewThreadAnchorKey(pairKey, threadAnchor);
-
-        if (!isCreating && threads.length === 0 && anchorFindings.length === 0) {
-          return null;
-        }
-
-        return (
-          <div className="space-y-3">
-            {anchorFindings.map((finding) => (
-              <div
-                key={findingKey(finding)}
-                className="rounded border border-blue-500/30 bg-blue-500/10 p-3 text-sm"
-              >
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <span className="rounded border border-blue-400/40 px-1.5 py-0.5 text-[10px] uppercase text-blue-100">
-                    AI review
-                  </span>
-                  <span className="font-medium text-zinc-100">
-                    {finding.title}
-                  </span>
-                </div>
-                <p className="text-zinc-300">{finding.explanation}</p>
-                {finding.suggestedComment ? (
-                  <div className="mt-2 rounded border border-border bg-background px-2 py-1.5 text-xs text-zinc-300">
-                    {finding.suggestedComment}
-                  </div>
-                ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {renderAiFindingActions(finding)}
-                </div>
-              </div>
-            ))}
-            {threads.map((thread) => (
-              <ReviewThreadView
-                key={thread.id}
-                thread={thread}
-                isCreating={false}
-                currentAuthor={CURRENT_REVIEW_AUTHOR}
-                onSaveInitial={() => undefined}
-                onCancelInitial={() => setActiveReviewAnchor(null)}
-                onReply={(_, bodyMarkdown) =>
-                  setDraftReviewThreads((current) =>
-                    appendDraftReplyToThread({
-                      current,
-                      pairKey,
-                      anchor: thread.anchor,
-                      author: CURRENT_REVIEW_AUTHOR,
-                      bodyMarkdown,
-                      parentCommentId: firstSubmittedReviewCommentId(thread),
-                      threadId: thread.id,
-                    }),
-                  )
-                }
-                onResolveThread={(_, resolved) =>
-                  setReviewThreadResolved(thread, resolved)
-                }
-                onUpdateComment={updateDraftOrSubmittedComment}
-                onDeleteComment={(commentId) => {
-                  setDraftReviewThreads((current) =>
-                    deleteReviewThreadComment({ threads: current, commentId }),
-                  );
-                }}
-                allowSubmittedCommentEditing
-                defaultCollapsed={
-                  thread.comments.every(
-                    (comment) => comment.lifecycle === "submitted",
-                  )
-                }
-                title="Review thread"
-              />
-            ))}
-            {isCreating ? (
-              <ReviewThreadView
-                thread={null}
-                isCreating
-                currentAuthor={CURRENT_REVIEW_AUTHOR}
-                onSaveInitial={(bodyMarkdown) => {
-                  setDraftReviewThreads((current) =>
-                    upsertReviewThreadComment({
-                      threads: current,
-                      pairKey,
-                      anchor,
-                      author: CURRENT_REVIEW_AUTHOR,
-                      bodyMarkdown,
-                    }),
-                  );
-                  setActiveReviewAnchor(null);
-                }}
-                onCancelInitial={() => setActiveReviewAnchor(null)}
-                onReply={() => undefined}
-                onResolveThread={() => undefined}
-                onUpdateComment={updateDraftOrSubmittedComment}
-                onDeleteComment={(commentId) => {
-                  setDraftReviewThreads((current) =>
-                    deleteReviewThreadComment({ threads: current, commentId }),
-                  );
-                }}
-                allowSubmittedCommentEditing
-                title="Review thread"
-              />
-            ) : null}
-          </div>
-        );
-      },
-    }),
+      renderLineBelow: renderLineReviewContent,
+      renderLineBelowFullWidth: renderLineReviewContent,
+    };
+  },
     [
       activeReviewAnchor,
       activeFileReviewPath,
@@ -556,6 +586,7 @@ export function useBranchReviewThreads({
       beginReviewThread,
       branchReviewData,
       dismissedAiFindingKeys,
+      expandedSubmittedAnchorKeys,
       pairKey,
       renderAiFindingActions,
       reviewThreads,
@@ -571,6 +602,7 @@ export function useBranchReviewThreads({
     },
     draftReviewThreads,
     interactionValue,
+    keepReviewThreadsExpanded,
     pendingSubmittedCommentEdits,
     renderAiFindingActions,
     reviewThreads,

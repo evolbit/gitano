@@ -7,6 +7,14 @@ use super::types::{
     ExternalAiAgentProgressState, ExternalAiAgentStatus, ExternalAiAgentStatusState,
     EXTERNAL_AI_AGENT_PROGRESS_EVENT,
 };
+use crate::platform::{
+    command_search_dirs, resolve_external_program, resolve_external_program_from_dirs,
+    ResolvedExternalProgram,
+};
+#[cfg(test)]
+use crate::platform::{
+    external_program_names, push_platform_command_dirs, push_user_home_command_dirs,
+};
 #[cfg(test)]
 use catalog::npm_exec_args;
 use catalog::{
@@ -16,7 +24,6 @@ use catalog::{
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -230,12 +237,6 @@ fn not_installed_status(agent: &CuratedAgent, error: Option<String>) -> External
         auth_methods: auth_methods_for(agent.id),
         error,
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ResolvedExternalProgram {
-    program: PathBuf,
-    path_env: Option<String>,
 }
 
 fn binary_external_agent_command(
@@ -508,179 +509,6 @@ fn extract_archive(
             stderr.trim()
         ))
     }
-}
-
-fn resolve_external_program(program: &str) -> Option<ResolvedExternalProgram> {
-    let dirs = command_search_dirs();
-    let path = resolve_external_program_from_dirs(program, &dirs)?;
-    Some(ResolvedExternalProgram {
-        program: path,
-        path_env: join_path_env(&dirs),
-    })
-}
-
-fn command_search_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Some(path) = env::var_os("PATH") {
-        for dir in env::split_paths(&path) {
-            push_unique_dir(&mut dirs, dir);
-        }
-    }
-
-    push_platform_command_dirs(&mut dirs);
-    push_user_command_dirs(&mut dirs);
-
-    dirs
-}
-
-#[cfg(target_os = "macos")]
-fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
-    for dir in [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/opt/local/bin",
-    ] {
-        push_unique_dir(dirs, PathBuf::from(dir));
-    }
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
-    for dir in [
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/opt/local/bin",
-        "/snap/bin",
-    ] {
-        push_unique_dir(dirs, PathBuf::from(dir));
-    }
-}
-
-#[cfg(windows)]
-fn push_platform_command_dirs(dirs: &mut Vec<PathBuf>) {
-    for key in ["ProgramFiles", "ProgramFiles(x86)"] {
-        if let Some(base) = env::var_os(key) {
-            push_unique_dir(dirs, PathBuf::from(base).join("nodejs"));
-        }
-    }
-
-    if let Some(appdata) = env::var_os("APPDATA") {
-        push_unique_dir(dirs, PathBuf::from(appdata).join("npm"));
-    }
-
-    if let Some(local_appdata) = env::var_os("LOCALAPPDATA") {
-        let local_appdata = PathBuf::from(local_appdata);
-        push_unique_dir(dirs, local_appdata.join("Microsoft").join("WindowsApps"));
-        push_unique_dir(dirs, local_appdata.join("Programs"));
-        push_unique_dir(dirs, local_appdata.join("Programs").join("nodejs"));
-        push_unique_dir(dirs, local_appdata.join("Volta").join("bin"));
-    }
-
-    if let Some(nvm_symlink) = env::var_os("NVM_SYMLINK") {
-        push_unique_dir(dirs, PathBuf::from(nvm_symlink));
-    }
-}
-
-fn push_user_command_dirs(dirs: &mut Vec<PathBuf>) {
-    if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
-        push_user_home_command_dirs(dirs, &PathBuf::from(home));
-    }
-}
-
-#[cfg(not(windows))]
-fn push_user_home_command_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
-    push_unique_dir(dirs, home.join(".local/bin"));
-    push_unique_dir(dirs, home.join(".volta/bin"));
-    push_unique_dir(dirs, home.join(".asdf/shims"));
-    push_unique_dir(dirs, home.join(".nvm/current/bin"));
-    push_nvm_version_dirs(dirs, home);
-}
-
-#[cfg(windows)]
-fn push_user_home_command_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
-    push_unique_dir(dirs, home.join(".local").join("bin"));
-    push_unique_dir(dirs, home.join("AppData").join("Roaming").join("npm"));
-    push_unique_dir(
-        dirs,
-        home.join("AppData")
-            .join("Local")
-            .join("Microsoft")
-            .join("WindowsApps"),
-    );
-    push_unique_dir(
-        dirs,
-        home.join("AppData").join("Local").join("Volta").join("bin"),
-    );
-}
-
-fn push_unique_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
-    if !dirs.iter().any(|existing| existing == &dir) {
-        dirs.push(dir);
-    }
-}
-
-fn push_nvm_version_dirs(dirs: &mut Vec<PathBuf>, home: &Path) {
-    let base = home.join(".nvm/versions/node");
-    let Ok(entries) = fs::read_dir(base) else {
-        return;
-    };
-
-    let mut version_dirs = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path().join("bin"))
-        .collect::<Vec<_>>();
-    version_dirs.sort();
-
-    for dir in version_dirs {
-        push_unique_dir(dirs, dir);
-    }
-}
-
-fn resolve_external_program_from_dirs(program: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
-    let program_path = Path::new(program);
-    if program_path.components().count() > 1 && program_path.is_file() {
-        return Some(program_path.to_path_buf());
-    }
-
-    for dir in dirs {
-        for name in external_program_names(program) {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(windows)]
-fn external_program_names(program: &str) -> Vec<String> {
-    let path = Path::new(program);
-    if path.extension().is_some() {
-        return vec![program.to_string()];
-    }
-
-    vec![
-        format!("{program}.cmd"),
-        format!("{program}.exe"),
-        program.to_string(),
-    ]
-}
-
-#[cfg(not(windows))]
-fn external_program_names(program: &str) -> Vec<String> {
-    vec![program.to_string()]
-}
-
-fn join_path_env(dirs: &[PathBuf]) -> Option<String> {
-    env::join_paths(dirs)
-        .ok()
-        .map(|paths| paths.to_string_lossy().to_string())
 }
 
 fn archive_file_name(url: &str) -> Result<&str, String> {

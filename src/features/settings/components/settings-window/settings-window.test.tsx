@@ -36,6 +36,7 @@ const integrationApiMocks = vi.hoisted(() => ({
   completeGitHubOAuthIntegration: vi.fn(),
   disconnectProviderIntegration: vi.fn(),
   listProviderIntegrations: vi.fn(),
+  setGitHubAccessMethod: vi.fn(),
   startGitHubOAuthIntegration: vi.fn(),
   verifyProviderIntegration: vi.fn(),
 }));
@@ -47,6 +48,30 @@ const openExternalUrlMock = vi.hoisted(() => vi.fn());
 vi.mock("@/shared/platform/tauri/opener", () => ({
   openExternalUrl: openExternalUrlMock,
 }));
+
+function githubProvider(overrides = {}) {
+  return {
+    id: "github",
+    displayName: "GitHub",
+    capabilities: ["pullRequests", "pullRequestReviews"],
+    status: "disconnected",
+    connection: null,
+    lastError: null,
+    selectedAccessMethod: "autoFallback",
+    oauth: {
+      status: "disconnected",
+      connection: null,
+      lastError: null,
+    },
+    ghCli: {
+      availability: "notInstalled",
+      version: null,
+      connection: null,
+      message: "GitHub CLI is not installed.",
+    },
+    ...overrides,
+  };
+}
 
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
 const execCommandMock = vi.hoisted(() => vi.fn());
@@ -352,14 +377,7 @@ describe("SettingsWindow", () => {
       failures: [],
     });
     integrationApiMocks.listProviderIntegrations.mockResolvedValue([
-      {
-        id: "github",
-        displayName: "GitHub",
-        capabilities: ["pullRequests", "pullRequestReviews"],
-        status: "disconnected",
-        connection: null,
-        lastError: null,
-      },
+      githubProvider(),
     ]);
   });
 
@@ -395,8 +413,46 @@ describe("SettingsWindow", () => {
 
     expect(await screen.findByText("Providers")).toBeInTheDocument();
     expect(screen.getByText("GitHub")).toBeInTheDocument();
-    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getAllByText("Disconnected").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+  });
+
+  it("shows GitHub CLI availability and saves the selected access method", async () => {
+    const user = userEvent.setup();
+    integrationApiMocks.setGitHubAccessMethod.mockResolvedValue(
+      githubProvider({
+        selectedAccessMethod: "ghCli",
+        ghCli: {
+          availability: "ready",
+          version: "2.49.2",
+          connection: {
+            accountLogin: "marco",
+            avatarUrl: null,
+            scopes: [],
+          },
+          message: null,
+        },
+      }),
+    );
+    render(
+      <SettingsWindow
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Integrations" }));
+
+    expect((await screen.findAllByText("GitHub CLI")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Not installed")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("GitHub CLI"));
+
+    await waitFor(() => {
+      expect(integrationApiMocks.setGitHubAccessMethod).toHaveBeenCalledWith({
+        accessMethod: "ghCli",
+      });
+    });
+    expect(await screen.findByText("Ready as marco")).toBeInTheDocument();
   });
 
   it("starts GitHub OAuth from integrations settings", async () => {
@@ -465,16 +521,23 @@ describe("SettingsWindow", () => {
       interval: 1,
     });
     integrationApiMocks.completeGitHubOAuthIntegration.mockResolvedValue({
-      id: "github",
-      displayName: "GitHub",
-      capabilities: ["pullRequests", "pullRequestReviews"],
-      status: "connected",
-      connection: {
-        accountLogin: "marco",
-        avatarUrl: null,
-        scopes: ["repo"],
-      },
-      lastError: null,
+      ...githubProvider({
+        status: "connected",
+        connection: {
+          accountLogin: "marco",
+          avatarUrl: null,
+          scopes: ["repo"],
+        },
+        oauth: {
+          status: "connected",
+          connection: {
+            accountLogin: "marco",
+            avatarUrl: null,
+            scopes: ["repo"],
+          },
+          lastError: null,
+        },
+      }),
     });
 
     render(
@@ -492,32 +555,32 @@ describe("SettingsWindow", () => {
         integrationApiMocks.completeGitHubOAuthIntegration,
       ).toHaveBeenCalledWith({ deviceCode: "device-code" });
     }, { timeout: 2500 });
-    expect(await screen.findByText("Connected as marco")).toBeInTheDocument();
+    expect((await screen.findAllByText("Connected as marco")).length).toBeGreaterThan(0);
   });
 
   it("disconnects GitHub from integrations settings", async () => {
     const user = userEvent.setup();
     integrationApiMocks.listProviderIntegrations.mockResolvedValue([
-      {
-        id: "github",
-        displayName: "GitHub",
-        capabilities: ["pullRequests", "pullRequestReviews"],
+      githubProvider({
         status: "connected",
         connection: {
           accountLogin: "marco",
           avatarUrl: null,
           scopes: ["repo"],
         },
-        lastError: null,
-      },
+        oauth: {
+          status: "connected",
+          connection: {
+            accountLogin: "marco",
+            avatarUrl: null,
+            scopes: ["repo"],
+          },
+          lastError: null,
+        },
+      }),
     ]);
     integrationApiMocks.disconnectProviderIntegration.mockResolvedValue({
-      id: "github",
-      displayName: "GitHub",
-      capabilities: ["pullRequests", "pullRequestReviews"],
-      status: "disconnected",
-      connection: null,
-      lastError: null,
+      ...githubProvider(),
     });
 
     render(
@@ -528,7 +591,7 @@ describe("SettingsWindow", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "Integrations" }));
-    expect(await screen.findByText("Connected as marco")).toBeInTheDocument();
+    expect((await screen.findAllByText("Connected as marco")).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Disconnect" }));
 
     await waitFor(() => {
@@ -536,7 +599,7 @@ describe("SettingsWindow", () => {
         integrationApiMocks.disconnectProviderIntegration,
       ).toHaveBeenCalledWith("github");
     });
-    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect((await screen.findAllByText("Disconnected")).length).toBeGreaterThan(0);
   });
 
   it("shows model download and delete actions", async () => {

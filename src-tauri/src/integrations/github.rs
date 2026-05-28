@@ -1,9 +1,9 @@
 use super::{
-    GitHubOAuthStartResponse, GitHubPullRequestBranch, GitHubPullRequestComment,
-    GitHubPullRequestCommentKind, GitHubPullRequestListItem, GitHubPullRequestReviewCommentDraft,
-    GitHubPullRequestReviewEvent, GitHubPullRequestUser, GitHubRepository,
-    GitHubPullRequestReviewThreadState, GitHubSubmittedPullRequestReview,
-    ProviderConnectionSummary,
+    GitHubMergeMethod, GitHubMergedPullRequest, GitHubOAuthStartResponse, GitHubPullRequestBranch,
+    GitHubPullRequestComment, GitHubPullRequestCommentKind, GitHubPullRequestCommit,
+    GitHubPullRequestListItem, GitHubPullRequestReviewCommentDraft, GitHubPullRequestReviewEvent,
+    GitHubPullRequestReviewThreadState, GitHubPullRequestUser, GitHubRepository,
+    GitHubRepositoryMergeOptions, GitHubSubmittedPullRequestReview, ProviderConnectionSummary,
 };
 use reqwest::header::{
     HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, LINK, USER_AGENT,
@@ -83,6 +83,7 @@ struct PullRequestBranchResponse {
 struct PullRequestResponse {
     number: u64,
     title: String,
+    body: Option<String>,
     state: String,
     draft: Option<bool>,
     html_url: String,
@@ -91,6 +92,17 @@ struct PullRequestResponse {
     head: PullRequestBranchResponse,
     created_at: String,
     updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullRequestCommitResponse {
+    sha: String,
+    commit: PullRequestCommitDetailsResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct PullRequestCommitDetailsResponse {
+    message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,11 +258,34 @@ struct UpdateCommentPayload {
     body: String,
 }
 
+#[derive(Debug, Serialize)]
+struct MergePullRequestPayload {
+    merge_method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepositoryMergeOptionsResponse {
+    allow_merge_commit: Option<bool>,
+    allow_squash_merge: Option<bool>,
+    allow_rebase_merge: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 struct SubmittedReviewResponse {
     id: u64,
     state: String,
     html_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MergePullRequestResponse {
+    sha: Option<String>,
+    merged: bool,
+    message: String,
 }
 
 impl From<PullRequestUserResponse> for GitHubPullRequestUser {
@@ -278,6 +313,7 @@ impl From<PullRequestResponse> for GitHubPullRequestListItem {
         Self {
             number: pr.number,
             title: pr.title,
+            body: pr.body,
             state: pr.state,
             draft: pr.draft.unwrap_or(false),
             html_url: pr.html_url,
@@ -288,6 +324,27 @@ impl From<PullRequestResponse> for GitHubPullRequestListItem {
             updated_at: pr.updated_at,
         }
     }
+}
+
+impl From<PullRequestCommitResponse> for GitHubPullRequestCommit {
+    fn from(commit: PullRequestCommitResponse) -> Self {
+        let (message_headline, message_body) = split_commit_message(&commit.commit.message);
+
+        Self {
+            sha: commit.sha,
+            message: commit.commit.message,
+            message_headline,
+            message_body,
+        }
+    }
+}
+
+fn split_commit_message(message: &str) -> (String, String) {
+    let mut lines = message.lines();
+    let headline = lines.next().unwrap_or_default().trim().to_string();
+    let body = lines.collect::<Vec<_>>().join("\n").trim().to_string();
+
+    (headline, body)
 }
 
 impl From<IssueCommentResponse> for GitHubPullRequestComment {
@@ -630,6 +687,41 @@ async fn patch_json<TRequest: Serialize, TResponse: DeserializeOwned>(
         .map_err(|error| format!("GitHub response could not be parsed: {}", error))
 }
 
+async fn put_json<TRequest: Serialize, TResponse: DeserializeOwned>(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    payload: &TRequest,
+) -> Result<TResponse, String> {
+    let response = client
+        .put(url)
+        .header(USER_AGENT, USER_AGENT_VALUE)
+        .header(ACCEPT, "application/vnd.github+json")
+        .header(AUTHORIZATION, github_auth_header(token)?)
+        .json(payload)
+        .send()
+        .await
+        .map_err(|error| format!("GitHub request failed: {}", error))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("GitHub response could not be read: {}", error))?;
+
+    if !status.is_success() {
+        let message = parse_github_error_body(&body).unwrap_or_else(|| body.trim().to_string());
+        return Err(
+            format!("GitHub request failed with status {}. {}", status, message)
+                .trim()
+                .to_string(),
+        );
+    }
+
+    serde_json::from_str::<TResponse>(&body)
+        .map_err(|error| format!("GitHub response could not be parsed: {}", error))
+}
+
 async fn post_graphql<TVariables: Serialize, TResponse: DeserializeOwned>(
     client: &reqwest::Client,
     token: &str,
@@ -655,11 +747,12 @@ async fn post_graphql<TVariables: Serialize, TResponse: DeserializeOwned>(
 
     if !status.is_success() {
         let message = parse_github_error_body(&body).unwrap_or_else(|| body.trim().to_string());
-        return Err(
-            format!("GitHub GraphQL request failed with status {}. {}", status, message)
-                .trim()
-                .to_string(),
-        );
+        return Err(format!(
+            "GitHub GraphQL request failed with status {}. {}",
+            status, message
+        )
+        .trim()
+        .to_string());
     }
 
     let response = serde_json::from_str::<GitHubGraphQlResponse<TResponse>>(&body)
@@ -935,6 +1028,20 @@ pub async fn list_open_pull_requests(
     Ok(pulls.into_iter().map(Into::into).collect())
 }
 
+pub async fn list_pull_request_commits(
+    repository: &GitHubRepository,
+    number: u64,
+    token: &str,
+) -> Result<Vec<GitHubPullRequestCommit>, String> {
+    let url = format!(
+        "{}?per_page=100",
+        github_api_url(repository, &format!("pulls/{}/commits", number))
+    );
+    let commits = get_all_pages::<PullRequestCommitResponse>(url, token).await?;
+
+    Ok(commits.into_iter().map(Into::into).collect())
+}
+
 pub async fn count_open_pull_requests(
     repository: &GitHubRepository,
     token: &str,
@@ -1068,7 +1175,10 @@ pub async fn submit_pull_request_review(
         }),
         comments: line_comments.into_iter().map(Into::into).collect(),
     };
-    if payload.comments.is_empty() {
+    if payload.comments.is_empty()
+        && matches!(payload.event, GitHubPullRequestReviewEvent::Comment)
+        && payload.body.is_none()
+    {
         if let Some(comment) = last_file_comment {
             return Ok(GitHubSubmittedPullRequestReview {
                 id: comment.id,
@@ -1082,6 +1192,51 @@ pub async fn submit_pull_request_review(
     let review = post_json::<_, SubmittedReviewResponse>(&client, &url, token, &payload).await?;
 
     Ok(review.into())
+}
+
+pub async fn merge_pull_request(
+    repository: &GitHubRepository,
+    number: u64,
+    token: &str,
+    merge_method: GitHubMergeMethod,
+    title: Option<String>,
+    body: Option<String>,
+) -> Result<GitHubMergedPullRequest, String> {
+    let payload = MergePullRequestPayload {
+        merge_method: merge_method.as_str().to_string(),
+        commit_title: title.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        }),
+        commit_message: body.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        }),
+    };
+    let client = reqwest::Client::new();
+    let url = github_api_url(repository, &format!("pulls/{}/merge", number));
+    let response = put_json::<_, MergePullRequestResponse>(&client, &url, token, &payload).await?;
+
+    Ok(GitHubMergedPullRequest {
+        sha: response.sha,
+        merged: response.merged,
+        message: response.message,
+    })
+}
+
+pub async fn repository_merge_options(
+    repository: &GitHubRepository,
+    token: &str,
+) -> Result<GitHubRepositoryMergeOptions, String> {
+    let client = reqwest::Client::new();
+    let url = github_api_url(repository, "");
+    let (response, _) = get_json::<RepositoryMergeOptionsResponse>(&client, &url, token).await?;
+
+    Ok(GitHubRepositoryMergeOptions::from_optional_provider_flags(
+        response.allow_merge_commit,
+        response.allow_squash_merge,
+        response.allow_rebase_merge,
+    ))
 }
 
 pub async fn update_pull_request_comment(
@@ -1115,6 +1270,25 @@ pub async fn update_pull_request_comment(
             Ok(comment.into())
         }
     }
+}
+
+pub async fn submit_pull_request_conversation_comment(
+    repository: &GitHubRepository,
+    number: u64,
+    token: &str,
+    body: String,
+) -> Result<GitHubPullRequestComment, String> {
+    let body = body.trim().to_string();
+    if body.is_empty() {
+        return Err("Comment body is required.".to_string());
+    }
+
+    let client = reqwest::Client::new();
+    let url = github_api_url(repository, &format!("issues/{}/comments", number));
+    let payload = UpdateCommentPayload { body };
+    let comment = post_json::<_, IssueCommentResponse>(&client, &url, token, &payload).await?;
+
+    Ok(comment.into())
 }
 
 pub async fn submit_pull_request_review_reply(

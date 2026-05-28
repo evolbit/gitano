@@ -1,0 +1,14 @@
+schema: spec-driven
+artifacts:
+  proposal:
+    path: proposal.md
+    status: done
+  design:
+    path: design.md
+    status: done
+  specs:
+    path: specs/**/*.md
+    status: done
+  tasks:
+    path: tasks.md
+    status: done

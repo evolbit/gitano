@@ -443,7 +443,7 @@ fn copilot_default_action_mode(session: &AcpSession) -> Option<DefaultActionMode
         .find(|option| option.id == "mode" || option.category.as_deref() == Some("mode"));
 
     if let Some(option) = mode_option {
-        if !is_plan_mode(&option.current_value) {
+        if !is_plan_mode(&option.current_value) && !is_autopilot_mode(&option.current_value) {
             return None;
         }
 
@@ -718,6 +718,48 @@ mod tests {
         };
 
         assert!(copilot_default_action_mode(&session).is_none());
+    }
+
+    #[test]
+    fn copilot_default_action_mode_leaves_autopilot_when_agent_is_available() {
+        let session = AcpSession {
+            session_id: "session-1".to_string(),
+            mode_config_fallback: false,
+            config_options: vec![ExternalAiAgentConfigOption {
+                id: "mode".to_string(),
+                name: "Mode".to_string(),
+                description: None,
+                category: Some("mode".to_string()),
+                option_type: "select".to_string(),
+                current_value: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
+                    .to_string(),
+                options: vec![
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
+                            .to_string(),
+                        name: "Autopilot".to_string(),
+                        description: None,
+                    },
+                    super::super::types::ExternalAiAgentConfigOptionValue {
+                        value: "https://agentclientprotocol.com/protocol/session-modes#agent"
+                            .to_string(),
+                        name: "Agent".to_string(),
+                        description: None,
+                    },
+                ],
+            }],
+        };
+
+        match copilot_default_action_mode(&session) {
+            Some(DefaultActionMode::ConfigOption { config_id, value }) => {
+                assert_eq!(config_id, "mode");
+                assert_eq!(
+                    value,
+                    "https://agentclientprotocol.com/protocol/session-modes#agent"
+                );
+            }
+            _ => panic!("expected config mode"),
+        }
     }
 
     #[test]

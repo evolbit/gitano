@@ -193,6 +193,7 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
     busyProviderIds,
     completeGitHubOAuth,
     disconnectProvider,
+    setGitHubAccessMethodPreference,
     startGitHubOAuth,
     verifyProvider,
   } = useProviderIntegrations(open && pane === "integrations");
@@ -713,11 +714,12 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
                   loading={integrationsLoading}
                   error={integrationsError}
                   busyProviderIds={busyProviderIds}
-                  onCompleteGitHubOAuth={completeGitHubOAuth}
-                  onDisconnectProvider={disconnectProvider}
-                  onStartGitHubOAuth={startGitHubOAuth}
-                  onVerifyProvider={verifyProvider}
-                />
+          onCompleteGitHubOAuth={completeGitHubOAuth}
+          onDisconnectProvider={disconnectProvider}
+          onSetGitHubAccessMethod={setGitHubAccessMethodPreference}
+          onStartGitHubOAuth={startGitHubOAuth}
+          onVerifyProvider={verifyProvider}
+        />
               ) : null}
             </div>
           </div>
