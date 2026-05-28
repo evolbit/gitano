@@ -4,7 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocalAiStore } from "@/features/local-ai";
 import { useGitActionsStore } from "@/features/repository-workspace";
-import { BranchCompareModal } from "./branch-compare-modal";
+import {
+  BranchCompareModal,
+  type BranchCompareModalProps,
+} from "./branch-compare-modal";
+import {
+  PrReviewModal,
+  type PrReviewModalProps,
+} from "../pr-review-modal/pr-review-modal";
 
 const branchApiMocks = vi.hoisted(() => ({
   getBranches: vi.fn(),
@@ -98,6 +105,27 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
     }),
   };
 });
+
+type TestComparisonModalProps =
+  | BranchCompareModalProps
+  | (PrReviewModalProps & {
+      initialSourceBranch?: string | null;
+      initialTargetBranch?: string | null;
+    });
+
+function ComparisonModal(props: TestComparisonModalProps) {
+  if ("pullRequestContext" in props) {
+    const {
+      initialSourceBranch: _initialSourceBranch,
+      initialTargetBranch: _initialTargetBranch,
+      ...prReviewProps
+    } = props;
+
+    return <PrReviewModal {...prReviewProps} />;
+  }
+
+  return <BranchCompareModal {...props} />;
+}
 
 async function submitReviewAsComment(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Submit review" }));
@@ -387,7 +415,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -438,7 +466,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -478,7 +506,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -527,7 +555,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -567,7 +595,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -654,7 +682,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -759,7 +787,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -883,7 +911,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -970,7 +998,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1073,7 +1101,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1162,7 +1190,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1229,7 +1257,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1281,7 +1309,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1371,7 +1399,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/14/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -1400,7 +1428,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1430,7 +1458,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1460,7 +1488,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="feature"
           initialTargetBranch="main"
@@ -1497,7 +1525,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="feature"
           initialTargetBranch="main"
@@ -1527,7 +1555,7 @@ describe("BranchCompareModal local AI", () => {
   it("supports empty endpoint selections without loading comparison files", async () => {
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch={null}
           initialTargetBranch={null}
@@ -1549,7 +1577,7 @@ describe("BranchCompareModal local AI", () => {
   it("treats same-branch comparisons as a no-op empty state", async () => {
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="main"
           initialTargetBranch="main"
@@ -1575,7 +1603,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="feature"
           initialTargetBranch="main"
@@ -1608,7 +1636,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="feature"
           initialTargetBranch="main"
@@ -1650,7 +1678,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1700,7 +1728,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1751,7 +1779,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1835,7 +1863,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"
@@ -1910,7 +1938,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -2015,7 +2043,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="refs/remotes/origin/pull/12/head"
           initialTargetBranch="refs/remotes/origin/main"
@@ -2105,7 +2133,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-        <BranchCompareModal
+        <ComparisonModal
           repoPath="/repo"
           initialSourceBranch="feature"
           initialTargetBranch="main"
@@ -2178,7 +2206,7 @@ describe("BranchCompareModal local AI", () => {
 
     render(
       <MantineProvider>
-	        <BranchCompareModal
+	        <ComparisonModal
 	          repoPath="/repo"
 	          initialSourceBranch="feature"
 	          initialTargetBranch="main"

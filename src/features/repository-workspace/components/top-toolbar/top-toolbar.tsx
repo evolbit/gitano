@@ -38,7 +38,7 @@ import {
 } from "@/shared/components/icons/icons";
 import { PullRequestModal, usePullRequestCount } from "@/features/pull-requests";
 import type { PullRequestReviewTarget } from "@/features/pull-requests";
-import { BranchCompareModal } from "@/features/branches";
+import { PrReviewModal } from "@/features/branches";
 import type { TopToolbarProps } from "./types";
 import {
   GIT_ACTION_ERROR_SNACKBAR_MS,
@@ -802,10 +802,8 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
         onReviewPullRequest={setPullRequestReviewTarget}
       />
       {repoPath && pullRequestReviewTarget ? (
-        <BranchCompareModal
+        <PrReviewModal
           repoPath={repoPath}
-          initialSourceBranch={pullRequestReviewTarget.headRef}
-          initialTargetBranch={pullRequestReviewTarget.baseRef}
           pullRequestContext={pullRequestReviewTarget}
           onClose={() => setPullRequestReviewTarget(null)}
         />
