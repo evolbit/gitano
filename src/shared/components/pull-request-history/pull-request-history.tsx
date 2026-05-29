@@ -1,4 +1,6 @@
 import {
+  useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -21,6 +23,8 @@ type PullRequestHistoryProps = {
   pendingCommentEdits?: Record<number, string>;
   commentComposer?: ReactNode;
   commentAuthor?: PullRequestListItem["user"];
+  scrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
 };
 
 type CommentThread = {
@@ -233,14 +237,29 @@ export function PullRequestHistory({
   pendingCommentEdits = {},
   commentComposer = null,
   commentAuthor = null,
+  onScrollTopChange,
+  scrollTop = 0,
 }: PullRequestHistoryProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const commentThreads = buildCommentThreads(comments);
   const hasBody = Boolean(pullRequest?.body?.trim());
   const hasHistory =
     Boolean(pullRequest) || commits.length > 0 || commentThreads.length > 0;
 
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTop = scrollTop;
+  }, [commentThreads.length, commits.length, loading, scrollTop]);
+
   return (
-    <div className="h-full min-h-0 overflow-auto bg-background">
+    <div
+      ref={scrollContainerRef}
+      className="h-full min-h-0 overflow-auto bg-background"
+      onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
+    >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-5">
         {loading ? (
           <div className="rounded border border-border bg-background-emphasis px-4 py-3 text-sm text-zinc-300">

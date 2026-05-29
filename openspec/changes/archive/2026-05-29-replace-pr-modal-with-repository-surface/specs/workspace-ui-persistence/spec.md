@@ -1,30 +1,4 @@
-# workspace-ui-persistence Specification
-
-## Purpose
-TBD - created by archiving change persist-window-and-workspace-ui-state. Update Purpose after archive.
-## Requirements
-### Requirement: Window bounds persist across app restarts
-The system SHALL restore the last durable window size and position when the app is reopened.
-
-#### Scenario: User resizes the window
-- **WHEN** the user resizes the application window
-- **THEN** the system MUST persist the resulting window size
-
-#### Scenario: App is reopened after window resize
-- **WHEN** the app launches after the user previously resized or moved the window
-- **THEN** the system MUST restore the last persisted window bounds
-- **THEN** the restored size MUST still respect the configured minimum window constraints
-
-### Requirement: Per-repository workspace UI state persists
-The system SHALL persist durable workspace UI preferences per repository, keyed by repository path.
-
-#### Scenario: User reopens a repository
-- **WHEN** the user closes and later reopens a repository
-- **THEN** the system MUST restore that repository's persisted workspace UI state
-
-#### Scenario: User switches between repositories
-- **WHEN** the user works in multiple repositories with different workspace preferences
-- **THEN** the system MUST preserve each repository's own persisted state independently
+## ADDED Requirements
 
 ### Requirement: Repository active surface state is tracked per repository
 The system SHALL track the active repository surface independently for each repository path.
@@ -43,23 +17,6 @@ The system SHALL track the active repository surface independently for each repo
 #### Scenario: Repository has no stored surface state
 - **WHEN** a repository has no stored active surface state
 - **THEN** the system MUST default that repository to the normal workspace surface
-
-### Requirement: Durable layout and navigation preferences persist
-The system SHALL persist stable layout and navigation preferences for the main workspace.
-
-#### Scenario: User changes workspace layout
-- **WHEN** the user resizes workspace panes, changes the active left-pane section, opens an inline working-tree diff, or opens an inline commit-file diff
-- **THEN** the system MUST persist those layout and workspace-mode choices for the active repository
-
-#### Scenario: User changes explorer and branch structure state
-- **WHEN** the user changes branch tree expansion, main changes tree expansion, or current/commit flat-tree view mode
-- **THEN** the system MUST persist those preferences for the active repository
-
-#### Scenario: Repository workspace state is restored
-- **WHEN** the user reopens a repository with persisted workspace state
-- **THEN** the system MUST restore the last active left-pane section for that repository
-- **THEN** the system MUST restore any repo-scoped inline diff workspace mode and selected diff target needed to reconstruct the pane layout
-- **THEN** the system MUST NOT require legacy accordion open state to restore the left-pane navigation
 
 ### Requirement: Workspace and pull request surfaces restore after toggling
 The system SHALL preserve the user-visible UI state needed to restore both the normal workspace and pull request surfaces after the user toggles between them.
@@ -92,6 +49,8 @@ The system SHALL scope pull request review UI state by repository path and pull 
 #### Scenario: User reviews same pull request number in different repositories
 - **WHEN** repository A and repository B each have a pull request #12
 - **THEN** the system MUST keep each repository's pull request #12 UI state independent
+
+## MODIFIED Requirements
 
 ### Requirement: Transient UI state does not persist
 The system SHALL avoid restoring temporary interaction state that should not survive an app restart.

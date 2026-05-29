@@ -1,4 +1,11 @@
-import { useDeferredValue, useMemo, useState, useCallback } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { buildCompressedTree } from "@/shared/lib/tree/changes-explorer-tree";
 import {
@@ -53,7 +60,10 @@ function ChangesExplorer({
   emptyStateMessage = "No files found",
   alignCountColumnWithHeaderActions = false,
   fileCommentCounts,
+  onScrollTopChange,
+  scrollTop = 0,
 }: ChangesExplorerProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [search, setSearch] = useState("");
   const deferredFiles = useDeferredValue(files);
   const normalizedFiles = useMemo(
@@ -148,6 +158,14 @@ function ChangesExplorer({
     [openContextMenu],
   );
 
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTop = scrollTop;
+  }, [filteredFiles.length, isLoading, scrollTop, viewMode]);
+
   return (
     <div
       ref={containerRef}
@@ -234,7 +252,11 @@ function ChangesExplorer({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
+      >
         {actionError ? (
           <div className="border-b border-rose-900/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
             {actionError}

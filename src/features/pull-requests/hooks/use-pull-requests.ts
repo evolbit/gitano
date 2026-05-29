@@ -1,8 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import {
   listProviderPullRequests,
   type PullRequestListItem,
 } from "@/shared/api/integrations";
+
+const PULL_REQUESTS_STALE_MS = 30_000;
+
+export function pullRequestsQueryKey(repoPath: string | null | undefined) {
+  return ["provider-pull-requests", "github", repoPath ?? null] as const;
+}
+
+function loadProviderPullRequests(repoPath: string) {
+  return listProviderPullRequests({
+    providerId: "github",
+    path: repoPath,
+  });
+}
+
+export function prefetchPullRequests(
+  queryClient: QueryClient,
+  repoPath: string | null | undefined,
+) {
+  if (!repoPath) return Promise.resolve();
+
+  return queryClient.prefetchQuery({
+    queryKey: pullRequestsQueryKey(repoPath),
+    queryFn: () => loadProviderPullRequests(repoPath),
+    staleTime: PULL_REQUESTS_STALE_MS,
+  });
+}
 
 export type PullRequestAvailability =
   | "unknown"
@@ -34,49 +61,42 @@ export function usePullRequests({
   open: boolean;
   repoPath: string | null | undefined;
 }) {
-  const [pullRequests, setPullRequests] = useState<PullRequestListItem[]>(
-    [],
-  );
-  const [availability, setAvailability] =
-    useState<PullRequestAvailability>("unknown");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: pullRequestsQueryKey(repoPath),
+    queryFn: () => {
+      if (!repoPath) return Promise.resolve<PullRequestListItem[]>([]);
 
-  const loadPullRequests = useCallback(async () => {
-    if (!open || !repoPath) {
-      setPullRequests([]);
-      setAvailability("unknown");
-      setError(null);
-      return;
-    }
+      return loadProviderPullRequests(repoPath);
+    },
+    enabled: open && Boolean(repoPath),
+    staleTime: PULL_REQUESTS_STALE_MS,
+  });
 
-    setLoading(true);
-    setError(null);
-    try {
-      const nextPullRequests = await listProviderPullRequests({
-        providerId: "github",
-        path: repoPath,
-      });
-      setPullRequests(nextPullRequests);
-      setAvailability("ready");
-    } catch (loadError) {
-      setPullRequests([]);
-      setAvailability(classifyPullRequestError(loadError));
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
-    } finally {
-      setLoading(false);
-    }
-  }, [open, repoPath]);
+  const error = useMemo(() => {
+    if (!query.error) return null;
 
-  useEffect(() => {
-    void loadPullRequests();
-  }, [loadPullRequests]);
+    return query.error instanceof Error
+      ? query.error.message
+      : String(query.error);
+  }, [query.error]);
+  const availability = useMemo<PullRequestAvailability>(() => {
+    if (!open || !repoPath) return "unknown";
+    if (query.data) return "ready";
+    if (query.error) return classifyPullRequestError(query.error);
+
+    return "unknown";
+  }, [open, query.data, query.error, repoPath]);
+  const { refetch } = query;
+  const refresh = useCallback(async () => {
+    await refetch({ throwOnError: false });
+  }, [refetch]);
 
   return {
     availability,
     error,
-    loading,
-    pullRequests,
-    refresh: loadPullRequests,
+    loading: query.isLoading,
+    pullRequests: query.data ?? [],
+    refresh,
+    refreshing: query.isRefetching,
   };
 }

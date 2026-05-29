@@ -5,6 +5,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import { useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useRef, useState } from "react";
 import { HiChevronDown } from "react-icons/hi2";
 import {
@@ -23,6 +24,10 @@ import { APP_EVENTS } from "@/shared/config/events";
 import { useGitActionsStore } from "../../stores/git-actions-store";
 import { useRepoStore } from "../../stores/repo-store";
 import { useWorkspaceUiStore } from "../../stores/workspace-ui-store";
+import {
+  REPOSITORY_SURFACES,
+  useRepositorySurfaceStore,
+} from "../../stores/repository-surface-store";
 import type { GitWorktree } from "@/shared/types/git";
 import type { RepositoryState } from "@/shared/types/git";
 import {
@@ -33,12 +38,14 @@ import {
   IconCloudUpload,
   IconGitBranch,
   IconGitPullRequest,
+  IconHome,
   IconStack2,
   IconX,
 } from "@/shared/components/icons/icons";
-import { PullRequestModal, usePullRequestCount } from "@/features/pull-requests";
-import type { PullRequestReviewTarget } from "@/features/pull-requests";
-import { PrReviewModal } from "@/features/branches";
+import {
+  prefetchPullRequests,
+  usePullRequestCount,
+} from "@/features/pull-requests";
 import type { TopToolbarProps } from "./types";
 import {
   GIT_ACTION_ERROR_SNACKBAR_MS,
@@ -71,19 +78,20 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [branchMenuOpened, setBranchMenuOpened] = useState(false);
   const [pullMenuOpened, setPullMenuOpened] = useState(false);
   const [pushMenuOpened, setPushMenuOpened] = useState(false);
-  const [pullRequestModalOpen, setPullRequestModalOpen] = useState(false);
-  const [pullRequestReviewTarget, setPullRequestReviewTarget] =
-    useState<PullRequestReviewTarget | null>(null);
   const [branchesRefreshNonce, setBranchesRefreshNonce] = useState(0);
   const gitActionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const queryClient = useQueryClient();
 
   const tabs = useRepoStore((s) => s.tabs);
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const setTabBranch = useRepoStore((s) => s.setTabBranch);
   const updateTab = useRepoStore((s) => s.updateTab);
   const addRecentRepo = useRepoStore((s) => s.addRecentRepo);
+  const tab = tabs.find((t) => t.id === activeTabId);
+  const repoPath = tab?.repoPath;
+  const selectedBranch = tab?.selectedBranch;
   const pullStrategy = useWorkspaceUiStore((s) => s.pullStrategy);
   const setPullStrategy = useWorkspaceUiStore((s) => s.setPullStrategy);
   const pushMode = useWorkspaceUiStore((s) => s.pushMode);
@@ -92,13 +100,22 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const setWorktreeCreateBaseRef = useWorkspaceUiStore(
     (s) => s.setWorktreeCreateBaseRef,
   );
+  const activeRepositorySurface = useRepositorySurfaceStore((s) =>
+    repoPath
+      ? (s.repoSurfaceStateByPath[repoPath]?.activeSurface ??
+        REPOSITORY_SURFACES.workspace)
+      : REPOSITORY_SURFACES.workspace,
+  );
+  const showWorkspaceSurface = useRepositorySurfaceStore(
+    (s) => s.showWorkspaceSurface,
+  );
+  const showPullRequestsSurface = useRepositorySurfaceStore(
+    (s) => s.showPullRequestsSurface,
+  );
   const pendingGitAction = useGitActionsStore((s) => s.pendingAction);
   const setPendingGitAction = useGitActionsStore((s) => s.setPendingAction);
   const gitActionNotice = useGitActionsStore((s) => s.notice);
   const setGitActionNotice = useGitActionsStore((s) => s.setNotice);
-  const tab = tabs.find((t) => t.id === activeTabId);
-  const repoPath = tab?.repoPath;
-  const selectedBranch = tab?.selectedBranch;
 
   const [branches, setBranches] = useState<string[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -110,6 +127,11 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
     useState<RepositoryState | null>(null);
   const pullRequestCount = usePullRequestCount(repoPath);
   const requiresInitialCommit = repositoryState?.hasCommits === false;
+  const warmPullRequests = () => {
+    if (!repoPath) return;
+
+    void prefetchPullRequests(queryClient, repoPath);
+  };
 
   useEffect(() => {
     if (!repoPath) {
@@ -125,6 +147,21 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
       .catch((e) => setBranchesError(String(e)))
       .finally(() => setBranchesLoading(false));
   }, [repoPath, branchesRefreshNonce]);
+
+  useEffect(() => {
+    if (
+      !repoPath ||
+      activeRepositorySurface === REPOSITORY_SURFACES.pullRequests
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void prefetchPullRequests(queryClient, repoPath);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeRepositorySurface, queryClient, repoPath]);
 
   useEffect(() => {
     if (!repoPath) {
@@ -426,14 +463,28 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const isCommitDependentActionDisabled =
     isGitActionDisabled || requiresInitialCommit;
   const pullRequestLabel =
-    typeof pullRequestCount.count === "number"
+    activeRepositorySurface === REPOSITORY_SURFACES.pullRequests
+      ? "Workspace"
+      : typeof pullRequestCount.count === "number"
       ? `PRs (${pullRequestCount.count})`
       : "PRs";
   const pullRequestTooltip = !repoPath
     ? "Open a repository to view pull requests"
-    : pullRequestCount.error
+    : activeRepositorySurface === REPOSITORY_SURFACES.pullRequests
+      ? "Return to workspace"
+      : pullRequestCount.error
       ? "Pull request count unavailable"
       : "View pull requests";
+  const handlePullRequestSurfaceToggle = () => {
+    if (!repoPath) return;
+
+    if (activeRepositorySurface === REPOSITORY_SURFACES.pullRequests) {
+      showWorkspaceSurface(repoPath);
+      return;
+    }
+
+    showPullRequestsSurface(repoPath);
+  };
 
   const pullRightSlot = (
     <Menu
@@ -787,27 +838,21 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
           <span className="mx-1 h-7 w-px bg-border" />
           <RemoteActionButton
             label={pullRequestLabel}
-            icon={<IconGitPullRequest size={16} />}
-            onClick={() => setPullRequestModalOpen(true)}
+            icon={
+              activeRepositorySurface === REPOSITORY_SURFACES.pullRequests ? (
+                <IconHome size={16} />
+              ) : (
+                <IconGitPullRequest size={16} />
+              )
+            }
+            onClick={handlePullRequestSurfaceToggle}
+            onFocus={warmPullRequests}
+            onPointerEnter={warmPullRequests}
             disabled={!repoPath}
             tooltip={pullRequestTooltip}
           />
         </Group>
       </Group>
-
-      <PullRequestModal
-        open={pullRequestModalOpen}
-        repoPath={repoPath}
-        onClose={() => setPullRequestModalOpen(false)}
-        onReviewPullRequest={setPullRequestReviewTarget}
-      />
-      {repoPath && pullRequestReviewTarget ? (
-        <PrReviewModal
-          repoPath={repoPath}
-          pullRequestContext={pullRequestReviewTarget}
-          onClose={() => setPullRequestReviewTarget(null)}
-        />
-      ) : null}
 
       {gitActionNotice ? (
         <div className="fixed bottom-4 left-1/2 z-[100100] w-[min(680px,calc(100vw-32px))] -translate-x-1/2 rounded-lg border border-zinc-700 bg-zinc-900/95 shadow-xl backdrop-blur">

@@ -19,6 +19,8 @@ export type RemoteActionButtonProps = {
   label: string;
   icon: React.ReactNode;
   onClick?: () => void;
+  onFocus?: () => void;
+  onPointerEnter?: () => void;
   disabled?: boolean;
   loading?: boolean;
   tooltip?: string;

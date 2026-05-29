@@ -1,0 +1,84 @@
+## ADDED Requirements
+
+### Requirement: Commit history preparation is non-blocking
+The system SHALL prepare large commit histories and their graph metadata without blocking the repository workspace UI.
+
+#### Scenario: User opens a repository with a very large commit history
+- **WHEN** the user opens a repository whose history preparation takes longer than an immediate response
+- **THEN** the commit list MUST show a loading state
+- **AND** the repository workspace MUST remain responsive to tab switching, toolbar interactions, and other already-mounted panels while history preparation continues
+
+#### Scenario: History preparation fails
+- **WHEN** backend history preparation fails for a repository
+- **THEN** the commit list MUST show an error state for that repository
+- **AND** the user MUST be able to retry history loading without reopening the repository
+
+#### Scenario: Multiple views request the same repository history
+- **WHEN** multiple frontend callers request the same repository path and history mode while preparation is already running
+- **THEN** the backend MUST share the in-flight preparation job
+- **AND** callers MUST observe the same eventual ready or error state
+
+### Requirement: Full history graph is cached in the backend
+The system SHALL keep the full prepared commit history and graph metadata in a backend cache keyed by repository and history mode.
+
+#### Scenario: History preparation completes
+- **WHEN** the backend finishes preparing commit history and graph metadata
+- **THEN** the backend MUST store the full prepared result in a cache entry for the repository path and history mode
+- **AND** the frontend MUST be able to request bounded row windows from that cache entry
+
+#### Scenario: Frontend requests commit rows
+- **WHEN** the frontend requests commit rows from a ready history cache entry
+- **THEN** the backend MUST return no more than the configured maximum row window size
+- **AND** the response MUST include enough metadata to determine whether earlier or later rows are available
+
+#### Scenario: Frontend requests rows around a known commit
+- **WHEN** the frontend requests a row window around a commit SHA or row index that exists in the prepared history
+- **THEN** the backend MUST return a bounded row window containing that commit
+- **AND** the response MUST include that commit's row index within the full prepared history
+
+### Requirement: Commit search runs against the full backend history
+The system SHALL search the full prepared commit history in the backend instead of searching only rows loaded into frontend state.
+
+#### Scenario: User searches commit history
+- **WHEN** the user enters a commit search query after history preparation is ready
+- **THEN** the backend MUST search all prepared commits for that repository and history mode
+- **AND** the frontend MUST show the total match count from the backend result
+
+#### Scenario: User navigates to the next or previous search match
+- **WHEN** the user requests the next or previous search match
+- **THEN** the backend MUST return the matching commit SHA and row index for the requested direction
+- **AND** the frontend MUST select the matching commit after loading a row window containing it when necessary
+
+#### Scenario: User searches before history is ready
+- **WHEN** the user enters a search query while history preparation is still loading
+- **THEN** the system MUST defer or disable full-history search until the backend cache is ready
+- **AND** the UI MUST NOT present partial loaded-window matches as full-history results
+
+### Requirement: Commit list interactions are preserved with bounded windows
+The system SHALL preserve existing commit list interactions while using backend-backed history windows.
+
+#### Scenario: User selects a visible commit row
+- **WHEN** the user selects a commit row from the loaded window
+- **THEN** the system MUST store the selected commit by SHA for the active repository tab
+- **AND** the commit details pane MUST load the selected commit changes as before
+
+#### Scenario: User keyboard-navigates within loaded rows
+- **WHEN** the user navigates the commit list with keyboard controls inside the currently loaded row window
+- **THEN** row selection and scroll behavior MUST remain consistent with the existing virtualized commit table behavior
+
+#### Scenario: User navigation reaches a window boundary
+- **WHEN** keyboard or search navigation targets a commit outside the currently loaded row window
+- **THEN** the frontend MUST request a bounded row window containing the target commit
+- **AND** selection MUST move to the target commit after the new window is available
+
+### Requirement: History cache invalidates on repository history changes
+The system SHALL invalidate or refresh backend commit history caches when repository history inputs change.
+
+#### Scenario: Commit or ref state changes
+- **WHEN** the app receives a repository refresh signal for `head`, `branches`, `remote-refs`, or an explicit commit refresh for a repository
+- **THEN** backend history cache entries for that repository MUST be invalidated or refreshed before stale rows are shown as current
+
+#### Scenario: User explicitly refreshes commit history
+- **WHEN** the user or app triggers a force refresh for commit history
+- **THEN** the backend MUST replace the existing cache entry for that repository and history mode
+- **AND** the commit list MUST show loading until the replacement entry is ready

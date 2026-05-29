@@ -5,6 +5,8 @@ export const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
   label,
   icon,
   onClick,
+  onFocus,
+  onPointerEnter,
   disabled = false,
   loading = false,
   tooltip,
@@ -30,6 +32,8 @@ export const RemoteActionButton: React.FC<RemoteActionButtonProps> = ({
               : "cursor-pointer text-zinc-400"
         }`}
         onClick={onClick}
+        onFocus={onFocus}
+        onPointerEnter={onPointerEnter}
         disabled={disabled || loading}
       >
         <Text

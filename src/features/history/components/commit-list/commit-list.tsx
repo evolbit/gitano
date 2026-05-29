@@ -45,7 +45,15 @@ import {
   toSearchableText,
 } from "./utils";
 
-export default function CommitList() {
+type CommitListProps = {
+  scrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
+};
+
+export default function CommitList({
+  onScrollTopChange,
+  scrollTop = 0,
+}: CommitListProps = {}) {
   const activeTabId = useRepoStore((s) => s.activeTabId);
   const repoPath = useRepoStore(
     (s) => s.tabs.find((t) => t.id === activeTabId)?.repoPath,
@@ -518,6 +526,14 @@ export default function CommitList() {
     setSelectedRowIndex(-1);
   }, [tableRows, selectedCommit]);
 
+  useEffect(() => {
+    const scrollElement = scrollContainerRef.current;
+
+    if (!scrollElement) return;
+
+    scrollElement.scrollTop = scrollTop;
+  }, [commits.length, loading, scrollTop]);
+
   return (
     <div className="h-full w-full flex flex-col p-2">
       <CommitSearchToolbar
@@ -537,6 +553,7 @@ export default function CommitList() {
       <div
         ref={setContainerRef}
         className="flex-1 overflow-y-auto focus:outline-none"
+        onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
       >
         {!loading && !error && repositoryState?.hasCommits === false ? (
           <div className="flex h-full min-h-[240px] items-center justify-center px-6 text-center text-sm text-muted-foreground">

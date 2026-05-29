@@ -6,6 +6,11 @@ import {
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
+import {
+  DEFAULT_REPOSITORY_SURFACE_STATE,
+  REPOSITORY_SURFACES,
+  useRepositorySurfaceStore,
+} from "@/features/repository-workspace/stores/repository-surface-store";
 import RepoTabLayout from "./repo-tab-layout";
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
@@ -50,12 +55,19 @@ vi.mock("@/features/history", () => ({
   CommitList: () => <div>CommitList</div>,
 }));
 vi.mock("@/features/diffs", () => ({ InlineDiffSurface: () => <div>InlineDiff</div> }));
+vi.mock(
+  "../repository-pull-requests-surface/repository-pull-requests-surface",
+  () => ({
+    RepositoryPullRequestsSurface: () => <div>PullRequestsSurface</div>,
+  }),
+);
 
 describe("RepoTabLayout", () => {
   afterEach(() => {
     cleanup();
     useRepoStore.setState({ tabs: [], activeTabId: null });
     useWorkspaceUiStore.setState({ repoStateByPath: {} });
+    useRepositorySurfaceStore.setState({ repoSurfaceStateByPath: {} });
   });
 
   it("renders the active repository workspace and switches left-pane sections", () => {
@@ -82,5 +94,37 @@ describe("RepoTabLayout", () => {
 
     expect(useWorkspaceUiStore.getState().repoStateByPath["/repo"].leftPaneSection).toBe("branches");
     expect(screen.getByText("BranchList")).toBeInTheDocument();
+  });
+
+  it("shows the pull requests surface while keeping the workspace mounted", () => {
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [
+        {
+          id: "repo",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+    });
+    useRepositorySurfaceStore.setState({
+      repoSurfaceStateByPath: {
+        "/repo": {
+          ...DEFAULT_REPOSITORY_SURFACE_STATE,
+          activeSurface: REPOSITORY_SURFACES.pullRequests,
+        },
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Toolbar")).toBeInTheDocument();
+    expect(screen.getByText("PullRequestsSurface")).toBeInTheDocument();
+    expect(screen.getByText("ChangesExplorer:src/app.ts")).toBeInTheDocument();
   });
 });

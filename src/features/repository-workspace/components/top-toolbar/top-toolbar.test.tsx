@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGitActionsStore } from "@/features/repository-workspace/stores/git-actions-store";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { useWorkspaceUiStore } from "@/features/repository-workspace/stores/workspace-ui-store";
+import {
+  DEFAULT_REPOSITORY_SURFACE_STATE,
+  REPOSITORY_SURFACES,
+  useRepositorySurfaceStore,
+} from "@/features/repository-workspace/stores/repository-surface-store";
 import TopToolbar from "./top-toolbar";
 
 const fetchAllRemotesMock = vi.hoisted(() => vi.fn());
@@ -105,7 +110,9 @@ describe("TopToolbar", () => {
     useWorkspaceUiStore.setState({
       pullStrategy: "pull-ff-if-possible",
       pushMode: "push-branch",
+      repoStateByPath: {},
     });
+    useRepositorySurfaceStore.setState({ repoSurfaceStateByPath: {} });
   });
 
   afterEach(() => {
@@ -210,7 +217,7 @@ describe("TopToolbar", () => {
     });
   });
 
-  it("opens pull requests even when count refresh is unavailable", async () => {
+  it("switches to the pull request surface even when count refresh is unavailable", async () => {
     integrationApiMocks.getProviderPullRequestCount.mockRejectedValueOnce(
       new Error("GitHub is not connected"),
     );
@@ -230,7 +237,10 @@ describe("TopToolbar", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /^PRs/ }));
 
-    expect(await screen.findByRole("dialog", { name: "Pull requests" })).toBeInTheDocument();
+    expect(
+      useRepositorySurfaceStore.getState().repoSurfaceStateByPath["/repo"]
+        .activeSurface,
+    ).toBe(REPOSITORY_SURFACES.pullRequests);
   });
 
   it("requests counts directly and leaves pull requests available when count fails", async () => {
@@ -258,5 +268,77 @@ describe("TopToolbar", () => {
       });
     });
     expect(screen.getByRole("button", { name: /^PRs/ })).toBeEnabled();
+  });
+
+  it("returns to the workspace when the pull request surface is active", async () => {
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+    useRepositorySurfaceStore.setState({
+      repoSurfaceStateByPath: {
+        "/repo": {
+          ...DEFAULT_REPOSITORY_SURFACE_STATE,
+          activeSurface: REPOSITORY_SURFACES.pullRequests,
+        },
+      },
+    });
+
+    renderToolbar();
+
+    const button = await screen.findByRole("button", { name: "Workspace" });
+    fireEvent.click(button);
+
+    expect(
+      useRepositorySurfaceStore.getState().repoSurfaceStateByPath["/repo"]
+        .activeSurface,
+    ).toBe(REPOSITORY_SURFACES.workspace);
+  });
+
+  it("updates the pull request control per active repository surface", async () => {
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-a",
+          repoPath: "/repo-a",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+        {
+          id: "tab-b",
+          repoPath: "/repo-b",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-a",
+    });
+    useRepositorySurfaceStore.setState({
+      repoSurfaceStateByPath: {
+        "/repo-a": {
+          ...DEFAULT_REPOSITORY_SURFACE_STATE,
+          activeSurface: REPOSITORY_SURFACES.pullRequests,
+        },
+        "/repo-b": {
+          ...DEFAULT_REPOSITORY_SURFACE_STATE,
+          activeSurface: REPOSITORY_SURFACES.workspace,
+        },
+      },
+    });
+
+    renderToolbar();
+
+    expect(await screen.findByRole("button", { name: "Workspace" })).toBeEnabled();
+
+    useRepoStore.setState({ activeTabId: "tab-b" });
+
+    expect(await screen.findByRole("button", { name: /^PRs/ })).toBeEnabled();
   });
 });

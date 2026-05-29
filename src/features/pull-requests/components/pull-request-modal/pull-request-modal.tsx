@@ -1,5 +1,5 @@
 import ReactDOM from "react-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconCheck,
@@ -32,6 +32,15 @@ type PullRequestModalProps = {
   onReviewPullRequest?: (review: PullRequestReviewTarget) => void;
 };
 
+type PullRequestListSurfaceProps = {
+  repoPath: string | null | undefined;
+  onReviewPullRequest?: (review: PullRequestReviewTarget) => void;
+  onClose?: () => void;
+  onScrollTopChange?: (scrollTop: number) => void;
+  scrollTop?: number;
+  showCloseButton?: boolean;
+};
+
 function sameGitHubUser(
   left: string | null | undefined,
   right: string | null | undefined,
@@ -39,14 +48,17 @@ function sameGitHubUser(
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
 
-export function PullRequestModal({
-  open,
+export function PullRequestListSurface({
   repoPath,
   onClose,
   onReviewPullRequest,
-}: PullRequestModalProps) {
-  const { availability, error, loading, pullRequests, refresh } =
-    usePullRequests({ open, repoPath });
+  onScrollTopChange,
+  scrollTop = 0,
+  showCloseButton = false,
+}: PullRequestListSurfaceProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const { availability, error, loading, pullRequests, refresh, refreshing } =
+    usePullRequests({ open: true, repoPath });
   const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -57,7 +69,7 @@ export function PullRequestModal({
   const providerIntegrationsQuery = useQuery({
     queryKey: ["provider-integrations"],
     queryFn: listProviderIntegrations,
-    enabled: open,
+    enabled: true,
     staleTime: 30_000,
   });
   const currentGitHubLogin = useMemo(() => {
@@ -81,11 +93,17 @@ export function PullRequestModal({
     selectedMergeMethod,
     setSelectedMergeMethod,
   } = usePullRequestMergeMethods({
-    enabled: open && availability === "ready",
+    enabled: availability === "ready",
     repoPath,
   });
 
-  if (!open) return null;
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTop = scrollTop;
+  }, [scrollTop, availability, loading, sortedPullRequests.length]);
 
   const handleSubmitDecision = async (payload: ReviewDecisionPayload) => {
     if (!decision || !repoPath) return;
@@ -151,7 +169,6 @@ export function PullRequestModal({
         baseLabel: pullRequest.base.label,
         headLabel: pullRequest.head.label,
       });
-      onClose();
     } catch (prepareError) {
       setSubmissionError(
         prepareError instanceof Error
@@ -262,13 +279,10 @@ export function PullRequestModal({
     );
   };
 
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/65 px-4 py-6">
+  return (
       <div
-        role="dialog"
-        aria-modal="true"
         aria-label="Pull requests"
-        className="flex h-[min(720px,88vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
       >
         <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-border bg-background-emphasis px-5">
           <div className="min-w-0">
@@ -279,16 +293,22 @@ export function PullRequestModal({
               Pull requests
             </h2>
           </div>
-          <button
-            type="button"
-            className="ml-3 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
-            aria-label="Close pull requests"
-            onClick={onClose}
-          >
-            <IconX size={16} />
-          </button>
+          {showCloseButton && onClose ? (
+            <button
+              type="button"
+              className="ml-3 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
+              aria-label="Close pull requests"
+              onClick={onClose}
+            >
+              <IconX size={16} />
+            </button>
+          ) : null}
         </header>
-        <div className="min-h-0 flex-1 overflow-auto p-5 text-sm text-zinc-300">
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 flex-1 overflow-auto p-5 text-sm text-zinc-300"
+          onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
+        >
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="min-w-0 text-xs text-zinc-400">
               {sortedPullRequests.length > 0
@@ -300,15 +320,20 @@ export function PullRequestModal({
             <button
               type="button"
               className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={loading || !repoPath}
+              disabled={loading || refreshing || !repoPath}
               onClick={() => {
                 void refresh();
               }}
             >
               <IconSearch size={14} />
-              Refresh
+              {refreshing ? "Refreshing" : "Refresh"}
             </button>
           </div>
+          {refreshing ? (
+            <div className="mb-3 rounded border border-border bg-background-emphasis px-3 py-2 text-xs text-zinc-300">
+              Refreshing pull requests...
+            </div>
+          ) : null}
           {reviewNotice ? (
             <div className="mb-3 flex items-center gap-2 rounded border border-lime-500/30 bg-lime-500/10 px-3 py-2 text-xs text-lime-100">
               <IconCheck size={14} />
@@ -351,6 +376,32 @@ export function PullRequestModal({
             onSubmit={handleSubmitDecision}
           />
         ) : null}
+      </div>
+  );
+}
+
+export function PullRequestModal({
+  open,
+  repoPath,
+  onClose,
+  onReviewPullRequest,
+}: PullRequestModalProps) {
+  if (!open) return null;
+
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/65 px-4 py-6">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pull requests"
+        className="flex h-[min(720px,88vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+      >
+        <PullRequestListSurface
+          repoPath={repoPath}
+          onClose={onClose}
+          onReviewPullRequest={onReviewPullRequest}
+          showCloseButton
+        />
       </div>
     </div>,
     document.body,

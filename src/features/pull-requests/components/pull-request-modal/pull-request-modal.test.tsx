@@ -153,6 +153,47 @@ describe("PullRequestModal", () => {
     });
   });
 
+  it("refreshes pull requests while keeping the current list visible", async () => {
+    const user = userEvent.setup();
+    let resolveRefresh:
+      | ((pullRequests: Array<typeof pullRequest>) => void)
+      | undefined;
+    integrationApiMocks.listProviderPullRequests.mockReset();
+    integrationApiMocks.listProviderPullRequests
+      .mockResolvedValueOnce([pullRequest])
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+
+    renderPullRequestModal();
+
+    expect(await screen.findByText("Improve checkout flow")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() =>
+      expect(integrationApiMocks.listProviderPullRequests).toHaveBeenCalledTimes(2),
+    );
+    expect(screen.getByText("Improve checkout flow")).toBeInTheDocument();
+    expect(screen.getByText("Refreshing pull requests...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refreshing" })).toBeDisabled();
+
+    resolveRefresh?.([
+      {
+        ...pullRequest,
+        number: 13,
+        title: "Fix totals",
+        updatedAt: "2026-05-22T10:00:00Z",
+      },
+    ]);
+
+    expect(await screen.findByText("Fix totals")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled(),
+    );
+  });
+
   it("merges pull requests with the composed merge message", async () => {
     const user = userEvent.setup();
     renderPullRequestModal();

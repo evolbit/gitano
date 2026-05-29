@@ -9,6 +9,14 @@ export {
   rehydrateWorkspaceUiStore,
   useWorkspaceUiStore,
 } from "./stores/workspace-ui-store";
+export {
+  DEFAULT_PULL_REQUEST_REVIEW_UI_STATE,
+  DEFAULT_REPOSITORY_SURFACE_STATE,
+  PULL_REQUEST_REVIEW_DISPLAY_MODES,
+  PULL_REQUESTS_SURFACE_MODES,
+  REPOSITORY_SURFACES,
+  useRepositorySurfaceStore,
+} from "./stores/repository-surface-store";
 export type {
   HistoryMiddleMode,
   LeftPaneSection,
@@ -18,6 +26,14 @@ export type {
   WindowBoundsState,
   WorkspaceViewMode,
 } from "./stores/workspace-ui-store";
+export type {
+  PullRequestReviewContextState,
+  PullRequestReviewDisplayMode,
+  PullRequestReviewUiState,
+  PullRequestsSurfaceMode,
+  RepositorySurface,
+  RepositorySurfaceState,
+} from "./stores/repository-surface-store";
 export type {
   RepoTabType,
   TabBarProps,

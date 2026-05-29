@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import {
+  IconArrowBackUp,
   IconChevronDown,
   IconSparkles,
   IconX,
@@ -86,6 +87,18 @@ export type PrReviewProps = {
     headLabel: string;
   };
   onClose: () => void;
+  onBackToList?: () => void;
+  uiState?: Partial<PrReviewUiState>;
+  onUiStateChange?: (state: Partial<PrReviewUiState>) => void;
+};
+
+export type PrReviewUiState = {
+  selectedPath: string | null;
+  displayMode: DiffDisplayMode;
+  viewMode: ChangesExplorerViewMode;
+  historyOpen: boolean;
+  conversationCommentBody: string;
+  scroll: Record<string, number>;
 };
 
 const DIFF_CONTEXT_LINES = 3;
@@ -341,7 +354,10 @@ function pullRequestListItemFromContext(
 export function PrReview({
   repoPath,
   pullRequestContext,
+  onBackToList,
   onClose,
+  onUiStateChange,
+  uiState,
 }: PrReviewProps) {
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
   const { mutateAsync: resolveReviewThread } = useMutation({
@@ -355,10 +371,15 @@ export function PrReview({
   });
   const sourceBranch = pullRequestContext.headRef;
   const targetBranch = pullRequestContext.baseRef;
-  const [displayMode, setDisplayMode] =
-    useState<DiffDisplayMode>("unified");
-  const [viewMode, setViewMode] = useState<ChangesExplorerViewMode>("tree");
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [displayMode, setDisplayModeState] = useState<DiffDisplayMode>(
+    uiState?.displayMode ?? "unified",
+  );
+  const [viewMode, setViewModeState] = useState<ChangesExplorerViewMode>(
+    uiState?.viewMode ?? "tree",
+  );
+  const [historyOpen, setHistoryOpenState] = useState(
+    uiState?.historyOpen ?? false,
+  );
   const [pullRequestComments, setPullRequestComments] = useState<
     GitHubPullRequestComment[]
   >([]);
@@ -368,7 +389,9 @@ export function PrReview({
     string | null
   >(null);
   const [submitCommentsLoading, setSubmitCommentsLoading] = useState(false);
-  const [conversationCommentBody, setConversationCommentBody] = useState("");
+  const [conversationCommentBody, setConversationCommentBodyState] = useState(
+    uiState?.conversationCommentBody ?? "",
+  );
   const [conversationCommentSubmitting, setConversationCommentSubmitting] =
     useState(false);
   const [finishReviewOpen, setFinishReviewOpen] = useState(false);
@@ -387,6 +410,42 @@ export function PrReview({
     dismissedAiFindingKeys,
     resetBranchReviewFindings,
   } = useDismissedBranchReviewFindings();
+
+  const setDisplayMode = useCallback(
+    (mode: DiffDisplayMode) => {
+      setDisplayModeState(mode);
+      onUiStateChange?.({ displayMode: mode });
+    },
+    [onUiStateChange],
+  );
+
+  const setViewMode = useCallback(
+    (mode: ChangesExplorerViewMode) => {
+      setViewModeState(mode);
+      onUiStateChange?.({ viewMode: mode });
+    },
+    [onUiStateChange],
+  );
+
+  const setHistoryOpen = useCallback(
+    (nextValue: boolean | ((current: boolean) => boolean)) => {
+      setHistoryOpenState((current) => {
+        const next =
+          typeof nextValue === "function" ? nextValue(current) : nextValue;
+        onUiStateChange?.({ historyOpen: next });
+        return next;
+      });
+    },
+    [onUiStateChange],
+  );
+
+  const setConversationCommentBody = useCallback(
+    (body: string) => {
+      setConversationCommentBodyState(body);
+      onUiStateChange?.({ conversationCommentBody: body });
+    },
+    [onUiStateChange],
+  );
 
   const notifyAiError = useCallback(
     (title: string, analysisError: unknown, expanded = false) => {
@@ -511,6 +570,41 @@ export function PrReview({
     comparisonMode,
     contextLines: DIFF_CONTEXT_LINES,
   });
+
+  useEffect(() => {
+    const restoredPath = uiState?.selectedPath;
+
+    if (!restoredPath || selectedPath === restoredPath) return;
+    if (!files.some((file) => file.path === restoredPath)) return;
+
+    setSelectedPath(restoredPath);
+  }, [files, selectedPath, setSelectedPath, uiState?.selectedPath]);
+
+  useEffect(() => {
+    if (!selectedPath || selectedPath === uiState?.selectedPath) return;
+
+    onUiStateChange?.({ selectedPath });
+  }, [onUiStateChange, selectedPath, uiState?.selectedPath]);
+
+  const handleSelectFile = useCallback(
+    (path: string) => {
+      setSelectedPath(path);
+      onUiStateChange?.({ selectedPath: path });
+    },
+    [onUiStateChange, setSelectedPath],
+  );
+
+  const handleScrollChange = useCallback(
+    (key: string, scrollTop: number) => {
+      onUiStateChange?.({
+        scroll: {
+          [key]: scrollTop,
+        },
+      });
+    },
+    [onUiStateChange],
+  );
+
   const pairKey = useMemo(
     () =>
       sourceBranch && targetBranch
@@ -1012,6 +1106,7 @@ export function PrReview({
     conversationCommentBody,
     pullRequestContext,
     repoPath,
+    setConversationCommentBody,
     setGitActionNotice,
     submitConversationComment,
   ]);
@@ -1192,10 +1287,20 @@ export function PrReview({
                 }}
               />
             </div>
+            {onBackToList ? (
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-zinc-800 px-2.5 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700"
+                onClick={onBackToList}
+              >
+                <IconArrowBackUp size={14} />
+                PRs
+              </button>
+            ) : null}
             <button
               type="button"
               className="rounded p-2 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
-              onClick={onClose}
+              onClick={onBackToList ?? onClose}
               aria-label="Close"
             >
               <IconX size={22} />
@@ -1209,9 +1314,13 @@ export function PrReview({
           <ChangesExplorer
             files={files}
             selectedPath={selectedPath}
-            onSelectFile={(file) => setSelectedPath(file.path)}
+            onSelectFile={(file) => handleSelectFile(file.path)}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            scrollTop={uiState?.scroll?.explorer ?? 0}
+            onScrollTopChange={(scrollTop) =>
+              handleScrollChange("explorer", scrollTop)
+            }
             showFileCheckboxes={false}
             surface="main"
             showHeader
@@ -1229,6 +1338,10 @@ export function PrReview({
             commits={pullRequestHistoryCommits}
             loading={pullRequestHistoryLoading}
             error={pullRequestHistoryError}
+            scrollTop={uiState?.scroll?.conversation ?? 0}
+            onScrollTopChange={(scrollTop) =>
+              handleScrollChange("conversation", scrollTop)
+            }
             pendingCommentEdits={pendingSubmittedCommentEdits}
             commentAuthor={currentGitHubUser}
             commentComposer={
@@ -1256,6 +1369,10 @@ export function PrReview({
               error={hunksError}
               displayMode={displayMode}
               onDisplayModeChange={setDisplayMode}
+              scrollTop={uiState?.scroll?.diff ?? 0}
+              onScrollTopChange={(scrollTop) =>
+                handleScrollChange("diff", scrollTop)
+              }
             />
           </DiffInteractionProvider>
         ) : (

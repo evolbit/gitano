@@ -39,4 +39,6 @@ export type ChangesExplorerProps = {
   emptyStateMessage?: string;
   alignCountColumnWithHeaderActions?: boolean;
   fileCommentCounts?: Record<string, number>;
+  scrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
 };

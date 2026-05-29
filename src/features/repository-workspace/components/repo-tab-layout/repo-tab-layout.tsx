@@ -1,6 +1,6 @@
 import { Split } from "@gfazioli/mantine-split-pane";
 import { Tabs, Tooltip } from "@mantine/core";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { APP_EVENTS } from "@/shared/config/events";
 import { REPO_LAYOUT } from "@/shared/config/layout";
 import { classNames } from "@/shared/ui";
@@ -11,6 +11,11 @@ import {
   type LeftPaneSection,
   useWorkspaceUiStore,
 } from "@/features/repository-workspace/stores/workspace-ui-store";
+import {
+  DEFAULT_REPOSITORY_SURFACE_STATE,
+  REPOSITORY_SURFACES,
+  useRepositorySurfaceStore,
+} from "@/features/repository-workspace/stores/repository-surface-store";
 import { BranchList } from "@/features/branches";
 import { IconArrowFork, IconGitBranch, IconStack2, IconTag } from "@/shared/components/icons/icons";
 import TopToolbar from "../top-toolbar/top-toolbar";
@@ -25,6 +30,7 @@ import {
 } from "@/features/working-changes";
 import { InlineDiffSurface } from "@/features/diffs";
 import type { FileChangeWithHunks } from "@/shared/types/git";
+import { RepositoryPullRequestsSurface } from "../repository-pull-requests-surface/repository-pull-requests-surface";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
   key: LeftPaneSection;
@@ -47,6 +53,12 @@ const RepoTabLayout: React.FC = () => {
     repoPath
       ? (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
       : DEFAULT_REPO_WORKSPACE_STATE,
+  );
+  const surfaceState = useRepositorySurfaceStore((s) =>
+    repoPath
+      ? (s.repoSurfaceStateByPath[repoPath] ??
+        DEFAULT_REPOSITORY_SURFACE_STATE)
+      : DEFAULT_REPOSITORY_SURFACE_STATE,
   );
   const setLeftPaneSection = useWorkspaceUiStore((s) => s.setLeftPaneSection);
   const setWorkingChangesViewMode = useWorkspaceUiStore(
@@ -73,6 +85,11 @@ const RepoTabLayout: React.FC = () => {
   const setCommitDetailsWidth = useWorkspaceUiStore(
     (s) => s.setCommitDetailsWidth,
   );
+  const setMainWorkspaceScroll = useRepositorySurfaceStore(
+    (s) => s.setMainWorkspaceScroll,
+  );
+  const [mountedPullRequestRepoPaths, setMountedPullRequestRepoPaths] =
+    useState<ReadonlySet<string>>(() => new Set());
 
   // Constant automatic polling, without controls or notifications
   const { changes, loading, error, hasLoadedOnce, refreshChanges } =
@@ -197,8 +214,31 @@ const RepoTabLayout: React.FC = () => {
       window.removeEventListener(
         APP_EVENTS.workingChangesRefresh,
         handleWorkingChangesRefresh,
-      );
+    );
   }, [refreshChanges]);
+
+  useEffect(() => {
+    if (!repoPath) return;
+
+    if (surfaceState.activeSurface === REPOSITORY_SURFACES.pullRequests) {
+      setMountedPullRequestRepoPaths((repoPaths) => {
+        if (repoPaths.has(repoPath)) return repoPaths;
+
+        return new Set(repoPaths).add(repoPath);
+      });
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMountedPullRequestRepoPaths((repoPaths) => {
+        if (repoPaths.has(repoPath)) return repoPaths;
+
+        return new Set(repoPaths).add(repoPath);
+      });
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [repoPath, surfaceState.activeSurface]);
 
   useEffect(() => {
     if (workspaceState.rightWorkspaceMode === "working-diff") return;
@@ -238,254 +278,295 @@ const RepoTabLayout: React.FC = () => {
 
   if (!tab) return null;
 
+  const isPullRequestsSurfaceActive =
+    repoPath !== undefined &&
+    surfaceState.activeSurface === REPOSITORY_SURFACES.pullRequests;
+  const shouldMountPullRequestsSurface =
+    repoPath !== undefined &&
+    (isPullRequestsSurfaceActive || mountedPullRequestRepoPaths.has(repoPath));
+
   return (
     <div className="flex h-full w-full flex-col">
       <TopToolbar />
-      <div className="flex-1 min-h-0">
-        <Split className="h-full w-full min-h-0 flex-1">
-          {/* Left sidebar */}
-          <Split.Pane
-            ref={leftSidebarPaneRef}
-            initialWidth={
-              workspaceState.leftPaneWidth ?? REPO_LAYOUT.panes.left.initial
-            }
-            minWidth={REPO_LAYOUT.panes.left.min}
-            maxWidth={REPO_LAYOUT.panes.left.max}
-            onResizeEnd={(size) => {
-              if (!repoPath || size.width <= 1) return;
-              setLeftPaneWidth(repoPath, size.width);
-            }}
-            className="!h-full !min-h-0 flex flex-col border-r border-border bg-background"
-          >
-            <Tabs
-              inverted
-              keepMounted={false}
-              value={workspaceState.leftPaneSection}
-              onChange={(value) => {
-                if (!repoPath || !value) return;
-                setLeftPaneSection(repoPath, value as LeftPaneSection);
-              }}
-              variant="none"
-              className="flex min-h-0 w-full flex-1 flex-col"
-            >
-              <Tabs.Panel
-                value="changes"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              >
-                <div className="flex min-h-0 flex-1 flex-col">
-                  {error ? (
-                    <div className="p-4 text-center text-red-500">
-                      Error: {error}
-                    </div>
-                  ) : null}
-                  {!error ? (
-                    <ChangesExplorer
-                      className="min-w-0 border-r-0"
-                      files={changes}
-                      selectedPath={
-                        selectedWorkingFile?.path ?? changes[0]?.path ?? null
-                      }
-                      onSelectFile={(file) =>
-                        handleSelectWorkingFile(file as FileChangeWithHunks)
-                      }
-                      viewMode={workspaceState.workingChangesViewMode}
-                      onViewModeChange={(mode) => {
-                        if (!repoPath) return;
-                        setWorkingChangesViewMode(repoPath, mode);
-                      }}
-                      showFileCheckboxes={true}
-                      surface="main"
-                      showHeader={true}
-                      repoPath={repoPath}
-                      onImmediateStageChange={refreshChanges}
-                      expandedState={workspaceState.mainChangesExpanded}
-                      onExpandedStateChange={(expanded) => {
-                        if (!repoPath) return;
-                        setMainChangesExpanded(repoPath, expanded);
-                      }}
-                      alignCountColumnWithHeaderActions
-                      isLoading={loading && changes.length === 0}
-                      emptyStateMessage={
-                        hasLoadedOnce ? "There are no current changes" : ""
-                      }
-                    />
-                  ) : null}
-                </div>
-                {repoPath ? (
-                  <CurrentChangesCommitBar
-                    repoPath={repoPath}
-                    onCommitted={() => {
-                      void refreshChanges();
-                    }}
-                  />
-                ) : null}
-              </Tabs.Panel>
-              <Tabs.Panel
-                value="branches"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              >
-                <BranchList />
-              </Tabs.Panel>
-              <Tabs.Panel
-                value="workspaces"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              >
-                {repoPath ? <WorkspacesPanel repoPath={repoPath} /> : null}
-              </Tabs.Panel>
-              <Tabs.Panel
-                value="stashes"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              >
-                {repoPath ? (
-                  <StashesPanel
-                    repoPath={repoPath}
-                    selectedStashRef={workspaceState.selectedStashRef}
-                    selectedStashDiffPath={workspaceState.selectedStashDiffPath}
-                    onSelectStashRef={(stashRef) => setSelectedStashRef(repoPath, stashRef)}
-                    onSelectStashDiffPath={(stashPath) =>
-                      setSelectedStashDiffPath(repoPath, stashPath)
-                    }
-                    onOpenStashDiff={handleOpenStashDiff}
-                  />
-                ) : null}
-              </Tabs.Panel>
-              <Tabs.Panel
-                value="tags"
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              >
-                {repoPath ? <TagsPanel repoPath={repoPath} /> : null}
-              </Tabs.Panel>
-              <Tabs.List className="grid h-10 min-h-10 grid-cols-5 border-t border-border bg-background-emphasis">
-                {LEFT_PANE_SECTIONS.map((section) => {
-                  const Icon = section.icon;
-                  const isActive =
-                    workspaceState.leftPaneSection === section.key;
-                  const label =
-                    section.key === "changes"
-                      ? `Changes (${changes.length})`
-                      : section.label;
-
-                  return (
-                    <Tooltip
-                      key={section.key}
-                      label={label}
-                      openDelay={2000}
-                      position="top"
-                    >
-                      <Tabs.Tab
-                        value={section.key}
-                        className={classNames(
-                          "!rounded-none !border-0 border-r border-border/70 last:border-r-0",
-                          "flex h-full items-center justify-center px-0",
-                        )}
-                        classNames={{
-                          tab: classNames(
-                            "transition-colors",
-                            isActive
-                              ? "!bg-background text-foreground"
-                              : "text-zinc-500 hover:!bg-background hover:text-zinc-100",
-                          ),
-                          tabLabel: "inline-flex items-center justify-center",
-                        }}
-                        aria-label={label}
-                      >
-                        <span className="inline-flex items-center justify-center">
-                          <Icon size={16} />
-                        </span>
-                      </Tabs.Tab>
-                    </Tooltip>
-                  );
-                })}
-              </Tabs.List>
-            </Tabs>
-          </Split.Pane>
-          <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
-          {/* Right panel: changes based on the selection */}
-          <Split.Pane grow className="!h-full !min-h-0">
-            {workspaceState.rightWorkspaceMode === "working-diff" &&
-            selectedWorkingFile &&
-            repoPath ? (
-              <InlineDiffSurface
-                repoPath={repoPath}
-                filePath={selectedWorkingFile.path}
-                title={selectedWorkingFile.path}
-                onClose={handleCloseWorkingDiff}
-                onWorkingTreeStageChange={refreshChanges}
-              />
-            ) : workspaceState.rightWorkspaceMode === "stash-diff" &&
-              repoPath &&
-              workspaceState.selectedStashRef &&
-              workspaceState.selectedStashDiffPath ? (
-              <InlineDiffSurface
-                repoPath={repoPath}
-                filePath={workspaceState.selectedStashDiffPath}
-                sha={workspaceState.selectedStashRef}
-                diffSource="stash"
-                title={workspaceState.selectedStashDiffPath}
-                onClose={handleCloseStashDiff}
-              />
-            ) : (
-              <Split orientation="vertical" className="h-full w-full">
-                <Split.Pane
-                  grow
-                  initialWidth={REPO_LAYOUT.panes.middle.initial}
-                  minWidth={REPO_LAYOUT.panes.middle.min}
-                >
-                  {workspaceState.historyMiddleMode === "commit-diff" &&
-                  repoPath &&
-                  selectedCommit &&
-                  workspaceState.selectedCommitDiffPath ? (
-                    <InlineDiffSurface
-                      repoPath={repoPath}
-                      filePath={workspaceState.selectedCommitDiffPath}
-                      sha={selectedCommit.sha}
-                      title={workspaceState.selectedCommitDiffPath}
-                      onClose={handleCloseCommitDiff}
-                    />
-                  ) : (
-                    <CommitList />
-                  )}
-                </Split.Pane>
-                <Split.Resizer
-                  className={
-                    (selectedCommit
-                      ? "!bg-transparent hover:!bg-primary [--split-resizer-size:1px]"
-                      : "hidden") + " "
-                  }
-                />
-                <Split.Pane
-                  ref={commitDetailsPaneRef}
-                  initialWidth={
-                    workspaceState.commitDetailsWidth ??
-                    REPO_LAYOUT.panes.right.initial
-                  }
-                  minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
-                  onResizeEnd={(size) => {
-                    if (size.width > 1) {
-                      lastCommitDetailsPaneWidthRef.current = size.width;
-                      if (repoPath) {
-                        setCommitDetailsWidth(repoPath, size.width);
-                      }
-                    }
-                  }}
-                  className={
-                    (selectedCommit
-                      ? "overflow-hidden"
-                      : "hidden overflow-hidden") +
-                    " border-l border-border -ml-[4px]"
-                  }
-                >
-                  {selectedCommit ? (
-                    <ChangesPanel
-                      selectedCommitDiffPath={workspaceState.selectedCommitDiffPath}
-                      onSelectCommitFile={(file) => handleOpenCommitDiff(file.path)}
-                    />
-                  ) : null}
-                </Split.Pane>
-              </Split>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {repoPath && shouldMountPullRequestsSurface ? (
+          <div
+            className={classNames(
+              "absolute inset-0 min-h-0",
+              isPullRequestsSurfaceActive ? "block" : "hidden",
             )}
-          </Split.Pane>
-        </Split>
+          >
+            <RepositoryPullRequestsSurface repoPath={repoPath} />
+          </div>
+        ) : null}
+        <div
+          className={classNames(
+            "absolute inset-0 min-h-0",
+            isPullRequestsSurfaceActive ? "hidden" : "block",
+          )}
+        >
+          <Split className="h-full w-full min-h-0 flex-1">
+            {/* Left sidebar */}
+            <Split.Pane
+              ref={leftSidebarPaneRef}
+              initialWidth={
+                workspaceState.leftPaneWidth ?? REPO_LAYOUT.panes.left.initial
+              }
+              minWidth={REPO_LAYOUT.panes.left.min}
+              maxWidth={REPO_LAYOUT.panes.left.max}
+              onResizeEnd={(size) => {
+                if (!repoPath || size.width <= 1) return;
+                setLeftPaneWidth(repoPath, size.width);
+              }}
+              className="!h-full !min-h-0 flex flex-col border-r border-border bg-background"
+            >
+              <Tabs
+                inverted
+                keepMounted={false}
+                value={workspaceState.leftPaneSection}
+                onChange={(value) => {
+                  if (!repoPath || !value) return;
+                  setLeftPaneSection(repoPath, value as LeftPaneSection);
+                }}
+                variant="none"
+                className="flex min-h-0 w-full flex-1 flex-col"
+              >
+                <Tabs.Panel
+                  value="changes"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    {error ? (
+                      <div className="p-4 text-center text-red-500">
+                        Error: {error}
+                      </div>
+                    ) : null}
+                    {!error ? (
+                      <ChangesExplorer
+                        className="min-w-0 border-r-0"
+                        files={changes}
+                        selectedPath={
+                          selectedWorkingFile?.path ?? changes[0]?.path ?? null
+                        }
+                        onSelectFile={(file) =>
+                          handleSelectWorkingFile(file as FileChangeWithHunks)
+                        }
+                        viewMode={workspaceState.workingChangesViewMode}
+                        onViewModeChange={(mode) => {
+                          if (!repoPath) return;
+                          setWorkingChangesViewMode(repoPath, mode);
+                        }}
+                        showFileCheckboxes={true}
+                        surface="main"
+                        showHeader={true}
+                        repoPath={repoPath}
+                        onImmediateStageChange={refreshChanges}
+                        expandedState={workspaceState.mainChangesExpanded}
+                        onExpandedStateChange={(expanded) => {
+                          if (!repoPath) return;
+                          setMainChangesExpanded(repoPath, expanded);
+                        }}
+                        scrollTop={surfaceState.mainWorkspaceScroll.changes ?? 0}
+                        onScrollTopChange={(scrollTop) => {
+                          if (!repoPath) return;
+                          setMainWorkspaceScroll(repoPath, "changes", scrollTop);
+                        }}
+                        alignCountColumnWithHeaderActions
+                        isLoading={loading && changes.length === 0}
+                        emptyStateMessage={
+                          hasLoadedOnce ? "There are no current changes" : ""
+                        }
+                      />
+                    ) : null}
+                  </div>
+                  {repoPath ? (
+                    <CurrentChangesCommitBar
+                      repoPath={repoPath}
+                      onCommitted={() => {
+                        void refreshChanges();
+                      }}
+                    />
+                  ) : null}
+                </Tabs.Panel>
+                <Tabs.Panel
+                  value="branches"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  <BranchList />
+                </Tabs.Panel>
+                <Tabs.Panel
+                  value="workspaces"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  {repoPath ? <WorkspacesPanel repoPath={repoPath} /> : null}
+                </Tabs.Panel>
+                <Tabs.Panel
+                  value="stashes"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  {repoPath ? (
+                    <StashesPanel
+                      repoPath={repoPath}
+                      selectedStashRef={workspaceState.selectedStashRef}
+                      selectedStashDiffPath={workspaceState.selectedStashDiffPath}
+                      onSelectStashRef={(stashRef) => setSelectedStashRef(repoPath, stashRef)}
+                      onSelectStashDiffPath={(stashPath) =>
+                        setSelectedStashDiffPath(repoPath, stashPath)
+                      }
+                      onOpenStashDiff={handleOpenStashDiff}
+                    />
+                  ) : null}
+                </Tabs.Panel>
+                <Tabs.Panel
+                  value="tags"
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                >
+                  {repoPath ? <TagsPanel repoPath={repoPath} /> : null}
+                </Tabs.Panel>
+                <Tabs.List className="grid h-10 min-h-10 grid-cols-5 border-t border-border bg-background-emphasis">
+                  {LEFT_PANE_SECTIONS.map((section) => {
+                    const Icon = section.icon;
+                    const isActive =
+                      workspaceState.leftPaneSection === section.key;
+                    const label =
+                      section.key === "changes"
+                        ? `Changes (${changes.length})`
+                        : section.label;
+
+                    return (
+                      <Tooltip
+                        key={section.key}
+                        label={label}
+                        openDelay={2000}
+                        position="top"
+                      >
+                        <Tabs.Tab
+                          value={section.key}
+                          className={classNames(
+                            "!rounded-none !border-0 border-r border-border/70 last:border-r-0",
+                            "flex h-full items-center justify-center px-0",
+                          )}
+                          classNames={{
+                            tab: classNames(
+                              "transition-colors",
+                              isActive
+                                ? "!bg-background text-foreground"
+                                : "text-zinc-500 hover:!bg-background hover:text-zinc-100",
+                            ),
+                            tabLabel: "inline-flex items-center justify-center",
+                          }}
+                          aria-label={label}
+                        >
+                          <span className="inline-flex items-center justify-center">
+                            <Icon size={16} />
+                          </span>
+                        </Tabs.Tab>
+                      </Tooltip>
+                    );
+                  })}
+                </Tabs.List>
+              </Tabs>
+            </Split.Pane>
+            <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
+            {/* Right panel: changes based on the selection */}
+            <Split.Pane grow className="!h-full !min-h-0">
+              {workspaceState.rightWorkspaceMode === "working-diff" &&
+              selectedWorkingFile &&
+              repoPath ? (
+                <InlineDiffSurface
+                  repoPath={repoPath}
+                  filePath={selectedWorkingFile.path}
+                  title={selectedWorkingFile.path}
+                  onClose={handleCloseWorkingDiff}
+                  onWorkingTreeStageChange={refreshChanges}
+                />
+              ) : workspaceState.rightWorkspaceMode === "stash-diff" &&
+                repoPath &&
+                workspaceState.selectedStashRef &&
+                workspaceState.selectedStashDiffPath ? (
+                <InlineDiffSurface
+                  repoPath={repoPath}
+                  filePath={workspaceState.selectedStashDiffPath}
+                  sha={workspaceState.selectedStashRef}
+                  diffSource="stash"
+                  title={workspaceState.selectedStashDiffPath}
+                  onClose={handleCloseStashDiff}
+                />
+              ) : (
+                <Split orientation="vertical" className="h-full w-full">
+                  <Split.Pane
+                    grow
+                    initialWidth={REPO_LAYOUT.panes.middle.initial}
+                    minWidth={REPO_LAYOUT.panes.middle.min}
+                  >
+                    {workspaceState.historyMiddleMode === "commit-diff" &&
+                    repoPath &&
+                    selectedCommit &&
+                    workspaceState.selectedCommitDiffPath ? (
+                      <InlineDiffSurface
+                        repoPath={repoPath}
+                        filePath={workspaceState.selectedCommitDiffPath}
+                        sha={selectedCommit.sha}
+                        title={workspaceState.selectedCommitDiffPath}
+                        onClose={handleCloseCommitDiff}
+                      />
+                    ) : (
+                      <CommitList
+                        scrollTop={
+                          surfaceState.mainWorkspaceScroll.commitList ?? 0
+                        }
+                        onScrollTopChange={(scrollTop) => {
+                          if (!repoPath) return;
+                          setMainWorkspaceScroll(
+                            repoPath,
+                            "commitList",
+                            scrollTop,
+                          );
+                        }}
+                      />
+                    )}
+                  </Split.Pane>
+                  <Split.Resizer
+                    className={
+                      (selectedCommit
+                        ? "!bg-transparent hover:!bg-primary [--split-resizer-size:1px]"
+                        : "hidden") + " "
+                    }
+                  />
+                  <Split.Pane
+                    ref={commitDetailsPaneRef}
+                    initialWidth={
+                      workspaceState.commitDetailsWidth ??
+                      REPO_LAYOUT.panes.right.initial
+                    }
+                    minWidth={selectedCommit ? REPO_LAYOUT.panes.right.min : 0}
+                    onResizeEnd={(size) => {
+                      if (size.width > 1) {
+                        lastCommitDetailsPaneWidthRef.current = size.width;
+                        if (repoPath) {
+                          setCommitDetailsWidth(repoPath, size.width);
+                        }
+                      }
+                    }}
+                    className={
+                      (selectedCommit
+                        ? "overflow-hidden"
+                        : "hidden overflow-hidden") +
+                      " border-l border-border -ml-[4px]"
+                    }
+                  >
+                    {selectedCommit ? (
+                      <ChangesPanel
+                        selectedCommitDiffPath={workspaceState.selectedCommitDiffPath}
+                        onSelectCommitFile={(file) => handleOpenCommitDiff(file.path)}
+                      />
+                    ) : null}
+                  </Split.Pane>
+                </Split>
+              )}
+            </Split.Pane>
+          </Split>
+        </div>
       </div>
     </div>
   );

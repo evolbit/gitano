@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DiffHunk from "../diff-hunk/diff-hunk";
 import { useDiffInteraction } from "../diff-interaction-context/diff-interaction-context";
 import type {
@@ -35,6 +35,8 @@ export type DiffViewerBaseProps = {
   ) => void;
   onStageBlock?: (hunkIdx: number, lineIdxs: number[]) => void;
   canStage?: boolean;
+  scrollTop?: number;
+  onScrollTopChange?: (scrollTop: number) => void;
 };
 
 export default function DiffViewerBase({
@@ -50,10 +52,21 @@ export default function DiffViewerBase({
   onLineMouseEnter,
   onStageBlock,
   canStage = false,
+  onScrollTopChange,
+  scrollTop = 0,
 }: DiffViewerBaseProps) {
   const [hoveredHunkIdx, setHoveredHunkIdx] = useState<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const diffInteraction = useDiffInteraction();
   const fileHeaderBelow = diffInteraction.renderFileHeaderBelow?.({ filePath });
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTop = scrollTop;
+  }, [filePath, hunks.length, loading, scrollTop]);
 
   return (
     <div className="flex h-full flex-col bg-background-emphasis text-sm">
@@ -73,7 +86,11 @@ export default function DiffViewerBase({
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-auto px-4 pt-4">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-auto px-4 pt-4"
+        onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
+      >
         {loading ? <div className="text-blue-400">Loading diff...</div> : null}
         {error ? <div className="text-red-400">{error}</div> : null}
         {hunks.length === 0 && !loading && !error ? <div>No changes.</div> : null}
