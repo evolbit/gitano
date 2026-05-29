@@ -23,7 +23,7 @@ function changedFile(status: FileChangeWithHunks["status"]): FileChangeWithHunks
     status,
     insertions: 1,
     deletions: 1,
-    hunks: [hunk],
+    hunks: [{ ...hunk, is_new_file: status === "added" }],
   };
 }
 
@@ -34,6 +34,8 @@ function stateFor(stagedLines: ChangesExplorerStagedLinesState) {
       Boolean(stagedLines[filePath]?.isNewFile),
     isWholeFileStaged: (filePath: string) =>
       Boolean(stagedLines[filePath]?.isWholeFileStaged),
+    isPartiallyStaged: (filePath: string) =>
+      Boolean(stagedLines[filePath]?.isPartiallyStaged),
   };
 }
 
@@ -48,6 +50,7 @@ describe("getCheckboxStateForFile", () => {
         state.stagedLines,
         state.isStagedNewFile,
         state.isWholeFileStaged,
+        state.isPartiallyStaged,
       ),
     ).toBe("unchecked");
   });
@@ -62,6 +65,7 @@ describe("getCheckboxStateForFile", () => {
         state.stagedLines,
         state.isStagedNewFile,
         state.isWholeFileStaged,
+        state.isPartiallyStaged,
       ),
     ).toBe("indeterminate");
   });
@@ -76,6 +80,7 @@ describe("getCheckboxStateForFile", () => {
         state.stagedLines,
         state.isStagedNewFile,
         state.isWholeFileStaged,
+        state.isPartiallyStaged,
       ),
     ).toBe("checked");
   });
@@ -90,7 +95,23 @@ describe("getCheckboxStateForFile", () => {
         state.stagedLines,
         state.isStagedNewFile,
         state.isWholeFileStaged,
+        state.isPartiallyStaged,
       ),
     ).toBe("checked");
+  });
+
+  it("returns indeterminate from summary-only partial staged state", () => {
+    const file = changedFile("modified");
+    const state = stateFor({ [file.path]: { isPartiallyStaged: true } });
+
+    expect(
+      getCheckboxStateForFile(
+        file,
+        state.stagedLines,
+        state.isStagedNewFile,
+        state.isWholeFileStaged,
+        state.isPartiallyStaged,
+      ),
+    ).toBe("indeterminate");
   });
 });

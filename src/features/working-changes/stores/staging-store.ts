@@ -6,6 +6,7 @@ export type StagedLinesState = {
       [hunkIdx: number]: Set<number>;
       isNewFile?: boolean;
       isWholeFileStaged?: boolean;
+      isPartiallyStaged?: boolean;
     };
   };
   setStagedLines: (
@@ -30,6 +31,8 @@ export type StagedLinesState = {
   isStagedNewFile: (filePath: string) => boolean;
   setWholeFileStaged: (filePath: string, value: boolean) => void;
   isWholeFileStaged: (filePath: string) => boolean;
+  setPartiallyStaged: (filePath: string, value: boolean) => void;
+  isPartiallyStaged: (filePath: string) => boolean;
 };
 
 export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
@@ -63,6 +66,7 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
         [hunkIdx: number]: Set<number>;
         isNewFile?: boolean;
         isWholeFileStaged?: boolean;
+        isPartiallyStaged?: boolean;
       } = {};
 
       if (prev.isNewFile) {
@@ -70,6 +74,9 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
       }
       if (prev.isWholeFileStaged) {
         next.isWholeFileStaged = true;
+      }
+      if (prev.isPartiallyStaged) {
+        next.isPartiallyStaged = true;
       }
 
       Object.entries(selection).forEach(([hunkIdx, lines]) => {
@@ -123,11 +130,12 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
   setWholeFileStaged: (filePath, value) =>
     set((state) => {
       if (value) {
+        const { isPartiallyStaged, ...rest } = state.stagedLines[filePath] || {};
         return {
           stagedLines: {
             ...state.stagedLines,
             [filePath]: {
-              ...(state.stagedLines[filePath] || {}),
+              ...rest,
               isWholeFileStaged: true,
             },
           },
@@ -156,5 +164,35 @@ export const useStagedLinesStore = create<StagedLinesState>((set, get) => ({
     }),
   isWholeFileStaged: (filePath) =>
     !!get().stagedLines[filePath]?.isWholeFileStaged,
-}));
+  setPartiallyStaged: (filePath, value) =>
+    set((state) => {
+      if (value) {
+        return {
+          stagedLines: {
+            ...state.stagedLines,
+            [filePath]: {
+              ...(state.stagedLines[filePath] || {}),
+              isPartiallyStaged: true,
+            },
+          },
+        };
+      }
 
+      const prev = state.stagedLines[filePath] || {};
+      const { isPartiallyStaged, ...rest } = prev;
+      if (Object.keys(rest).length === 0) {
+        const next = { ...state.stagedLines };
+        delete next[filePath];
+        return { stagedLines: next };
+      }
+
+      return {
+        stagedLines: {
+          ...state.stagedLines,
+          [filePath]: rest,
+        },
+      };
+    }),
+  isPartiallyStaged: (filePath) =>
+    !!get().stagedLines[filePath]?.isPartiallyStaged,
+}));

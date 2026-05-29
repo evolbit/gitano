@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DiffHunk from "../diff-hunk/diff-hunk";
 import { useDiffInteraction } from "../diff-interaction-context/diff-interaction-context";
 import type {
@@ -39,6 +39,42 @@ export type DiffViewerBaseProps = {
   onScrollTopChange?: (scrollTop: number) => void;
 };
 
+export const DIFF_RENDER_LINE_CAP = 5000;
+
+export function getDiffLineCount(hunks: DiffHunkData[]) {
+  return hunks.reduce((total, hunk) => total + hunk.lines.length, 0);
+}
+
+export function getBoundedDiffHunks(
+  hunks: DiffHunkData[],
+  lineCap = DIFF_RENDER_LINE_CAP,
+) {
+  let visibleLineCount = 0;
+  const visibleHunks: DiffHunkData[] = [];
+
+  for (const hunk of hunks) {
+    if (visibleLineCount >= lineCap) break;
+
+    const remainingLineCount = lineCap - visibleLineCount;
+    if (hunk.lines.length <= remainingLineCount) {
+      visibleHunks.push(hunk);
+      visibleLineCount += hunk.lines.length;
+      continue;
+    }
+
+    visibleHunks.push({
+      ...hunk,
+      lines: hunk.lines.slice(0, remainingLineCount),
+    });
+    visibleLineCount = lineCap;
+  }
+
+  return {
+    hiddenLineCount: Math.max(getDiffLineCount(hunks) - visibleLineCount, 0),
+    visibleHunks,
+  };
+}
+
 export default function DiffViewerBase({
   filePath,
   hunks,
@@ -59,6 +95,10 @@ export default function DiffViewerBase({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const diffInteraction = useDiffInteraction();
   const fileHeaderBelow = diffInteraction.renderFileHeaderBelow?.({ filePath });
+  const { hiddenLineCount, visibleHunks } = useMemo(
+    () => getBoundedDiffHunks(hunks),
+    [hunks],
+  );
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -95,7 +135,13 @@ export default function DiffViewerBase({
         {error ? <div className="text-red-400">{error}</div> : null}
         {hunks.length === 0 && !loading && !error ? <div>No changes.</div> : null}
         {fileHeaderBelow ? <div className="mb-3">{fileHeaderBelow}</div> : null}
-        {hunks.map((hunk, idx) => (
+        {hiddenLineCount > 0 ? (
+          <div className="mb-3 rounded border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+            Large diff limited to the first {DIFF_RENDER_LINE_CAP.toLocaleString()} lines.{" "}
+            {hiddenLineCount.toLocaleString()} lines hidden.
+          </div>
+        ) : null}
+        {visibleHunks.map((hunk, idx) => (
           <DiffHunk
             key={idx}
             hunk={hunk}

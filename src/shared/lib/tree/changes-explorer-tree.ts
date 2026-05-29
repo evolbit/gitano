@@ -1,6 +1,14 @@
-import { DiffLine, FileChange, FileChangeWithHunks } from "@/shared/types/git";
+import {
+  DiffLine,
+  FileChange,
+  FileChangeWithHunks,
+  WorkingChangeFileSummary,
+} from "@/shared/types/git";
 
-export type ChangesExplorerFile = FileChange | FileChangeWithHunks;
+export type ChangesExplorerFile =
+  | FileChange
+  | FileChangeWithHunks
+  | WorkingChangeFileSummary;
 
 export type ChangesExplorerTreeNode =
   | {
@@ -8,6 +16,7 @@ export type ChangesExplorerTreeNode =
       name: string;
       path: string;
       children: ChangesExplorerTreeNode[];
+      files: ChangesExplorerFile[];
     }
   | {
       kind: "file";
@@ -95,6 +104,7 @@ export function buildCompressedTree(
           name,
           path,
           children,
+          files: collectFilesFromTree(children),
         };
       })
       .sort((a, b) => {
@@ -121,7 +131,7 @@ export function collectFilesFromTree(
   nodes: ChangesExplorerTreeNode[],
 ): ChangesExplorerFile[] {
   return nodes.flatMap((node) =>
-    node.kind === "file" ? [node.file] : collectFilesFromTree(node.children),
+    node.kind === "file" ? [node.file] : node.files,
   );
 }
 

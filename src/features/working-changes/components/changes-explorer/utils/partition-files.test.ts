@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import { createDiffHunk } from "@/test/fixtures/git";
 import { partitionFiles } from "./partition-files";
 
 function file(
@@ -14,7 +15,9 @@ function file(
     deletions: 0,
   };
 
-  return withHunks ? { ...base, hunks: [] } : base;
+  return withHunks
+    ? { ...base, hunks: [createDiffHunk({ is_new_file: true })] }
+    : base;
 }
 
 describe("partitionFiles", () => {

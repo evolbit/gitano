@@ -15,6 +15,7 @@ const folderNode: ChangesExplorerTreeNode = {
   path: "src",
   name: "src",
   children: [fileNode],
+  files: [fileNode.file],
 };
 
 function renderRow(node: ChangesExplorerTreeNode, overrides = {}) {

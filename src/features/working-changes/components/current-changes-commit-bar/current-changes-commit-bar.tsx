@@ -92,7 +92,11 @@ export default function CurrentChangesCommitBar({
   const hasStagedChanges = useStagedLinesStore((s) =>
     Object.values(s.stagedLines).some((fileSelection) => {
       if (!fileSelection) return false;
-      if (fileSelection.isNewFile || fileSelection.isWholeFileStaged)
+      if (
+        fileSelection.isNewFile ||
+        fileSelection.isWholeFileStaged ||
+        fileSelection.isPartiallyStaged
+      )
         return true;
 
       return Object.values(fileSelection).some(
@@ -225,7 +229,11 @@ export default function CurrentChangesCommitBar({
     return Object.entries(stagedLines)
       .filter(([, fileSelection]) => {
         if (!fileSelection) return false;
-        if (fileSelection.isNewFile || fileSelection.isWholeFileStaged)
+        if (
+          fileSelection.isNewFile ||
+          fileSelection.isWholeFileStaged ||
+          fileSelection.isPartiallyStaged
+        )
           return true;
         return Object.values(fileSelection).some(
           (value) => value instanceof Set && value.size > 0,

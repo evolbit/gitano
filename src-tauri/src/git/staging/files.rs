@@ -98,6 +98,32 @@ pub fn git_stage_all(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn git_stage_paths(path: String, file_paths: Vec<String>) -> Result<(), String> {
+    if file_paths.is_empty() {
+        return Ok(());
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("add")
+        .arg("-A")
+        .arg("--")
+        .args(&file_paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git add paths failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+#[tauri::command]
 pub fn git_unstage_file(path: String, file_path: String) -> Result<(), String> {
     let restore_output = Command::new("git")
         .arg("-C")
@@ -144,6 +170,64 @@ pub fn git_unstage_file(path: String, file_path: String) -> Result<(), String> {
 
     Err(format!(
         "git unstage failed:\nrestore: {}\nreset: {}\nrm --cached: {}",
+        String::from_utf8_lossy(&restore_output.stderr),
+        String::from_utf8_lossy(&reset_output.stderr),
+        String::from_utf8_lossy(&remove_cached_output.stderr)
+    ))
+}
+
+#[tauri::command]
+pub fn git_unstage_paths(path: String, file_paths: Vec<String>) -> Result<(), String> {
+    if file_paths.is_empty() {
+        return Ok(());
+    }
+
+    let restore_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("restore")
+        .arg("--staged")
+        .arg("--")
+        .args(&file_paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if restore_output.status.success() {
+        return Ok(());
+    }
+
+    let reset_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("reset")
+        .arg("HEAD")
+        .arg("--")
+        .args(&file_paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if reset_output.status.success() {
+        return Ok(());
+    }
+
+    let remove_cached_output = Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .arg("rm")
+        .arg("--cached")
+        .arg("-r")
+        .arg("--quiet")
+        .arg("--")
+        .args(&file_paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if remove_cached_output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "git unstage paths failed:\nrestore: {}\nreset: {}\nrm --cached: {}",
         String::from_utf8_lossy(&restore_output.stderr),
         String::from_utf8_lossy(&reset_output.stderr),
         String::from_utf8_lossy(&remove_cached_output.stderr)
@@ -278,6 +362,77 @@ mod tests {
         let has_staged = git_has_staged_changes(repo.path().to_string_lossy().to_string())
             .expect("staged check should work before first commit");
         assert!(!has_staged);
+    }
+
+    #[test]
+    fn stages_multiple_paths_in_one_command() {
+        let repo = init_repo();
+        write_file(repo.path(), "a.txt", "a\n");
+        write_file(repo.path(), "b.txt", "b\n");
+
+        git_stage_paths(
+            repo.path().to_string_lossy().to_string(),
+            vec!["a.txt".to_string(), "b.txt".to_string()],
+        )
+        .expect("stage paths should work");
+
+        let status_output = Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .expect("git diff --cached should run");
+        assert!(status_output.status.success());
+
+        let status = String::from_utf8_lossy(&status_output.stdout);
+        assert!(status.contains("a.txt"));
+        assert!(status.contains("b.txt"));
+    }
+
+    #[test]
+    fn unstages_multiple_paths_in_one_command() {
+        let repo = init_repo();
+        write_file(repo.path(), "a.txt", "a\n");
+        write_file(repo.path(), "b.txt", "b\n");
+        run_git(repo.path(), &["add", "a.txt", "b.txt"]);
+
+        git_unstage_paths(
+            repo.path().to_string_lossy().to_string(),
+            vec!["a.txt".to_string(), "b.txt".to_string()],
+        )
+        .expect("unstage paths should work");
+
+        let has_staged = git_has_staged_changes(repo.path().to_string_lossy().to_string())
+            .expect("staged check should work");
+        assert!(!has_staged);
+    }
+
+    #[test]
+    fn stage_paths_reports_git_failures() {
+        let repo = init_repo();
+        let missing_repo_path = repo.path().join("missing");
+
+        let err = git_stage_paths(
+            missing_repo_path.to_string_lossy().to_string(),
+            vec!["a.txt".to_string()],
+        )
+        .expect_err("invalid repository should fail");
+
+        assert!(err.contains("git add paths failed"));
+    }
+
+    #[test]
+    fn unstage_paths_reports_git_failures() {
+        let repo = init_repo();
+        let missing_repo_path = repo.path().join("missing");
+
+        let err = git_unstage_paths(
+            missing_repo_path.to_string_lossy().to_string(),
+            vec!["a.txt".to_string()],
+        )
+        .expect_err("invalid repository should fail");
+
+        assert!(err.contains("git unstage paths failed"));
     }
 }
 

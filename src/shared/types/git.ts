@@ -153,6 +153,11 @@ export interface FileChange {
   deletions: number;
 }
 
+export interface WorkingChangeFileSummary extends FileChange {
+  isUntracked: boolean;
+  fileSignature: string;
+}
+
 export interface CommitDiff {
   commitSha: string;
   changes: FileChange[];
@@ -165,12 +170,24 @@ export interface FileChangeWithHunks extends FileChange {
 export interface StagedFileSelectionState {
   isNewFile?: boolean;
   isWholeFileStaged?: boolean;
+  isPartiallyStaged?: boolean;
   hunks: Record<number, number[]>;
 }
 
 export interface WorkingDirectoryChangesResponse {
   changes: FileChangeWithHunks[];
   staged_state_by_file: Record<string, StagedFileSelectionState>;
+}
+
+export interface WorkingDirectorySummaryResponse {
+  changes: WorkingChangeFileSummary[];
+  staged_state_by_file: Record<string, StagedFileSelectionState>;
+}
+
+export interface WorkingFileDetailResponse {
+  file: FileChangeWithHunks;
+  stagedState?: StagedFileSelectionState | null;
+  fileSignature: string;
 }
 
 export interface GitStashEntry {

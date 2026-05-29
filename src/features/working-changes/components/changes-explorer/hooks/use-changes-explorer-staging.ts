@@ -3,10 +3,12 @@ import {
   discardFileChanges,
   stageAll,
   stageFile,
+  stageFiles,
   stageLines,
   trashUntrackedFile,
   unstageAll,
   unstageFile,
+  unstageFiles,
 } from "@/shared/api/git/staging";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { buildAllStageableLineMap } from "@/shared/lib/tree/changes-explorer-tree";
@@ -68,6 +70,7 @@ export function useChangesExplorerStaging({
   const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
   const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
   const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
+  const isPartiallyStaged = useStagedLinesStore((s) => s.isPartiallyStaged);
 
   const getCheckboxState = useCallback(
     (file: ChangesExplorerFile) =>
@@ -76,8 +79,9 @@ export function useChangesExplorerStaging({
         stagedLines,
         isStagedNewFile,
         isWholeFileStaged,
+        isPartiallyStaged,
       ),
-    [stagedLines, isStagedNewFile, isWholeFileStaged],
+    [stagedLines, isStagedNewFile, isWholeFileStaged, isPartiallyStaged],
   );
 
   const areAllFilesFullySelected =
@@ -207,6 +211,10 @@ export function useChangesExplorerStaging({
         }
 
         applyFileSelectionOptimistic(file, true);
+        if (!hasDiffHunks(file)) {
+          await stageFile(repoPath, file.path);
+          return;
+        }
         await stageLines(repoPath, file.path, serializeAllStageableLines(file));
       });
     },
@@ -231,15 +239,21 @@ export function useChangesExplorerStaging({
 
       await runStagedLinesMutation(async () => {
         if (getFolderCheckboxState(uniqueFilesInFolder) === "checked") {
-          for (const file of uniqueFilesInFolder) {
-            applyFileSelectionOptimistic(file, false);
-            await unstageFile(repoPath, file.path);
-          }
+          uniqueFilesInFolder.forEach((file) =>
+            applyFileSelectionOptimistic(file, false),
+          );
+          await unstageFiles(
+            repoPath,
+            uniqueFilesInFolder.map((file) => file.path),
+          );
         } else {
-          for (const file of uniqueFilesInFolder) {
-            applyFileSelectionOptimistic(file, true);
-            await stageFile(repoPath, file.path);
-          }
+          uniqueFilesInFolder.forEach((file) =>
+            applyFileSelectionOptimistic(file, true),
+          );
+          await stageFiles(
+            repoPath,
+            uniqueFilesInFolder.map((file) => file.path),
+          );
         }
       });
     },

@@ -11,6 +11,8 @@ type InlineDiffSurfaceProps = {
   title: string;
   onClose: () => void;
   onWorkingTreeStageChange?: () => Promise<void> | void;
+  loading?: boolean;
+  error?: string | null;
 };
 
 export default function InlineDiffSurface({
@@ -21,6 +23,8 @@ export default function InlineDiffSurface({
   title,
   onClose,
   onWorkingTreeStageChange,
+  loading = false,
+  error = null,
 }: InlineDiffSurfaceProps) {
   const [displayMode, setDisplayMode] = useState<DiffDisplayMode>("unified");
 
@@ -59,6 +63,8 @@ export default function InlineDiffSurface({
           onWorkingTreeStageChange={onWorkingTreeStageChange}
           displayMode={displayMode}
           onDisplayModeChange={setDisplayMode}
+          externalLoading={loading}
+          externalError={error}
         />
       </div>
     </div>

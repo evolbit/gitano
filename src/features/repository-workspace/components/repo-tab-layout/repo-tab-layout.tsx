@@ -29,7 +29,7 @@ import {
   useWorkingDirectoryChanges,
 } from "@/features/working-changes";
 import { InlineDiffSurface } from "@/features/diffs";
-import type { FileChangeWithHunks } from "@/shared/types/git";
+import type { WorkingChangeFileSummary } from "@/shared/types/git";
 import { RepositoryPullRequestsSurface } from "../repository-pull-requests-surface/repository-pull-requests-surface";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
@@ -92,7 +92,15 @@ const RepoTabLayout: React.FC = () => {
     useState<ReadonlySet<string>>(() => new Set());
 
   // Constant automatic polling, without controls or notifications
-  const { changes, loading, error, hasLoadedOnce, refreshChanges } =
+  const {
+    changes,
+    fileDetails,
+    loading,
+    error,
+    hasLoadedOnce,
+    refreshChanges,
+    loadFileDetail,
+  } =
     useWorkingDirectoryChanges(repoPath, {
       pollInterval: 0,
       enabled: !!repoPath,
@@ -122,6 +130,10 @@ const RepoTabLayout: React.FC = () => {
     selectedWorkingFilePath === null
       ? null
       : (changes.find((f) => f.path === selectedWorkingFilePath) ?? null);
+  const selectedWorkingFileDetail =
+    selectedWorkingFilePath === null
+      ? undefined
+      : fileDetails[selectedWorkingFilePath];
 
   // Clear inline working diff when selected file disappears from live changes.
   useEffect(() => {
@@ -145,17 +157,32 @@ const RepoTabLayout: React.FC = () => {
   // exists in the live working changes list.
   useEffect(() => {
     if (!selectedWorkingFile) return;
-    useFileHunksStore
-      .getState()
-      .setFileHunks(selectedWorkingFile.path, selectedWorkingFile.hunks);
-  }, [selectedWorkingFile]);
+    const detail = fileDetails[selectedWorkingFile.path];
+    if (detail?.status === "ready") {
+      useFileHunksStore
+        .getState()
+        .setFileHunks(selectedWorkingFile.path, detail.detail.file.hunks);
+      return;
+    }
+
+    if (detail?.status === "loading" || detail?.status === "error") {
+      return;
+    }
+
+    void loadFileDetail(selectedWorkingFile.path).then((loadedDetail) => {
+      if (!loadedDetail) return;
+      useFileHunksStore
+        .getState()
+        .setFileHunks(selectedWorkingFile.path, loadedDetail.file.hunks);
+    });
+  }, [fileDetails, loadFileDetail, selectedWorkingFile]);
 
   // Handler to open the diff for a working directory file
-  const handleSelectWorkingFile = (file: FileChangeWithHunks) => {
+  const handleSelectWorkingFile = (file: WorkingChangeFileSummary) => {
     if (!repoPath) return;
     setSelectedWorkingDiffPath(repoPath, file.path);
     setRightWorkspaceMode(repoPath, "working-diff");
-    useFileHunksStore.getState().setFileHunks(file.path, file.hunks);
+    useFileHunksStore.getState().clearFileHunks();
   };
 
   const handleCloseWorkingDiff = () => {
@@ -349,7 +376,7 @@ const RepoTabLayout: React.FC = () => {
                           selectedWorkingFile?.path ?? changes[0]?.path ?? null
                         }
                         onSelectFile={(file) =>
-                          handleSelectWorkingFile(file as FileChangeWithHunks)
+                          handleSelectWorkingFile(file as WorkingChangeFileSummary)
                         }
                         viewMode={workspaceState.workingChangesViewMode}
                         onViewModeChange={(mode) => {
@@ -479,6 +506,12 @@ const RepoTabLayout: React.FC = () => {
                   title={selectedWorkingFile.path}
                   onClose={handleCloseWorkingDiff}
                   onWorkingTreeStageChange={refreshChanges}
+                  loading={selectedWorkingFileDetail?.status === "loading"}
+                  error={
+                    selectedWorkingFileDetail?.status === "error"
+                      ? selectedWorkingFileDetail.error
+                      : null
+                  }
                 />
               ) : workspaceState.rightWorkspaceMode === "stash-diff" &&
                 repoPath &&

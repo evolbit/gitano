@@ -10,6 +10,7 @@ export function getCheckboxStateForFile(
   stagedLines: ChangesExplorerStagedLinesState,
   isStagedNewFile: (filePath: string) => boolean,
   isWholeFileStaged: (filePath: string) => boolean,
+  isPartiallyStaged: (filePath: string) => boolean,
 ): ChangesExplorerCheckboxState {
   const fileStaged = stagedLines[file.path] || {};
   const hunks = "hunks" in file ? file.hunks : [];
@@ -31,6 +32,7 @@ export function getCheckboxStateForFile(
     if (isStagedNewFile(file.path) || isWholeFileStaged(file.path)) {
       return "checked" as const;
     }
+    if (isPartiallyStaged(file.path)) return "indeterminate" as const;
     if (stagedCount === 0) return "unchecked" as const;
     if (totalStageable === 0) return "checked" as const;
     if (stagedCount === totalStageable && totalStageable > 0) {
@@ -41,6 +43,9 @@ export function getCheckboxStateForFile(
 
   if (isWholeFileStaged(file.path)) {
     return "checked" as const;
+  }
+  if (isPartiallyStaged(file.path)) {
+    return "indeterminate" as const;
   }
 
   if (stagedCount === 0) return "unchecked" as const;

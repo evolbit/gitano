@@ -248,6 +248,8 @@ pub struct StagedFileSelectionState {
     pub is_new_file: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_whole_file_staged: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_partially_staged: Option<bool>,
     #[serde(default)]
     pub hunks: HashMap<usize, Vec<usize>>,
 }
@@ -256,6 +258,31 @@ pub struct StagedFileSelectionState {
 pub struct WorkingDirectoryChangesResponse {
     pub changes: Vec<FileChangeWithHunks>,
     pub staged_state_by_file: HashMap<String, StagedFileSelectionState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingChangeFileSummary {
+    pub path: String,
+    pub status: ChangeType,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub is_untracked: bool,
+    pub file_signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorkingDirectorySummaryResponse {
+    pub changes: Vec<WorkingChangeFileSummary>,
+    pub staged_state_by_file: HashMap<String, StagedFileSelectionState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingFileDetailResponse {
+    pub file: FileChangeWithHunks,
+    pub staged_state: Option<StagedFileSelectionState>,
+    pub file_signature: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -352,6 +379,7 @@ mod tests {
             let state = StagedFileSelectionState {
                 is_new_file: Some(true),
                 is_whole_file_staged: None,
+                is_partially_staged: None,
                 hunks: HashMap::new(),
             };
 

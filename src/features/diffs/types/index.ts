@@ -44,6 +44,8 @@ export type DiffViewerProps = {
   displayMode?: DiffDisplayMode;
   onDisplayModeChange?: (mode: DiffDisplayMode) => void;
   diffSource?: DiffSource;
+  externalLoading?: boolean;
+  externalError?: string | null;
 };
 
 export type DiffHunkProps = {

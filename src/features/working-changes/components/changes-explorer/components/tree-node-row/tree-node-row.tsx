@@ -5,10 +5,7 @@ import {
   IconMessageCircle,
 } from "@/shared/components/icons/icons";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
-import {
-  collectFilesFromTree,
-  type ChangesExplorerTreeNode,
-} from "@/shared/lib/tree/changes-explorer-tree";
+import { type ChangesExplorerTreeNode } from "@/shared/lib/tree/changes-explorer-tree";
 import { memo } from "react";
 import { ChangesExplorerStatusIcon } from "../changes-explorer-status-icon/changes-explorer-status-icon";
 import { ChangesExplorerTreeNodes } from "../changes-explorer-tree-nodes/changes-explorer-tree-nodes";
@@ -55,6 +52,7 @@ type TreeNodeRowProps = {
   ) => ChangesExplorerCheckboxState;
   alignCountColumnWithHeaderActions?: boolean;
   fileCommentCounts?: Record<string, number>;
+  renderChildren?: boolean;
 };
 
 export const TreeNodeRow = memo(function TreeNodeRow({
@@ -75,11 +73,12 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   getFolderCheckboxState,
   alignCountColumnWithHeaderActions = false,
   fileCommentCounts,
+  renderChildren = true,
 }: TreeNodeRowProps) {
   if (node.kind === "folder") {
     const expansionKey = getFolderExpansionKey(sectionName, node.path);
     const isOpen = search ? true : (expanded[expansionKey] ?? true);
-    const folderFiles = collectFilesFromTree(node.children);
+    const folderFiles = node.files;
     const folderCheckboxState = getFolderCheckboxState(folderFiles);
     const sectionIsUntracked =
       folderFiles.length > 0 &&
@@ -127,7 +126,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             />
           ) : null}
         </button>
-        {isOpen ? (
+        {isOpen && renderChildren ? (
           <ChangesExplorerTreeNodes
             nodes={node.children}
             sectionName={sectionName}

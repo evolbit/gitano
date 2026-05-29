@@ -6,7 +6,11 @@ import {
   useState,
   useCallback,
 } from "react";
-import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import type {
+  ChangesExplorerFile,
+  ChangesExplorerTreeNode,
+} from "@/shared/lib/tree/changes-explorer-tree";
 import { buildCompressedTree } from "@/shared/lib/tree/changes-explorer-tree";
 import {
   fileMatchesSearch,
@@ -14,11 +18,11 @@ import {
   partitionFiles,
 } from "./utils";
 import { ChangesExplorerFileRow } from "./components/changes-explorer-file-row/changes-explorer-file-row";
-import { ChangesExplorerSection } from "./components/changes-explorer-section/changes-explorer-section";
-import { ChangesExplorerTreeNodes } from "./components/changes-explorer-tree-nodes/changes-explorer-tree-nodes";
 import { ChangesExplorerMenu } from "./components/changes-explorer-menu/changes-explorer-menu";
+import { TreeNodeRow } from "./components/tree-node-row/tree-node-row";
 import { useChangesExplorerBehavior } from "./hooks/use-changes-explorer-behavior";
 import { useChangesExplorerStaging } from "./hooks/use-changes-explorer-staging";
+import { getFolderExpansionKey } from "./utils/folder-expansion-key";
 import type { ChangesExplorerProps } from "./types";
 import {
   IconBinaryTree2,
@@ -39,6 +43,60 @@ const VIEW_MODE_OPTIONS = [
     Icon: IconBinaryTree2,
   },
 ] as const;
+
+const EXPLORER_ROW_HEIGHT = 28;
+const EXPLORER_ROW_OVERSCAN = 12;
+
+type ExplorerRow =
+  | {
+      kind: "section";
+      name: string;
+    }
+  | {
+      kind: "flat-file";
+      file: ChangesExplorerFile;
+    }
+  | {
+      kind: "tree-node";
+      sectionName: string;
+      node: ChangesExplorerTreeNode;
+      depth: number;
+    };
+
+function flattenTreeRows({
+  expanded,
+  nodes,
+  rows,
+  search,
+  sectionName,
+  depth,
+}: {
+  expanded: Record<string, boolean>;
+  nodes: ChangesExplorerTreeNode[];
+  rows: ExplorerRow[];
+  search: string;
+  sectionName: string;
+  depth: number;
+}) {
+  nodes.forEach((node) => {
+    rows.push({ kind: "tree-node", sectionName, node, depth });
+
+    if (node.kind !== "folder") return;
+
+    const expansionKey = getFolderExpansionKey(sectionName, node.path);
+    const isOpen = search ? true : (expanded[expansionKey] ?? true);
+    if (!isOpen) return;
+
+    flattenTreeRows({
+      expanded,
+      nodes: node.children,
+      rows,
+      search,
+      sectionName,
+      depth: depth + 1,
+    });
+  });
+}
 
 function ChangesExplorer({
   files,
@@ -64,6 +122,9 @@ function ChangesExplorer({
   scrollTop = 0,
 }: ChangesExplorerProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const deferredFiles = useDeferredValue(files);
   const normalizedFiles = useMemo(
@@ -129,6 +190,58 @@ function ChangesExplorer({
     setActionError,
     showFileCheckboxes,
   });
+  const rows = useMemo<ExplorerRow[]>(() => {
+    const nextRows: ExplorerRow[] = [];
+
+    if (viewMode === "flat") {
+      sections.forEach((section) => {
+        if (sectionMode === "tracked-untracked") {
+          nextRows.push({ kind: "section", name: section.name });
+        }
+        section.files.forEach((file) => {
+          nextRows.push({ kind: "flat-file", file });
+        });
+      });
+      return nextRows;
+    }
+
+    sectionTrees.forEach((section) => {
+      if (sectionMode === "tracked-untracked") {
+        nextRows.push({ kind: "section", name: section.name });
+      }
+      flattenTreeRows({
+        expanded,
+        nodes: section.tree,
+        rows: nextRows,
+        search,
+        sectionName: section.name,
+        depth: 0,
+      });
+    });
+
+    return nextRows;
+  }, [expanded, search, sectionMode, sectionTrees, sections, viewMode]);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollContainer,
+    estimateSize: () => EXPLORER_ROW_HEIGHT,
+    initialRect: { width: 0, height: EXPLORER_ROW_HEIGHT * 20 },
+    overscan: EXPLORER_ROW_OVERSCAN,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const renderedVirtualRows =
+    virtualRows.length > 0 || rows.length > EXPLORER_ROW_OVERSCAN * 2
+      ? virtualRows
+      : rows.map((_, index) => ({
+          key: index,
+          index,
+          size: EXPLORER_ROW_HEIGHT,
+          start: index * EXPLORER_ROW_HEIGHT,
+        }));
+  const setScrollContainerRef = useCallback((node: HTMLDivElement | null) => {
+    scrollContainerRef.current = node;
+    setScrollContainer(node);
+  }, []);
 
   const handleSelectFile = useCallback(
     (file: ChangesExplorerFile) => onSelectFile(file),
@@ -157,6 +270,72 @@ function ChangesExplorer({
     },
     [openContextMenu],
   );
+  const renderRow = useCallback(
+    (row: ExplorerRow) => {
+      if (row.kind === "section") {
+        return (
+          <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-zinc-500/90">
+            {row.name}
+          </div>
+        );
+      }
+
+      if (row.kind === "flat-file") {
+        return (
+          <ChangesExplorerFileRow
+            file={row.file}
+            selectedPath={selectedPath}
+            showFileCheckboxes={showFileCheckboxes}
+            checkboxState={getCheckboxState(row.file)}
+            onSelectFile={handleSelectFile}
+            onOpenFileContextMenu={openFileContextMenu}
+            onToggleFileSelection={toggleFileSelection}
+            alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
+            commentCount={fileCommentCounts?.[row.file.path] ?? 0}
+          />
+        );
+      }
+
+      return (
+        <TreeNodeRow
+          sectionName={row.sectionName}
+          node={row.node}
+          depth={row.depth}
+          search={search}
+          expanded={expanded}
+          selectedPath={selectedPath}
+          showFileCheckboxes={showFileCheckboxes}
+          getFileCheckboxState={getCheckboxState}
+          onSelectFile={handleSelectFile}
+          onOpenFileContextMenu={openFileContextMenu}
+          onOpenFolderContextMenu={openFolderContextMenu}
+          onToggleFolder={toggleFolder}
+          onToggleFileSelection={toggleFileSelection}
+          onToggleFolderSelection={toggleFolderSelection}
+          getFolderCheckboxState={getFolderCheckboxState}
+          alignCountColumnWithHeaderActions={alignCountColumnWithHeaderActions}
+          fileCommentCounts={fileCommentCounts}
+          renderChildren={false}
+        />
+      );
+    },
+    [
+      alignCountColumnWithHeaderActions,
+      expanded,
+      fileCommentCounts,
+      getCheckboxState,
+      getFolderCheckboxState,
+      handleSelectFile,
+      openFileContextMenu,
+      openFolderContextMenu,
+      search,
+      selectedPath,
+      showFileCheckboxes,
+      toggleFileSelection,
+      toggleFolder,
+      toggleFolderSelection,
+    ],
+  );
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -165,6 +344,22 @@ function ChangesExplorer({
 
     scrollContainer.scrollTop = scrollTop;
   }, [filteredFiles.length, isLoading, scrollTop, viewMode]);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+
+    const selectedRowIndex = rows.findIndex((row) => {
+      if (row.kind === "flat-file") return row.file.path === selectedPath;
+      if (row.kind === "tree-node" && row.node.kind === "file") {
+        return row.node.file.path === selectedPath;
+      }
+      return false;
+    });
+
+    if (selectedRowIndex === -1) return;
+
+    rowVirtualizer.scrollToIndex(selectedRowIndex, { align: "auto" });
+  }, [rowVirtualizer, rows, selectedPath]);
 
   return (
     <div
@@ -253,7 +448,7 @@ function ChangesExplorer({
       </div>
 
       <div
-        ref={scrollContainerRef}
+        ref={setScrollContainerRef}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
         onScroll={(event) => onScrollTopChange?.(event.currentTarget.scrollTop)}
       >
@@ -262,65 +457,28 @@ function ChangesExplorer({
             {actionError}
           </div>
         ) : null}
-        {sections.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
             {isLoading ? "Loading" : emptyStateMessage}
           </div>
-        ) : viewMode === "flat" ? (
-          sections.map((section) => (
-            <ChangesExplorerSection
-              key={section.name}
-              name={section.name}
-              sectionMode={sectionMode}
-            >
-              {section.files.map((file) => (
-                <ChangesExplorerFileRow
-                  key={file.path}
-                  file={file}
-                  selectedPath={selectedPath}
-                  showFileCheckboxes={showFileCheckboxes}
-                  checkboxState={getCheckboxState(file)}
-                  onSelectFile={handleSelectFile}
-                  onOpenFileContextMenu={openFileContextMenu}
-                  onToggleFileSelection={toggleFileSelection}
-                  alignCountColumnWithHeaderActions={
-                    alignCountColumnWithHeaderActions
-                  }
-                  commentCount={fileCommentCounts?.[file.path] ?? 0}
-                />
-              ))}
-            </ChangesExplorerSection>
-          ))
         ) : (
-          sectionTrees.map((section) => (
-            <ChangesExplorerSection
-              key={section.name}
-              name={section.name}
-              sectionMode={sectionMode}
-            >
-              <ChangesExplorerTreeNodes
-                sectionName={section.name}
-                nodes={section.tree}
-                depth={0}
-                search={search}
-                expanded={expanded}
-                selectedPath={selectedPath}
-                showFileCheckboxes={showFileCheckboxes}
-                getFileCheckboxState={getCheckboxState}
-                onSelectFile={handleSelectFile}
-                onOpenFileContextMenu={openFileContextMenu}
-                onOpenFolderContextMenu={openFolderContextMenu}
-                onToggleFolder={toggleFolder}
-                onToggleFileSelection={toggleFileSelection}
-                onToggleFolderSelection={toggleFolderSelection}
-                getFolderCheckboxState={getFolderCheckboxState}
-                alignCountColumnWithHeaderActions={
-                  alignCountColumnWithHeaderActions
-                }
-                fileCommentCounts={fileCommentCounts}
-              />
-            </ChangesExplorerSection>
-          ))
+          <div
+            className="relative w-full"
+            style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+          >
+            {renderedVirtualRows.map((virtualRow) => (
+              <div
+                key={virtualRow.key}
+                className="absolute left-0 top-0 w-full"
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {renderRow(rows[virtualRow.index])}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

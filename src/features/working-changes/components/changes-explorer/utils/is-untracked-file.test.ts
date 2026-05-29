@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { createFileChange, createFileChangeWithHunks } from "@/test/fixtures/git";
+import {
+  createDiffHunk,
+  createFileChange,
+  createFileChangeWithHunks,
+} from "@/test/fixtures/git";
 import { isUntrackedFile } from "./is-untracked-file";
 
 describe("isUntrackedFile", () => {
   it("identifies added files that include working-tree hunks", () => {
     expect(
-      isUntrackedFile(createFileChangeWithHunks({ status: "added" })),
+      isUntrackedFile(
+        createFileChangeWithHunks({
+          status: "added",
+          hunks: [createDiffHunk({ is_new_file: true })],
+        }),
+      ),
     ).toBe(true);
   });
 

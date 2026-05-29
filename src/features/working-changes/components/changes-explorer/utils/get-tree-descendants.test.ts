@@ -20,8 +20,10 @@ describe("getTreeDescendants", () => {
           children: [
             { kind: "file", name: "b.ts", path: second.path, file: second },
           ],
+          files: [second],
         },
       ],
+      files: [first, second],
     };
 
     expect(getTreeDescendants(node)).toEqual([first, second]);

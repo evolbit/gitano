@@ -51,6 +51,7 @@ export function buildWorkingChangesStagedSnapshotSignature(
         filePath,
         hunks.isNewFile ? 1 : 0,
         hunks.isWholeFileStaged ? 1 : 0,
+        hunks.isPartiallyStaged ? 1 : 0,
         Object.entries(hunks.hunks)
           .sort(([left], [right]) => Number(left) - Number(right))
           .map(([hunkIdx, lineIdxs]) => [hunkIdx, lineIdxs.join(",")].join(":"))

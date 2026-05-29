@@ -28,6 +28,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
   displayMode = "unified",
   onDisplayModeChange,
   diffSource = "commit",
+  externalLoading = false,
+  externalError = null,
 }) => {
   // Local state for hunks when sha is defined
   const [localHunks, setLocalHunks] = useState<DiffHunkData[]>([]);
@@ -433,8 +435,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     <DiffViewerBase
       filePath={filePath}
       hunks={hunks}
-      loading={loading}
-      error={error}
+      loading={loading || externalLoading}
+      error={error ?? externalError}
       extraContext={extraContext}
       displayMode={displayMode}
       onDisplayModeChange={onDisplayModeChange}

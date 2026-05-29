@@ -1,4 +1,9 @@
-import type { GitPushMode, WorkingDirectoryChangesResponse } from "@/shared/types/git";
+import type {
+  GitPushMode,
+  WorkingDirectoryChangesResponse,
+  WorkingDirectorySummaryResponse,
+  WorkingFileDetailResponse,
+} from "@/shared/types/git";
 import { invokeCommand } from "@/shared/platform/tauri/command";
 
 export async function getWorkingDirectoryChanges(repoPath: string) {
@@ -6,6 +11,20 @@ export async function getWorkingDirectoryChanges(repoPath: string) {
     "get_working_directory_changes",
     { path: repoPath },
   );
+}
+
+export async function getWorkingDirectorySummary(repoPath: string) {
+  return invokeCommand<WorkingDirectorySummaryResponse>(
+    "get_working_directory_summary",
+    { path: repoPath },
+  );
+}
+
+export async function getWorkingFileDetail(repoPath: string, filePath: string) {
+  return invokeCommand<WorkingFileDetailResponse>("get_working_file_detail", {
+    path: repoPath,
+    filePath,
+  });
 }
 
 export async function hasStagedChanges(repoPath: string) {
@@ -39,8 +58,16 @@ export async function stageFile(repoPath: string, filePath: string) {
   return invokeCommand<void>("git_add_file", { path: repoPath, filePath });
 }
 
+export async function stageFiles(repoPath: string, filePaths: string[]) {
+  return invokeCommand<void>("git_stage_paths", { path: repoPath, filePaths });
+}
+
 export async function unstageFile(repoPath: string, filePath: string) {
   return invokeCommand<void>("git_unstage_file", { path: repoPath, filePath });
+}
+
+export async function unstageFiles(repoPath: string, filePaths: string[]) {
+  return invokeCommand<void>("git_unstage_paths", { path: repoPath, filePaths });
 }
 
 export async function stageLines(

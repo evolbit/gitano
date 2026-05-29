@@ -13,6 +13,23 @@ import {
 } from "@/features/repository-workspace/stores/repository-surface-store";
 import RepoTabLayout from "./repo-tab-layout";
 
+const loadFileDetailMock = vi.hoisted(() => vi.fn());
+const clearFileHunksMock = vi.hoisted(() => vi.fn());
+const setFileHunksMock = vi.hoisted(() => vi.fn());
+const workingChangesMockState = vi.hoisted(() => ({
+  changes: [
+    {
+      path: "src/app.ts",
+      status: "modified",
+      insertions: 1,
+      deletions: 0,
+      isUntracked: false,
+      fileSignature: "src/app.ts:modified:1:0",
+    },
+  ],
+  fileDetails: {},
+}));
+
 vi.mock("@/shared/platform/tauri/storage", () => ({
   tauriStorage: {
     getItem: vi.fn().mockResolvedValue(null),
@@ -33,16 +50,31 @@ vi.mock("../top-toolbar/top-toolbar", () => ({
 }));
 
 vi.mock("@/features/working-changes", () => ({
-  ChangesExplorer: ({ files }: { files: Array<{ path: string }> }) => (
-    <div>ChangesExplorer:{files.map((file) => file.path).join(",")}</div>
+  ChangesExplorer: ({
+    files,
+    onSelectFile,
+  }: {
+    files: Array<{ path: string }>;
+    onSelectFile: (file: { path: string }) => void;
+  }) => (
+    <div>
+      ChangesExplorer:{files.map((file) => file.path).join(",")}
+      {files.map((file) => (
+        <button key={file.path} type="button" onClick={() => onSelectFile(file)}>
+          Select {file.path}
+        </button>
+      ))}
+    </div>
   ),
   CurrentChangesCommitBar: () => <div>CommitBar</div>,
   useWorkingDirectoryChanges: () => ({
-    changes: [{ path: "src/app.ts", status: "modified", insertions: 1, deletions: 0, hunks: [] }],
+    changes: workingChangesMockState.changes,
+    fileDetails: workingChangesMockState.fileDetails,
     loading: false,
     error: null,
     hasLoadedOnce: true,
     refreshChanges: vi.fn(),
+    loadFileDetail: loadFileDetailMock,
   }),
 }));
 
@@ -54,7 +86,17 @@ vi.mock("@/features/history", () => ({
   ChangesPanel: () => <div>ChangesPanel</div>,
   CommitList: () => <div>CommitList</div>,
 }));
-vi.mock("@/features/diffs", () => ({ InlineDiffSurface: () => <div>InlineDiff</div> }));
+vi.mock("@/features/diffs", () => ({
+  InlineDiffSurface: ({ filePath }: { filePath: string }) => (
+    <div>InlineDiff:{filePath}</div>
+  ),
+  useFileHunksStore: {
+    getState: () => ({
+      clearFileHunks: clearFileHunksMock,
+      setFileHunks: setFileHunksMock,
+    }),
+  },
+}));
 vi.mock(
   "../repository-pull-requests-surface/repository-pull-requests-surface",
   () => ({
@@ -65,6 +107,18 @@ vi.mock(
 describe("RepoTabLayout", () => {
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
+    workingChangesMockState.changes = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        insertions: 1,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/app.ts:modified:1:0",
+      },
+    ];
+    workingChangesMockState.fileDetails = {};
     useRepoStore.setState({ tabs: [], activeTabId: null });
     useWorkspaceUiStore.setState({ repoStateByPath: {} });
     useRepositorySurfaceStore.setState({ repoSurfaceStateByPath: {} });
@@ -126,5 +180,89 @@ describe("RepoTabLayout", () => {
     expect(screen.getByText("Toolbar")).toBeInTheDocument();
     expect(screen.getByText("PullRequestsSurface")).toBeInTheDocument();
     expect(screen.getByText("ChangesExplorer:src/app.ts")).toBeInTheDocument();
+  });
+
+  it("requests file detail when a summary-only working file is selected", async () => {
+    loadFileDetailMock.mockResolvedValueOnce(null);
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+    useWorkspaceUiStore.setState({
+      repoStateByPath: {
+        "/repo": { ...DEFAULT_REPO_WORKSPACE_STATE, leftPaneSection: "changes" },
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/app.ts"));
+
+    expect(await screen.findByText("InlineDiff:src/app.ts")).toBeInTheDocument();
+    expect(loadFileDetailMock).toHaveBeenCalledWith("src/app.ts");
+  });
+
+  it("requests detail for each selected working file", async () => {
+    loadFileDetailMock.mockResolvedValue(null);
+    workingChangesMockState.changes = [
+      ...workingChangesMockState.changes,
+      {
+        path: "src/other.ts",
+        status: "modified",
+        insertions: 1,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/other.ts:modified:1:0",
+      },
+    ];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/app.ts"));
+    fireEvent.click(screen.getByText("Select src/other.ts"));
+
+    expect(await screen.findByText("InlineDiff:src/other.ts")).toBeInTheDocument();
+    expect(loadFileDetailMock).toHaveBeenCalledWith("src/app.ts");
+    expect(loadFileDetailMock).toHaveBeenCalledWith("src/other.ts");
+  });
+
+  it("clears the working diff when the selected file disappears", async () => {
+    workingChangesMockState.changes = [];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+    useWorkspaceUiStore.setState({
+      repoStateByPath: {
+        "/repo": {
+          ...DEFAULT_REPO_WORKSPACE_STATE,
+          rightWorkspaceMode: "working-diff",
+          selectedWorkingDiffPath: "src/app.ts",
+        },
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    await screen.findByText("CommitList");
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedWorkingDiffPath,
+    ).toBeNull();
   });
 });
