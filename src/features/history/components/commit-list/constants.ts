@@ -1,4 +1,4 @@
-export const FULL_LOG_COMMIT_LIMIT = 100_000;
+export const COMMIT_HISTORY_WINDOW_SIZE = 2_000;
 export const COMMIT_ROW_HEIGHT = 30;
 export const GRAPH_LANE_WIDTH = 16;
 export const GRAPH_PADDING_X = 24;

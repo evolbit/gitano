@@ -36,6 +36,11 @@ The system SHALL keep the full prepared commit history and graph metadata in a b
 - **THEN** the backend MUST return a bounded row window containing that commit
 - **AND** the response MUST include that commit's row index within the full prepared history
 
+#### Scenario: Graph lines cross a row-window boundary
+- **WHEN** the frontend requests a bounded row window whose rows are crossed by graph lines that started before the window
+- **THEN** the backend MUST include the corresponding row-local graph segments for the returned rows
+- **AND** the visual graph MUST remain continuous across window boundaries
+
 ### Requirement: Commit search runs against the full backend history
 The system SHALL search the full prepared commit history in the backend instead of searching only rows loaded into frontend state.
 
@@ -70,6 +75,33 @@ The system SHALL preserve existing commit list interactions while using backend-
 - **WHEN** keyboard or search navigation targets a commit outside the currently loaded row window
 - **THEN** the frontend MUST request a bounded row window containing the target commit
 - **AND** selection MUST move to the target commit after the new window is available
+
+#### Scenario: User scrolls beyond the currently loaded row window
+- **WHEN** the user scrolls near or beyond the edge of the currently loaded row window
+- **THEN** the frontend MUST request a bounded backend row window around the visible full-history row range
+- **AND** the table scrollbar MUST continue to represent the full prepared history rather than resetting to the loaded window
+
+#### Scenario: User scrolls faster than commit details can load
+- **WHEN** the visible full-history range has graph data but commit row details are not loaded yet
+- **THEN** the graph column MUST render available graph segments for those rows
+- **AND** non-graph commit cells MUST show a loading placeholder instead of an empty row
+- **AND** the graph column MUST remain a normal resizable table column
+
+#### Scenario: User scrolls near recently loaded rows
+- **WHEN** commit details were already fetched for a full-history row index
+- **THEN** nearby scrolling MUST reuse the cached commit details for that row when it is visible
+- **AND** the row MUST NOT fall back to a loading placeholder solely because the active backend window shifted
+
+#### Scenario: Earlier viewport request completes after a newer one
+- **WHEN** multiple commit-detail, graph-only, or search requests are in flight for different viewport positions
+- **AND** an earlier request completes after a newer request has started
+- **THEN** the earlier response MUST NOT replace the visible commit rows, graph rows, search state, or error state from the newer request
+
+#### Scenario: Repository history exceeds native scroll-height limits
+- **WHEN** the prepared commit history is large enough that `row_count * row_height` exceeds practical browser scroll-height limits
+- **THEN** the table MUST cap the physical scroll canvas and map native scrollbar position back to absolute full-history row indexes
+- **AND** the user MUST be able to drag the scrollbar to the oldest commit rows
+- **AND** visible-range loading MUST continue to request graph and commit windows using full-history row indexes
 
 ### Requirement: History cache invalidates on repository history changes
 The system SHALL invalidate or refresh backend commit history caches when repository history inputs change.

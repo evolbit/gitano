@@ -46,6 +46,49 @@ export interface CommitListPage {
   has_more: boolean;
 }
 
+export type CommitHistoryCacheStatus = "idle" | "loading" | "ready" | "error";
+
+export interface CommitHistoryStatusResponse {
+  status: CommitHistoryCacheStatus;
+  totalCount: number;
+  error: string | null;
+}
+
+export interface CommitHistoryWindow {
+  commits: CommitListItem[];
+  offset: number;
+  limit: number;
+  totalCount: number;
+  hasPrevious: boolean;
+  hasMore: boolean;
+}
+
+export interface CommitGraphRow {
+  rowIndex: number;
+  graphWidth: number;
+  graphLane: number;
+  graphColor: number;
+  graphSegments: CommitGraphSegment[];
+  refs: string[];
+}
+
+export interface CommitGraphWindow {
+  rows: CommitGraphRow[];
+  offset: number;
+  limit: number;
+  totalCount: number;
+}
+
+export type CommitSearchDirection = "next" | "previous";
+
+export interface CommitHistorySearchResponse {
+  query: string;
+  matchCount: number;
+  currentMatchPosition: number | null;
+  matchedRowIndex: number | null;
+  matchedSha: string | null;
+}
+
 export interface TagCommitOption {
   sha: string;
   shortSha: string;

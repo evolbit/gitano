@@ -22,7 +22,7 @@ pub struct RepositoryState {
     pub is_detached: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CommitGraphSegment {
     pub color_idx: usize,
     pub from_lane: f32,
@@ -57,6 +57,71 @@ pub struct CommitListItem {
 pub struct CommitListPage {
     pub commits: Vec<CommitListItem>,
     pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CommitHistoryCacheStatus {
+    Idle,
+    Loading,
+    Ready,
+    Error,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitHistoryStatusResponse {
+    pub status: CommitHistoryCacheStatus,
+    pub total_count: usize,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitHistoryWindow {
+    pub commits: Vec<CommitListItem>,
+    pub offset: usize,
+    pub limit: usize,
+    pub total_count: usize,
+    pub has_previous: bool,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitGraphRow {
+    pub row_index: usize,
+    pub graph_width: usize,
+    pub graph_lane: usize,
+    pub graph_color: usize,
+    pub graph_segments: Vec<CommitGraphSegment>,
+    pub refs: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitGraphWindow {
+    pub rows: Vec<CommitGraphRow>,
+    pub offset: usize,
+    pub limit: usize,
+    pub total_count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CommitSearchDirection {
+    Next,
+    Previous,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitHistorySearchResponse {
+    pub query: String,
+    pub match_count: usize,
+    pub current_match_position: Option<usize>,
+    pub matched_row_index: Option<usize>,
+    pub matched_sha: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -109,7 +174,7 @@ pub struct TagNameAvailability {
     pub origin_error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum CommitHistoryMode {
     GitLog,

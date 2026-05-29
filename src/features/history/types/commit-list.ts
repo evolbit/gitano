@@ -24,6 +24,8 @@ export type CommitTableRow = {
   authorInitial: string;
   authorAvatarUrl?: string | null;
   sha: string;
+  rowIndex?: number;
+  isPlaceholder?: boolean;
   commit: CommitListItem;
 };
 

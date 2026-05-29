@@ -3,9 +3,13 @@ import {
   amendCommitMessage,
   cherryPickCommit,
   getCommitDiff,
+  getCommitGraphWindow,
+  getCommitHistoryWindow,
   getCommitPatch,
   getCommitsListPaginated,
+  prepareCommitHistory,
   revertCommit,
+  searchCommitHistory,
 } from "./commits";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
@@ -48,6 +52,103 @@ describe("commit Git API", () => {
     expect(invokeCommandMock).toHaveBeenCalledWith("get_commit_diff", {
       path: "/repo",
       sha: "abc123",
+    });
+  });
+
+  it("prepares commit history with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      status: "loading",
+      totalCount: 0,
+      error: null,
+    });
+
+    await prepareCommitHistory({
+      path: "/repo",
+      historyMode: "git_log",
+      forceRefresh: true,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("prepare_commit_history", {
+      path: "/repo",
+      historyMode: "git_log",
+      forceRefresh: true,
+    });
+  });
+
+  it("requests bounded commit history windows with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      commits: [],
+      offset: 0,
+      limit: 2_000,
+      totalCount: 0,
+      hasPrevious: false,
+      hasMore: false,
+    });
+
+    await getCommitHistoryWindow({
+      path: "/repo",
+      offset: 10,
+      limit: 100,
+      anchorRowIndex: 25,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "get_commit_history_window",
+      {
+        path: "/repo",
+        historyMode: undefined,
+        offset: 10,
+        limit: 100,
+        anchorSha: undefined,
+        anchorRowIndex: 25,
+      },
+    );
+  });
+
+  it("requests bounded commit graph windows with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      rows: [],
+      offset: 0,
+      limit: 120,
+      totalCount: 0,
+    });
+
+    await getCommitGraphWindow({
+      path: "/repo",
+      offset: 50,
+      limit: 120,
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("get_commit_graph_window", {
+      path: "/repo",
+      historyMode: undefined,
+      offset: 50,
+      limit: 120,
+    });
+  });
+
+  it("searches commit history with the expected payload", async () => {
+    invokeCommandMock.mockResolvedValueOnce({
+      query: "fix",
+      matchCount: 1,
+      currentMatchPosition: 0,
+      matchedRowIndex: 5,
+      matchedSha: "abc123",
+    });
+
+    await searchCommitHistory({
+      path: "/repo",
+      query: "fix",
+      currentRowIndex: 3,
+      direction: "next",
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("search_commit_history", {
+      path: "/repo",
+      historyMode: undefined,
+      query: "fix",
+      currentRowIndex: 3,
+      direction: "next",
     });
   });
 

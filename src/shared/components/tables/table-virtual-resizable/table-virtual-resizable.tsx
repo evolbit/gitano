@@ -1,6 +1,9 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
 
+const MAX_SCROLL_CANVAS_HEIGHT = 8_000_000;
+const TABLE_OVERSCAN_ROWS = 5;
+
 export type TableColumn<T> = {
   key: keyof T & string;
   label: string;
@@ -17,6 +20,14 @@ export type TableVirtualResizableProps<T> = {
   data: T[];
   rowHeight?: number;
   className?: string;
+  totalRowCount?: number;
+  rowIndexOffset?: number;
+  getPlaceholderRow?: (absoluteIndex: number) => T | null;
+  onVisibleRangeChange?: (range: {
+    startIndex: number;
+    endIndex: number;
+  }) => void;
+  onScrollTopChange?: (scrollTop: number) => void;
   // Infinite scroll props
   enableInfiniteScroll?: boolean;
   hasMore?: boolean;
@@ -37,6 +48,11 @@ export default function TableVirtualResizable<
   data,
   rowHeight = 50,
   className = "",
+  totalRowCount,
+  rowIndexOffset = 0,
+  getPlaceholderRow,
+  onVisibleRangeChange,
+  onScrollTopChange,
   enableInfiniteScroll = false,
   hasMore = false,
   loading = false,
@@ -49,7 +65,9 @@ export default function TableVirtualResizable<
   setKeyboardNavigation,
 }: TableVirtualResizableProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const [colWidths, setColWidths] = useState<Record<string, number>>(
     Object.fromEntries(columns.map((col) => [col.key, col.width]))
   );
@@ -57,14 +75,75 @@ export default function TableVirtualResizable<
   const startX = useRef(0);
   const startWidth = useRef(0);
   const lastLoadTriggered = useRef(false);
+  const scrollReportFrameRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef(0);
+  const [currentScrollTop, setCurrentScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const rowCount = totalRowCount ?? data.length;
+  const actualTotalSize = rowCount * rowHeight;
+  const scrollCanvasHeight = Math.min(
+    actualTotalSize,
+    MAX_SCROLL_CANVAS_HEIGHT
+  );
+  const usesCompressedScroll = actualTotalSize > scrollCanvasHeight;
+  const physicalContentScrollTop = Math.max(currentScrollTop - headerHeight, 0);
+  const maxPhysicalScroll = Math.max(scrollCanvasHeight - viewportHeight, 1);
+  const maxVirtualScroll = Math.max(actualTotalSize - viewportHeight, 0);
+  const compressedScrollScale = usesCompressedScroll
+    ? maxVirtualScroll / maxPhysicalScroll
+    : 1;
+  const virtualScrollTop = usesCompressedScroll
+    ? Math.min(
+        physicalContentScrollTop * compressedScrollScale,
+        maxVirtualScroll
+      )
+    : currentScrollTop;
 
   // Virtualizer
   const rowVirtualizer = useVirtualizer({
-    count: data.length,
+    count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
-    overscan: 5,
+    overscan: TABLE_OVERSCAN_ROWS,
   });
+  const compressedStartIndex =
+    rowCount > 0
+      ? Math.max(
+          0,
+          Math.floor(virtualScrollTop / rowHeight) - TABLE_OVERSCAN_ROWS
+        )
+      : 0;
+  const compressedEndIndex =
+    rowCount > 0
+      ? Math.min(
+          rowCount - 1,
+          Math.ceil((virtualScrollTop + viewportHeight) / rowHeight) +
+            TABLE_OVERSCAN_ROWS
+        )
+      : -1;
+  const compressedVirtualItems =
+    usesCompressedScroll && compressedEndIndex >= compressedStartIndex
+      ? Array.from(
+          { length: compressedEndIndex - compressedStartIndex + 1 },
+          (_, index) => {
+            const rowIndex = compressedStartIndex + index;
+            return {
+              index: rowIndex,
+              key: rowIndex,
+              size: rowHeight,
+              start:
+                physicalContentScrollTop +
+                rowIndex * rowHeight -
+                virtualScrollTop,
+            };
+          }
+        )
+      : [];
+  const virtualItems = usesCompressedScroll
+    ? compressedVirtualItems
+    : rowVirtualizer.getVirtualItems();
+  const firstVisibleIndex = virtualItems[0]?.index ?? -1;
+  const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1;
 
   // Preserve the scroll position when more data is loaded
   const lastScrollTop = useRef(0);
@@ -83,17 +162,22 @@ export default function TableVirtualResizable<
     const element = parentRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
 
-    const updateWidth = () => {
+    const updateSize = () => {
       setContainerWidth(element.clientWidth);
+      setViewportHeight(element.clientHeight);
+      setHeaderHeight(headerRef.current?.offsetHeight ?? 0);
     };
 
-    updateWidth();
+    updateSize();
 
     const observer = new ResizeObserver(() => {
-      updateWidth();
+      updateSize();
     });
 
     observer.observe(element);
+    if (headerRef.current) {
+      observer.observe(headerRef.current);
+    }
 
     return () => {
       observer.disconnect();
@@ -101,6 +185,8 @@ export default function TableVirtualResizable<
   }, []);
 
   useEffect(() => {
+    if (!enableInfiniteScroll) return;
+
     if (parentRef.current && !isInitialLoad.current && isAddingData.current) {
       // Restore the scroll position after loading more data
       const timeoutId = setTimeout(() => {
@@ -113,34 +199,66 @@ export default function TableVirtualResizable<
       return () => clearTimeout(timeoutId);
     }
     isInitialLoad.current = false;
-  }, [data.length]);
+  }, [data.length, enableInfiniteScroll]);
 
   // Detect when data is being added rather than reset
   useEffect(() => {
+    if (!enableInfiniteScroll) return;
+
     if (!isInitialLoad.current && data.length > 0) {
       isAddingData.current = true;
     }
-  }, [data.length]);
+  }, [data.length, enableInfiniteScroll]);
 
   // Save the scroll position before loading more data
   useEffect(() => {
     const handleScroll = () => {
       if (parentRef.current) {
         lastScrollTop.current = parentRef.current.scrollTop;
+        pendingScrollTopRef.current = parentRef.current.scrollTop;
+
+        if (scrollReportFrameRef.current !== null) {
+          return;
+        }
+
+        scrollReportFrameRef.current = window.requestAnimationFrame(() => {
+          scrollReportFrameRef.current = null;
+          setCurrentScrollTop(pendingScrollTopRef.current);
+          onScrollTopChange?.(pendingScrollTopRef.current);
+        });
       }
     };
 
     const scrollElement = parentRef.current;
     if (scrollElement) {
-      scrollElement.addEventListener("scroll", handleScroll);
+      scrollElement.addEventListener("scroll", handleScroll, { passive: true });
     }
 
     return () => {
       if (scrollElement) {
         scrollElement.removeEventListener("scroll", handleScroll);
       }
+      if (scrollReportFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollReportFrameRef.current);
+        scrollReportFrameRef.current = null;
+      }
     };
-  }, []);
+  }, [onScrollTopChange]);
+
+  useEffect(() => {
+    if (
+      !onVisibleRangeChange ||
+      firstVisibleIndex < 0 ||
+      lastVisibleIndex < 0
+    ) {
+      return;
+    }
+
+    onVisibleRangeChange({
+      startIndex: firstVisibleIndex,
+      endIndex: lastVisibleIndex,
+    });
+  }, [firstVisibleIndex, lastVisibleIndex, onVisibleRangeChange]);
 
   // Auto-scroll when selectedRowIndex changes
   useEffect(() => {
@@ -155,10 +273,35 @@ export default function TableVirtualResizable<
       const isLast = selectedRowIndex === data.length - 1;
       const isNearEnd = selectedRowIndex >= data.length - visibleRows;
       const timeoutId = setTimeout(() => {
-        rowVirtualizer.scrollToIndex(selectedRowIndex, {
-          align: isLast ? "start" : isNearEnd ? "end" : "auto",
-          behavior: "smooth",
-        });
+        const absoluteIndex = rowIndexOffset + selectedRowIndex;
+
+        if (usesCompressedScroll && parentRef.current) {
+          const currentVirtualTop = virtualScrollTop;
+          const rowTop = absoluteIndex * rowHeight;
+          const rowBottom = rowTop + rowHeight;
+          let nextVirtualTop = currentVirtualTop;
+
+          if (isLast) {
+            nextVirtualTop = rowTop;
+          } else if (
+            isNearEnd ||
+            rowBottom > currentVirtualTop + viewportHeight
+          ) {
+            nextVirtualTop = rowBottom - viewportHeight;
+          } else if (rowTop < currentVirtualTop) {
+            nextVirtualTop = rowTop;
+          }
+
+          parentRef.current.scrollTop = Math.max(
+            0,
+            nextVirtualTop / compressedScrollScale
+          );
+        } else {
+          rowVirtualizer.scrollToIndex(absoluteIndex, {
+            align: isLast ? "start" : isNearEnd ? "end" : "auto",
+            behavior: "smooth",
+          });
+        }
         if (setKeyboardNavigation) setKeyboardNavigation(false);
       }, 50);
       return () => clearTimeout(timeoutId);
@@ -168,8 +311,13 @@ export default function TableVirtualResizable<
     data.length,
     rowVirtualizer,
     rowHeight,
+    rowIndexOffset,
     keyboardNavigation,
     setKeyboardNavigation,
+    usesCompressedScroll,
+    virtualScrollTop,
+    viewportHeight,
+    compressedScrollScale,
   ]);
 
   // Infinite scroll handler - setup scroll listener
@@ -298,6 +446,7 @@ export default function TableVirtualResizable<
         data-virtualizer-scroll
         className="flex-1 w-full overflow-auto relative bg-transparent">
         <div
+          ref={headerRef}
           className="sticky top-0 z-30 flex h-7 min-h-7 items-center border-b border-border/70 bg-background font-semibold text-muted-foreground text-sm select-none"
           style={{ width: tableWidth, minWidth: "100%" }}>
           {columns.map((col) => (
@@ -322,17 +471,38 @@ export default function TableVirtualResizable<
         {/* Table content */}
         <div
           style={{
-            height: rowVirtualizer.getTotalSize(),
+            height: usesCompressedScroll
+              ? scrollCanvasHeight
+              : rowVirtualizer.getTotalSize(),
             width: "100%",
             position: "relative",
           }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const row = data[virtualRow.index];
-            const isSelected = selectedRowIndex === virtualRow.index;
+          {virtualItems.map((virtualRow) => {
+            const localIndex = virtualRow.index - rowIndexOffset;
+            const row =
+              data[localIndex] ?? getPlaceholderRow?.(virtualRow.index);
+            const isSelected = selectedRowIndex === localIndex;
+
+            if (!row) {
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-row-placeholder={virtualRow.index}
+                  className="absolute top-0 left-0"
+                  style={{
+                    transform: `translateY(${virtualRow.start}px)`,
+                    height: rowHeight,
+                    width: tableWidth,
+                    minWidth: "100%",
+                  }}
+                />
+              );
+            }
+
             return (
               <div
-                key={row.id || virtualRow.index}
-                data-row-index={virtualRow.index}
+                key={virtualRow.key}
+                data-row-index={localIndex}
                 className={`absolute top-0 left-0 flex items-center text-foreground text-sm cursor-pointer transition-colors duration-150 ${
                   isSelected
                     ? "bg-background text-zinc-100"
@@ -346,10 +516,10 @@ export default function TableVirtualResizable<
                 }}
                 onClick={(event) => {
                   if (event.button !== 0) return;
-                  onRowClick?.(row, virtualRow.index);
+                  onRowClick?.(row, localIndex);
                 }}
                 onContextMenu={(event) =>
-                  onRowContextMenu?.(row, virtualRow.index, event)
+                  onRowContextMenu?.(row, localIndex, event)
                 }>
                 {columns.map((col) => (
                   <div

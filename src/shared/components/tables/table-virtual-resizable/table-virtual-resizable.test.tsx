@@ -62,4 +62,54 @@ describe("TableVirtualResizable", () => {
     expect(onRowClick).not.toHaveBeenCalled();
     expect(onRowContextMenu).toHaveBeenCalledWith(rows[0], 0, expect.anything());
   });
+
+  it("maps capped scroll height to the final rows for very large tables", () => {
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      });
+    const cancelAnimationFrameSpy = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation(() => undefined);
+    const onVisibleRangeChange = vi.fn();
+
+    try {
+      const { container } = render(
+        <TableVirtualResizable
+          columns={columns}
+          data={[]}
+          totalRowCount={1_000_000}
+          rowHeight={30}
+          getPlaceholderRow={(absoluteIndex) => ({
+            id: `row-${absoluteIndex}`,
+            name: `Row ${absoluteIndex}`,
+          })}
+          onVisibleRangeChange={onVisibleRangeChange}
+        />,
+      );
+
+      const scrollElement = container.querySelector<HTMLDivElement>(
+        "[data-virtualizer-scroll]",
+      );
+
+      expect(scrollElement).not.toBeNull();
+
+      Object.defineProperty(scrollElement, "scrollTop", {
+        configurable: true,
+        value: 8_000_000,
+        writable: true,
+      });
+      fireEvent.scroll(scrollElement!);
+
+      expect(screen.getByText("Row 999999")).toBeInTheDocument();
+      expect(onVisibleRangeChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ endIndex: 999_999 }),
+      );
+    } finally {
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
+  });
 });

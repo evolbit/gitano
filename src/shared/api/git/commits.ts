@@ -1,7 +1,14 @@
-import type { CommitDiff, CommitListPage } from "@/shared/types/git";
+import type {
+  CommitDiff,
+  CommitGraphWindow,
+  CommitHistoryMode,
+  CommitHistorySearchResponse,
+  CommitHistoryStatusResponse,
+  CommitHistoryWindow,
+  CommitListPage,
+  CommitSearchDirection,
+} from "@/shared/types/git";
 import { invokeCommand } from "@/shared/platform/tauri/command";
-
-export type CommitHistoryMode = "git_log" | "first_parent";
 
 export type GetCommitsListRequest = {
   path: string;
@@ -15,6 +22,82 @@ export type GetCommitsListRequest = {
 
 export async function getCommitsListPaginated(request: GetCommitsListRequest) {
   return invokeCommand<CommitListPage>("get_commits_list_paginated", request);
+}
+
+export type PrepareCommitHistoryRequest = {
+  path: string;
+  historyMode?: CommitHistoryMode;
+  forceRefresh?: boolean;
+};
+
+export async function prepareCommitHistory(
+  request: PrepareCommitHistoryRequest,
+) {
+  return invokeCommand<CommitHistoryStatusResponse>("prepare_commit_history", {
+    path: request.path,
+    historyMode: request.historyMode,
+    forceRefresh: request.forceRefresh,
+  });
+}
+
+export type GetCommitHistoryWindowRequest = {
+  path: string;
+  historyMode?: CommitHistoryMode;
+  offset?: number;
+  limit?: number;
+  anchorSha?: string;
+  anchorRowIndex?: number;
+};
+
+export async function getCommitHistoryWindow(
+  request: GetCommitHistoryWindowRequest,
+) {
+  return invokeCommand<CommitHistoryWindow>("get_commit_history_window", {
+    path: request.path,
+    historyMode: request.historyMode,
+    offset: request.offset,
+    limit: request.limit,
+    anchorSha: request.anchorSha,
+    anchorRowIndex: request.anchorRowIndex,
+  });
+}
+
+export type GetCommitGraphWindowRequest = {
+  path: string;
+  historyMode?: CommitHistoryMode;
+  offset?: number;
+  limit?: number;
+};
+
+export async function getCommitGraphWindow(
+  request: GetCommitGraphWindowRequest,
+) {
+  return invokeCommand<CommitGraphWindow>("get_commit_graph_window", {
+    path: request.path,
+    historyMode: request.historyMode,
+    offset: request.offset,
+    limit: request.limit,
+  });
+}
+
+export type SearchCommitHistoryRequest = {
+  path: string;
+  historyMode?: CommitHistoryMode;
+  query: string;
+  currentRowIndex?: number;
+  direction?: CommitSearchDirection;
+};
+
+export async function searchCommitHistory(
+  request: SearchCommitHistoryRequest,
+) {
+  return invokeCommand<CommitHistorySearchResponse>("search_commit_history", {
+    path: request.path,
+    historyMode: request.historyMode,
+    query: request.query,
+    currentRowIndex: request.currentRowIndex,
+    direction: request.direction,
+  });
 }
 
 export async function getCommitDiff(repoPath: string, sha: string) {

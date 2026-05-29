@@ -64,6 +64,40 @@ The frontend should continue using the virtualized table for visible row renderi
 
 Alternative considered: replace the table virtualization model. That is unnecessary if payload and state size are bounded.
 
+### Materialize graph drawing segments per row window
+
+The backend should preserve the complete graph lane model as compact line intervals, then expand those intervals into `CommitGraphSegment` values only for rows returned by `get_commit_history_window`. This matches the reference architecture more closely: the expensive graph state is prepared once, while viewport-sized drawing primitives are derived for visible rows.
+
+The frontend rendering contract should not change. Each returned commit row still includes `graph_width`, `graph_lane`, `graph_color`, and `graph_segments`; only the timing of segment creation changes. Window expansion must include graph lines whose intervals start before the requested window and continue into it, otherwise long vertical branch lines and merge lines would disappear at page boundaries.
+
+### Keep scroll position absolute while row data is windowed
+
+The commit table should virtualize over the backend `total_count`, not over only the currently loaded rows. Loaded rows are positioned by their full-history row offset, and unloaded rows act as temporary placeholders until a bounded backend window around the visible range is fetched. This preserves normal scrollbar behavior while still keeping React state bounded to the active backend window.
+
+### Decouple graph viewport data from commit row details
+
+The graph column should stay in the table and remain resizable, but graph data should be loadable independently from full commit row details. The backend exposes a graph-only bounded window with row index, lane/color metadata, and row-local graph segments. The frontend keeps this graph window separate from the commit-detail window so unloaded commit rows can render graph cells and `Loading...` text placeholders during fast scrollbar movement.
+
+This preserves bounded IPC/state while avoiding blank table rows after large jumps. Full commit details still load through `get_commit_history_window`; graph-only windows are smaller and can be requested with a tighter viewport-sized range.
+
+### Cap the physical scroll canvas for huge histories
+
+Virtualization controls how many DOM rows render, but the browser still needs a physical scroll canvas to represent `total_count * row_height`. Kernel-scale histories can exceed practical browser scroll-height limits or precision, especially when dragging the native scrollbar near the end. The table should cap the physical canvas height and map that compressed scroll range back to full-history row indexes.
+
+This keeps the scrollbar able to reach the first commit while preserving fixed row heights and the existing row-window API. Visible-range callbacks should continue to report absolute full-history row indexes so graph-only and commit-detail windows can be fetched normally.
+
+### Keep recently loaded detail rows stable
+
+The frontend should keep a bounded cache of recently fetched commit-detail rows keyed by absolute full-history row index. This cache is separate from the active backend window and lets nearby scrolling reuse already-loaded commit text instead of falling back to placeholders whenever the active window shifts.
+
+Rendered virtual rows should be keyed by absolute row index, not by the current row payload. That keeps a row mounted when it transitions from placeholder data to commit detail data and avoids remount-driven flicker during fast scroll updates.
+
+### Suppress stale viewport responses
+
+Fast scrollbar movement can schedule several commit-detail and graph-only window requests before earlier requests finish. The frontend should treat each request class as latest-wins: older responses may complete successfully, but they must not replace the currently visible commit window, graph window, search result, or error state after a newer request has started.
+
+This avoids visible row content jumping back to an older viewport when backend responses complete out of order.
+
 ## Risks / Trade-offs
 
 - Backend job completes but result serialization still stalls for large pages -> Keep row windows bounded and tune page/window size with measured payload sizes.

@@ -8,8 +8,9 @@ const COMMIT_GRAPH_ROW_HEIGHT: f32 = 30.0;
 const DESIRED_CURVE_HEIGHT: f32 = 1.0 / 3.0;
 const DESIRED_CURVE_WIDTH: f32 = 1.0 / 3.0;
 
-pub(super) fn append_line_segments(
+pub(super) fn append_line_segments_for_window(
     line: &ZedCommitLine,
+    window_start: usize,
     row_segments: &mut [Vec<CommitGraphSegment>],
 ) {
     let radius_row = ZED_COMMIT_CIRCLE_RADIUS / COMMIT_GRAPH_ROW_HEIGHT;
@@ -29,6 +30,7 @@ pub(super) fn append_line_segments(
 
                 push_vertical_segments(
                     row_segments,
+                    window_start,
                     line.color_idx,
                     current_lane,
                     current_row,
@@ -43,6 +45,7 @@ pub(super) fn append_line_segments(
             } => {
                 let (next_lane, next_row) = append_curve_segments(
                     row_segments,
+                    window_start,
                     line.color_idx,
                     current_lane,
                     current_row,
@@ -61,6 +64,7 @@ pub(super) fn append_line_segments(
 
 fn append_curve_segments(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     current_lane: f32,
     current_row: f32,
@@ -72,6 +76,7 @@ fn append_curve_segments(
     match curve_kind {
         CurveKind::Checkout => append_checkout_curve_segments(
             row_segments,
+            window_start,
             color_idx,
             current_lane,
             current_row,
@@ -81,6 +86,7 @@ fn append_curve_segments(
         ),
         CurveKind::Merge => append_merge_curve_segments(
             row_segments,
+            window_start,
             color_idx,
             current_lane,
             current_row,
@@ -93,6 +99,7 @@ fn append_curve_segments(
 
 fn append_checkout_curve_segments(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     current_lane: f32,
     current_row: f32,
@@ -115,6 +122,7 @@ fn append_checkout_curve_segments(
 
     push_vertical_segments(
         row_segments,
+        window_start,
         color_idx,
         current_lane,
         current_row,
@@ -122,6 +130,7 @@ fn append_checkout_curve_segments(
     );
     push_curve_segment(
         row_segments,
+        window_start,
         color_idx,
         current_lane,
         curve_start_y,
@@ -132,6 +141,7 @@ fn append_checkout_curve_segments(
     );
     push_line_segment(
         row_segments,
+        window_start,
         color_idx,
         curve_end_lane,
         to_row,
@@ -144,6 +154,7 @@ fn append_checkout_curve_segments(
 
 fn append_merge_curve_segments(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     current_lane: f32,
     current_row: f32,
@@ -169,6 +180,7 @@ fn append_merge_curve_segments(
 
     push_line_segment(
         row_segments,
+        window_start,
         color_idx,
         merge_start_lane,
         merge_start_y,
@@ -177,6 +189,7 @@ fn append_merge_curve_segments(
     );
     push_curve_segment(
         row_segments,
+        window_start,
         color_idx,
         curve_start_lane,
         merge_start_y,
@@ -185,7 +198,14 @@ fn append_merge_curve_segments(
         to_lane,
         merge_start_y,
     );
-    push_vertical_segments(row_segments, color_idx, to_lane, curve_end_y, to_row);
+    push_vertical_segments(
+        row_segments,
+        window_start,
+        color_idx,
+        to_lane,
+        curve_end_y,
+        to_row,
+    );
 
     (to_lane, to_row)
 }
@@ -209,26 +229,32 @@ fn signed_curve_width(curve_width: f32, going_right: bool) -> f32 {
 
 fn push_vertical_segments(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     lane: f32,
     from_y: f32,
     to_y: f32,
 ) {
-    if to_y <= from_y {
+    if row_segments.is_empty() || to_y <= from_y {
         return;
     }
 
     let start_row = from_y.floor() as isize;
     let end_row = (to_y - 0.0001).floor() as isize;
+    let visible_start = start_row.max(window_start as isize);
+    let visible_end = end_row.min(
+        window_start
+            .saturating_add(row_segments.len())
+            .saturating_sub(1) as isize,
+    );
 
-    for row in start_row..=end_row {
+    for row in visible_start..=visible_end {
         if row < 0 {
             continue;
         }
-        let row_index = row as usize;
-        if row_index >= row_segments.len() {
-            break;
-        }
+        let Some(row_index) = visible_row_index(row, window_start, row_segments.len()) else {
+            continue;
+        };
 
         let local_from = (from_y - row as f32).clamp(0.0, 1.0);
         let local_to = (to_y - row as f32).clamp(0.0, 1.0);
@@ -250,6 +276,7 @@ fn push_vertical_segments(
 
 fn push_line_segment(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     from_lane: f32,
     from_y: f32,
@@ -257,11 +284,11 @@ fn push_line_segment(
     to_y: f32,
 ) {
     let row = from_y.floor() as isize;
-    if row < 0 || row as usize >= row_segments.len() {
+    let Some(row_index) = visible_row_index(row, window_start, row_segments.len()) else {
         return;
-    }
+    };
 
-    row_segments[row as usize].push(CommitGraphSegment {
+    row_segments[row_index].push(CommitGraphSegment {
         color_idx,
         from_lane,
         from_y: from_y - row as f32,
@@ -274,6 +301,7 @@ fn push_line_segment(
 
 fn push_curve_segment(
     row_segments: &mut [Vec<CommitGraphSegment>],
+    window_start: usize,
     color_idx: usize,
     from_lane: f32,
     from_y: f32,
@@ -283,11 +311,11 @@ fn push_curve_segment(
     control_y: f32,
 ) {
     let row = from_y.floor() as isize;
-    if row < 0 || row as usize >= row_segments.len() {
+    let Some(row_index) = visible_row_index(row, window_start, row_segments.len()) else {
         return;
-    }
+    };
 
-    row_segments[row as usize].push(CommitGraphSegment {
+    row_segments[row_index].push(CommitGraphSegment {
         color_idx,
         from_lane,
         from_y: from_y - row as f32,
@@ -296,4 +324,18 @@ fn push_curve_segment(
         control_lane: Some(control_lane),
         control_y: Some(control_y - row as f32),
     });
+}
+
+fn visible_row_index(row: isize, window_start: usize, window_len: usize) -> Option<usize> {
+    if row < 0 {
+        return None;
+    }
+
+    let row = row as usize;
+    if row < window_start {
+        return None;
+    }
+
+    let row_index = row - window_start;
+    (row_index < window_len).then_some(row_index)
 }

@@ -4,7 +4,7 @@ mod segments;
 
 use self::metadata::{author_initial, gravatar_avatar_url};
 pub(super) use self::parser::{parse_raw_commit_rows, RawCommitRow};
-use self::segments::append_line_segments;
+use self::segments::append_line_segments_for_window;
 use crate::git::types::*;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -21,14 +21,14 @@ enum LaneState {
     },
 }
 
-#[derive(Clone, Copy)]
-enum CurveKind {
+#[derive(Debug, Clone, Copy)]
+pub(super) enum CurveKind {
     Merge,
     Checkout,
 }
 
-#[derive(Clone, Copy)]
-enum ZedCommitLineSegment {
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ZedCommitLineSegment {
     Straight {
         to_row: usize,
     },
@@ -39,12 +39,12 @@ enum ZedCommitLineSegment {
     },
 }
 
-#[derive(Clone)]
-struct ZedCommitLine {
-    child_column: usize,
-    full_interval: Range<usize>,
-    color_idx: usize,
-    segments: Vec<ZedCommitLineSegment>,
+#[derive(Debug, Clone)]
+pub(super) struct ZedCommitLine {
+    pub(super) child_column: usize,
+    pub(super) full_interval: Range<usize>,
+    pub(super) color_idx: usize,
+    pub(super) segments: Vec<ZedCommitLineSegment>,
 }
 
 #[derive(Clone, Copy)]
@@ -65,6 +65,100 @@ struct ZedGraphData {
 
 const GRAPH_ACCENT_COUNT: usize = 10;
 const MIN_GRAPH_LANES: usize = 6;
+
+#[derive(Debug)]
+pub(super) struct PreparedCommitGraph {
+    commits: Vec<CommitListItem>,
+    lines: Vec<ZedCommitLine>,
+}
+
+impl PreparedCommitGraph {
+    pub(super) fn empty() -> Self {
+        Self {
+            commits: Vec::new(),
+            lines: Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_commits_for_test(commits: Vec<CommitListItem>) -> Self {
+        Self {
+            commits,
+            lines: Vec::new(),
+        }
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.commits.len()
+    }
+
+    pub(super) fn commits(&self) -> &[CommitListItem] {
+        &self.commits
+    }
+
+    pub(super) fn commits_mut(&mut self) -> &mut [CommitListItem] {
+        &mut self.commits
+    }
+
+    pub(super) fn window_commits(&self, start: usize, end: usize) -> Vec<CommitListItem> {
+        let mut commits = self.commits[start..end].to_vec();
+        let row_segments = graph_segments_for_window(&self.lines, start, commits.len());
+
+        for (commit, segments) in commits.iter_mut().zip(row_segments) {
+            commit.graph_segments = segments;
+        }
+
+        commits
+    }
+
+    pub(super) fn graph_window_rows(&self, start: usize, end: usize) -> Vec<CommitGraphRow> {
+        let row_segments = graph_segments_for_window(&self.lines, start, end.saturating_sub(start));
+
+        self.commits[start..end]
+            .iter()
+            .enumerate()
+            .map(|(index, commit)| CommitGraphRow {
+                row_index: start + index,
+                graph_width: commit.graph_width,
+                graph_lane: commit.graph_lane,
+                graph_color: commit.graph_color,
+                graph_segments: row_segments.get(index).cloned().unwrap_or_default(),
+                refs: commit.refs.clone(),
+            })
+            .collect()
+    }
+
+    pub(super) fn into_commit_rows_with_graph_segments(mut self) -> Vec<CommitListItem> {
+        let row_segments = graph_segments_for_window(&self.lines, 0, self.commits.len());
+
+        for (commit, segments) in self.commits.iter_mut().zip(row_segments) {
+            commit.graph_segments = segments;
+        }
+
+        self.commits
+    }
+}
+
+fn graph_segments_for_window(
+    lines: &[ZedCommitLine],
+    window_start: usize,
+    window_len: usize,
+) -> Vec<Vec<CommitGraphSegment>> {
+    if window_len == 0 {
+        return Vec::new();
+    }
+
+    let window_end = window_start.saturating_add(window_len);
+    let mut row_segments: Vec<Vec<CommitGraphSegment>> = vec![Vec::new(); window_len];
+
+    for line in lines {
+        if line.full_interval.start < window_end && line.full_interval.end >= window_start {
+            append_line_segments_for_window(line, window_start, &mut row_segments);
+        }
+    }
+
+    row_segments
+}
 
 impl LaneState {
     fn is_empty(&self) -> bool {
@@ -386,22 +480,19 @@ impl ZedGraphData {
     }
 }
 
-pub(super) fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec<CommitListItem> {
+pub(super) fn build_zed_style_commit_graph(raw_commits: Vec<RawCommitRow>) -> PreparedCommitGraph {
     let mut graph_data = ZedGraphData::new();
     graph_data.add_commits(&raw_commits);
 
     let graph_width = graph_data.max_lanes.max(MIN_GRAPH_LANES);
-    let mut row_segments: Vec<Vec<CommitGraphSegment>> = vec![Vec::new(); raw_commits.len()];
-    for line in &graph_data.lines {
-        append_line_segments(line, &mut row_segments);
-    }
+    let graph_entries = graph_data.commits;
+    let graph_lines = graph_data.lines;
 
-    raw_commits
+    let commits = raw_commits
         .into_iter()
         .enumerate()
         .map(|(row_idx, raw)| {
-            let entry = graph_data
-                .commits
+            let entry = graph_entries
                 .get(row_idx)
                 .copied()
                 .unwrap_or(ZedCommitEntry {
@@ -415,7 +506,7 @@ pub(super) fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec
                 graph_width,
                 graph_lane: entry.lane,
                 graph_color: entry.color_idx,
-                graph_segments: row_segments.get(row_idx).cloned().unwrap_or_default(),
+                graph_segments: Vec::new(),
                 refs: raw.refs,
                 message: raw.message,
                 author_initial: author_initial(&raw.author),
@@ -428,7 +519,17 @@ pub(super) fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec
                 files: 0,
             }
         })
-        .collect()
+        .collect();
+
+    PreparedCommitGraph {
+        commits,
+        lines: graph_lines,
+    }
+}
+
+#[cfg(test)]
+pub(super) fn build_zed_style_commit_rows(raw_commits: Vec<RawCommitRow>) -> Vec<CommitListItem> {
+    build_zed_style_commit_graph(raw_commits).into_commit_rows_with_graph_segments()
 }
 
 #[cfg(test)]
@@ -508,6 +609,57 @@ mod tests {
                 assert!(segment.control_lane.map_or(true, f32::is_finite));
                 assert!(segment.control_y.map_or(true, f32::is_finite));
             }
+        }
+
+        #[test]
+        fn window_expansion_matches_full_history_for_crossing_straight_lines() {
+            let raw_commits = vec![
+                raw_commit("tip", &["base"], 4),
+                raw_commit("side-1", &["side-2"], 3),
+                raw_commit("side-2", &["side-3"], 2),
+                raw_commit("base", &[], 1),
+            ];
+
+            let full_rows = build_zed_style_commit_rows(raw_commits.clone());
+            let graph = build_zed_style_commit_graph(raw_commits);
+            let window_rows = graph.window_commits(2, 4);
+
+            assert_eq!(window_rows.len(), 2);
+            assert_eq!(window_rows[0].sha, "side-2");
+            assert_eq!(window_rows[0].graph_segments, full_rows[2].graph_segments);
+            assert_eq!(window_rows[1].graph_segments, full_rows[3].graph_segments);
+            assert!(
+                window_rows
+                    .iter()
+                    .flat_map(|row| &row.graph_segments)
+                    .any(|segment| segment.from_y == 0.0),
+                "a line that starts before the window should continue from the top edge",
+            );
+        }
+
+        #[test]
+        fn window_expansion_matches_full_history_for_merge_curves() {
+            let raw_commits = vec![
+                raw_commit("merge", &["left", "right"], 4),
+                raw_commit("left", &["base"], 3),
+                raw_commit("right", &["base"], 2),
+                raw_commit("base", &[], 1),
+            ];
+
+            let full_rows = build_zed_style_commit_rows(raw_commits.clone());
+            let graph = build_zed_style_commit_graph(raw_commits);
+            let window_rows = graph.window_commits(0, 2);
+
+            assert_eq!(window_rows.len(), 2);
+            assert_eq!(window_rows[0].graph_segments, full_rows[0].graph_segments);
+            assert_eq!(window_rows[1].graph_segments, full_rows[1].graph_segments);
+            assert!(
+                window_rows
+                    .iter()
+                    .flat_map(|row| &row.graph_segments)
+                    .any(|segment| segment.control_lane.is_some()),
+                "window expansion should preserve merge curves",
+            );
         }
     }
 }
