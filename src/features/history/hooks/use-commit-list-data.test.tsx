@@ -197,6 +197,74 @@ describe("useCommitListData", () => {
     );
   });
 
+  it("prefetches commit details into the row cache without replacing the active window", async () => {
+    const scrollContainerRef = { current: null };
+    const activeCommit = {
+      sha: "active-sha",
+      message: "Active window commit",
+      author: "Ava",
+      author_initial: "A",
+      date: 1_700_000_000,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    };
+    const prefetchedCommit = {
+      sha: "prefetched-sha",
+      message: "Prefetched window commit",
+      author: "Grace",
+      author_initial: "G",
+      date: 1_699_999_999,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    };
+
+    getCommitHistoryWindowMock
+      .mockResolvedValueOnce({
+        commits: [activeCommit],
+        offset: 0,
+        limit: COMMIT_HISTORY_WINDOW_SIZE,
+        totalCount: 12_000,
+        hasPrevious: false,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        commits: [prefetchedCommit],
+        offset: 2_000,
+        limit: COMMIT_HISTORY_WINDOW_SIZE,
+        totalCount: 12_000,
+        hasPrevious: true,
+        hasMore: true,
+      });
+
+    const { result } = renderHook(() =>
+      useCommitListData({ repoPath: "/repo", scrollContainerRef }),
+    );
+
+    await act(async () => {
+      await result.current.loadCommitWindow({ offset: 0 });
+    });
+    await act(async () => {
+      await result.current.prefetchCommitWindow({ offset: 2_000 });
+    });
+
+    expect(getCommitHistoryWindowMock).toHaveBeenLastCalledWith({
+      path: "/repo",
+      offset: 2_000,
+      limit: COMMIT_HISTORY_WINDOW_SIZE,
+      anchorSha: undefined,
+      anchorRowIndex: undefined,
+    });
+    expect(result.current.commits).toEqual([activeCommit]);
+    expect(result.current.windowOffset).toBe(0);
+    expect(result.current.cachedCommitsByRowIndex.get(2_000)).toEqual(
+      prefetchedCommit,
+    );
+  });
+
   it("ignores stale commit detail window responses", async () => {
     const scrollContainerRef = { current: null };
     const staleCommit = {

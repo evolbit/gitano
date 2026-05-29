@@ -46,6 +46,9 @@ import {
 } from "./utils";
 
 const WINDOW_EDGE_PREFETCH_ROWS = 24;
+const COMMIT_DETAIL_LOOKAHEAD_ROWS = Math.floor(
+  COMMIT_HISTORY_WINDOW_SIZE / 4,
+);
 const GRAPH_WINDOW_PREFETCH_ROWS = 80;
 const GRAPH_WINDOW_LOAD_DEBOUNCE_MS = 40;
 const VISIBLE_WINDOW_LOAD_DEBOUNCE_MS = 120;
@@ -89,6 +92,7 @@ export default function CommitList({
   const requestedVisibleAnchorRef = useRef<number | null>(null);
   const pendingVisibleAnchorRef = useRef<number | null>(null);
   const visibleWindowLoadTimerRef = useRef<number | null>(null);
+  const requestedCommitPrefetchOffsetsRef = useRef<Set<number>>(new Set());
   const isLoadingGraphWindowRef = useRef(false);
   const pendingGraphWindowRef = useRef<{
     limit: number;
@@ -148,6 +152,7 @@ export default function CommitList({
     loadCommitGraphWindow,
     loadCommitWindow,
     loading,
+    prefetchCommitWindow,
     remoteUrl,
     repositoryState,
     refreshRepositorySurfaces,
@@ -440,6 +445,47 @@ export default function CommitList({
     [loadVisibleCommitWindow],
   );
 
+  const isCommitDetailRangeCached = useCallback(
+    (offset: number) => {
+      if (!totalCount || offset < 0 || offset >= totalCount) {
+        return true;
+      }
+
+      const endIndex = Math.min(
+        offset + COMMIT_HISTORY_WINDOW_SIZE - 1,
+        totalCount - 1,
+      );
+
+      return (
+        cachedCommitsByRowIndex.has(offset) &&
+        cachedCommitsByRowIndex.has(endIndex)
+      );
+    },
+    [cachedCommitsByRowIndex, totalCount],
+  );
+
+  const prefetchCommitDetailsByOffset = useCallback(
+    (offset: number) => {
+      if (!totalCount || offset < 0 || offset >= totalCount) {
+        return;
+      }
+
+      if (isCommitDetailRangeCached(offset)) {
+        return;
+      }
+
+      if (requestedCommitPrefetchOffsetsRef.current.has(offset)) {
+        return;
+      }
+
+      requestedCommitPrefetchOffsetsRef.current.add(offset);
+      void prefetchCommitWindow({ offset }).finally(() => {
+        requestedCommitPrefetchOffsetsRef.current.delete(offset);
+      });
+    },
+    [isCommitDetailRangeCached, prefetchCommitWindow, totalCount],
+  );
+
   const handleVisibleRangeChange = useCallback(
     ({
       endIndex,
@@ -457,6 +503,11 @@ export default function CommitList({
       const graphStart = graphRows[0]?.rowIndex ?? -1;
       const graphEnd =
         graphRows[graphRows.length - 1]?.rowIndex ?? -1;
+      const shouldLoadNextWindow =
+        hasMoreWindow && endIndex >= loadedEnd - WINDOW_EDGE_PREFETCH_ROWS;
+      const shouldLoadPreviousWindow =
+        hasPreviousWindow &&
+        startIndex <= loadedStart + WINDOW_EDGE_PREFETCH_ROWS;
 
       if (
         startIndex < graphStart + WINDOW_EDGE_PREFETCH_ROWS ||
@@ -467,16 +518,28 @@ export default function CommitList({
 
       if (
         hasMoreWindow &&
-        endIndex >= loadedEnd - WINDOW_EDGE_PREFETCH_ROWS
+        !shouldLoadNextWindow &&
+        endIndex >= loadedEnd - COMMIT_DETAIL_LOOKAHEAD_ROWS
       ) {
-        scheduleVisibleCommitWindowLoad(endIndex);
-        return;
+        prefetchCommitDetailsByOffset(loadedEnd + 1);
       }
 
       if (
         hasPreviousWindow &&
-        startIndex <= loadedStart + WINDOW_EDGE_PREFETCH_ROWS
+        !shouldLoadPreviousWindow &&
+        startIndex <= loadedStart + COMMIT_DETAIL_LOOKAHEAD_ROWS
       ) {
+        prefetchCommitDetailsByOffset(
+          Math.max(loadedStart - COMMIT_HISTORY_WINDOW_SIZE, 0),
+        );
+      }
+
+      if (shouldLoadNextWindow) {
+        scheduleVisibleCommitWindowLoad(endIndex);
+        return;
+      }
+
+      if (shouldLoadPreviousWindow) {
         scheduleVisibleCommitWindowLoad(startIndex);
       }
     },
@@ -485,6 +548,7 @@ export default function CommitList({
       hasPreviousWindow,
       graphRows,
       loading,
+      prefetchCommitDetailsByOffset,
       scheduleGraphWindowLoad,
       scheduleVisibleCommitWindowLoad,
       tableRows.length,
@@ -574,6 +638,7 @@ export default function CommitList({
         render: (_: string, row: CommitTableRow) => (
           row.isPlaceholder ? null : (
             <CommitAuthorCell
+              key={`${row.id}-${row.rowIndex ?? ""}`}
               author={row.author}
               initial={row.authorInitial}
               avatarUrl={row.authorAvatarUrl}
@@ -602,6 +667,7 @@ export default function CommitList({
     previousViewKeyRef.current = viewKey;
     pendingGraphWindowRef.current = null;
     pendingVisibleAnchorRef.current = null;
+    requestedCommitPrefetchOffsetsRef.current.clear();
     requestedGraphWindowKeyRef.current = null;
     requestedVisibleAnchorRef.current = null;
     lastReportedScrollTopRef.current = null;
@@ -917,7 +983,11 @@ export default function CommitList({
         ref={setContainerRef}
         className="flex-1 overflow-y-auto focus:outline-none"
       >
-        {!loading && !error && repositoryState?.hasCommits === false ? (
+        {loading && !tableRows.length && repositoryState?.hasCommits !== false ? (
+          <div className="flex h-full min-h-[240px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Loading commits...
+          </div>
+        ) : !loading && !error && repositoryState?.hasCommits === false ? (
           <div className="flex h-full min-h-[240px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
             Stage files and create the initial commit to start repository
             history.

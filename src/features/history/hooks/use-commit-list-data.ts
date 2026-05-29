@@ -16,6 +16,7 @@ import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import type {
   CommitGraphRow,
+  CommitHistoryWindow,
   CommitHistorySearchResponse,
   CommitListItem,
   RepositoryState,
@@ -42,6 +43,14 @@ export type CommitSearchNavigationResult = CommitHistorySearchResponse & {
 
 const HISTORY_READY_POLL_INTERVAL_MS = 250;
 const COMMIT_DETAIL_ROW_CACHE_LIMIT = COMMIT_HISTORY_WINDOW_SIZE * 6;
+
+function getCommitWindowRequestKey({
+  anchorRowIndex,
+  anchorSha,
+  offset,
+}: CommitWindowLoadOptions) {
+  return `${offset ?? ""}:${anchorSha ?? ""}:${anchorRowIndex ?? ""}`;
+}
 
 function waitForNextHistoryPoll() {
   return new Promise((resolve) =>
@@ -93,6 +102,8 @@ export function useCommitListData({
     useState<CommitHistorySearchResponse | null>(null);
   const loadRequestIdRef = useRef(0);
   const commitWindowRequestIdRef = useRef(0);
+  const commitPrefetchEpochRef = useRef(0);
+  const commitPrefetchKeysRef = useRef<Set<string>>(new Set());
   const graphWindowRequestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
 
@@ -104,6 +115,8 @@ export function useCommitListData({
 
   const resetCommits = useCallback(() => {
     commitWindowRequestIdRef.current += 1;
+    commitPrefetchEpochRef.current += 1;
+    commitPrefetchKeysRef.current.clear();
     graphWindowRequestIdRef.current += 1;
     searchRequestIdRef.current += 1;
     setCommits([]);
@@ -178,6 +191,8 @@ export function useCommitListData({
       const requestId = loadRequestIdRef.current + 1;
       loadRequestIdRef.current = requestId;
       commitWindowRequestIdRef.current += 1;
+      commitPrefetchEpochRef.current += 1;
+      commitPrefetchKeysRef.current.clear();
       graphWindowRequestIdRef.current += 1;
       searchRequestIdRef.current += 1;
       setLoading(true);
@@ -248,6 +263,56 @@ export function useCommitListData({
       }
     },
     [applyWindow],
+  );
+
+  const prefetchCommitWindow = useCallback(
+    async (
+      options: CommitWindowLoadOptions = {},
+    ): Promise<CommitHistoryWindow | null> => {
+      if (!repoPath) return null;
+
+      const requestKey = getCommitWindowRequestKey(options);
+      if (commitPrefetchKeysRef.current.has(requestKey)) {
+        return null;
+      }
+
+      const requestEpoch = commitPrefetchEpochRef.current;
+      commitPrefetchKeysRef.current.add(requestKey);
+
+      try {
+        const windowResult = await getCommitHistoryWindow({
+          path: repoPath,
+          offset: options.offset,
+          limit: COMMIT_HISTORY_WINDOW_SIZE,
+          anchorSha: options.anchorSha,
+          anchorRowIndex: options.anchorRowIndex,
+        });
+
+        if (requestEpoch !== commitPrefetchEpochRef.current) {
+          return null;
+        }
+
+        setCachedCommitsByRowIndex((currentCache) =>
+          mergeCommitDetailCache(
+            currentCache,
+            windowResult.commits,
+            windowResult.offset,
+          ),
+        );
+        setTotalCount((currentTotal) =>
+          currentTotal || windowResult.totalCount,
+        );
+
+        return windowResult;
+      } catch {
+        return null;
+      } finally {
+        if (requestEpoch === commitPrefetchEpochRef.current) {
+          commitPrefetchKeysRef.current.delete(requestKey);
+        }
+      }
+    },
+    [repoPath],
   );
 
   const loadCommitGraphWindow = useCallback(
@@ -382,6 +447,7 @@ export function useCommitListData({
     }
 
     let cancelled = false;
+    setRepositoryState(null);
 
     const refreshRepositoryState = async () => {
       try {
@@ -438,6 +504,7 @@ export function useCommitListData({
     loadCommitGraphWindow,
     loadCommitWindow,
     loading,
+    prefetchCommitWindow,
     remoteUrl,
     repositoryState,
     refreshRepositorySurfaces,

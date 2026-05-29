@@ -89,3 +89,9 @@ CLI timing note: `/Users/marco/repositories/linux` has 1,446,276 reachable commi
 - [x] 10.5 Cache recently fetched commit-detail rows by absolute row index so nearby scrolling does not revert loaded rows to placeholders.
 - [x] 10.6 Key rendered virtual rows by absolute row index to avoid remounting rows when detail data replaces placeholders.
 - [x] 10.7 Suppress stale commit-detail, graph-only, and search responses when newer viewport requests are in flight.
+- [x] 10.8 Render a centered commit-list loading state while the first prepared row window is not available.
+- [x] 10.9 Ensure placeholder rows clear author/date/SHA/avatar/ref/text cells instead of retaining content from recycled virtual rows.
+- [x] 10.10 Make placeholder-to-detail replacement coherent for a single absolute row index, including media-bearing author avatar cells.
+- [x] 10.11 Add focused component coverage for initial loading and stale row-content prevention during fast viewport changes.
+- [x] 10.12 Prefetch adjacent commit-detail windows in both scroll directions before the active window edge is reached.
+- [x] 10.13 Ensure commit-detail prefetch populates only the absolute-index row cache without replacing the active visible window.

@@ -92,11 +92,27 @@ The frontend should keep a bounded cache of recently fetched commit-detail rows 
 
 Rendered virtual rows should be keyed by absolute row index, not by the current row payload. That keeps a row mounted when it transitions from placeholder data to commit detail data and avoids remount-driven flicker during fast scroll updates.
 
+### Prefetch commit details into the row cache
+
+The commit list should request the adjacent previous or next commit-detail window before the user reaches the active window edge. These lookahead requests should be based on the visible range and should work in both scroll directions.
+
+Lookahead responses must populate only the absolute-index commit detail cache. They must not replace `commits`, `windowOffset`, selection state, or the active visible window as soon as they resolve. When the user later reaches those rows, placeholders can be filled from the cache immediately, and the active window can be promoted through the normal visible-window path without a visible content swap.
+
 ### Suppress stale viewport responses
 
 Fast scrollbar movement can schedule several commit-detail and graph-only window requests before earlier requests finish. The frontend should treat each request class as latest-wins: older responses may complete successfully, but they must not replace the currently visible commit window, graph window, search result, or error state after a newer request has started.
 
 This avoids visible row content jumping back to an older viewport when backend responses complete out of order.
+
+### Render coherent rows during detail replacement
+
+The table must distinguish between two different states: a row whose commit detail is known for its absolute full-history index, and a row whose graph position may be known but whose commit detail is still pending. A placeholder row must never reuse commit text, date, SHA, author name, or author avatar from a previously rendered row with a different absolute index.
+
+Virtualized row reuse and image loading can make this subtle. If a DOM row or cell was previously used for another commit, media-bearing cells such as author avatars must be reset or keyed by the current row identity before the new detail data is available. The preferred behavior is a coherent placeholder row: graph may render if available, the description can show `Loading...`, and author/date/SHA cells remain empty or skeleton-like until matching commit detail for that same absolute index arrives. When detail data arrives, all non-graph cells for that row should transition together from placeholder to commit content.
+
+### Show initial loading inside the commit view
+
+When the repository has commits but the first prepared row window is not ready yet, the commit list area should show a clear loading state centered in the commits view. This is separate from empty-repository messaging: an unborn or truly empty repository still shows the initial-commit empty state, while a repository whose history is being prepared shows loading until either preparation fails or the first bounded window is available.
 
 ## Risks / Trade-offs
 
@@ -107,6 +123,8 @@ This avoids visible row content jumping back to an older viewport when backend r
 - Multiple tabs for the same repository can duplicate work -> Share backend jobs by repository path/history mode and let concurrent frontend callers observe the same cache entry.
 - Memory pressure can grow if several huge repositories are open -> Add bounded cache eviction or clear cache entries when repo tabs close or force-refresh replaces them.
 - Backend search can be slow for very broad queries -> Debounce frontend queries and search lightweight normalized metadata fields, not graph segment payloads.
+- Placeholder/detail replacement can look wrong if virtualized cells retain media or text from a previous row -> Treat placeholder rendering as an explicit row state and key/reset media cells by absolute row identity.
+- Early detail prefetch can waste backend work during large scrollbar jumps -> Deduplicate in-flight prefetch windows and keep prefetch cache-only so it cannot disrupt the current viewport.
 
 ## Migration Plan
 

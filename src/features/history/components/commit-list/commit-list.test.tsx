@@ -1,5 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRepoStore } from "@/features/repository-workspace";
 import CommitList from "./commit-list";
@@ -37,9 +43,12 @@ vi.mock(
     }: {
       data: Array<{ id: string; message: string }>;
       getPlaceholderRow?: (absoluteIndex: number) => {
+        author: string;
+        authorAvatarUrl?: string | null;
         id: string;
         message: string;
         refs: string[];
+        sha: string;
       } | null;
       onVisibleRangeChange?: (range: {
         startIndex: number;
@@ -48,10 +57,12 @@ vi.mock(
       onRowClick?: (row: unknown, index: number) => void;
       selectedRowIndex?: number;
     }) => {
-      const placeholderRow = getPlaceholderRow?.(5_000);
+      const farPlaceholderRow = getPlaceholderRow?.(5_000);
+      const lookaheadPlaceholderRow = getPlaceholderRow?.(2_000);
 
       return (
         <div data-virtualizer-scroll>
+          <span data-testid="active-row-count">{data.length}</span>
           <button
             type="button"
             data-testid="visible-range-bottom"
@@ -63,6 +74,24 @@ vi.mock(
           </button>
           <button
             type="button"
+            data-testid="visible-range-lookahead-bottom"
+            onClick={() =>
+              onVisibleRangeChange?.({ startIndex: 1_500, endIndex: 1_510 })
+            }
+          >
+            visible lookahead bottom
+          </button>
+          <button
+            type="button"
+            data-testid="visible-range-lookahead-top"
+            onClick={() =>
+              onVisibleRangeChange?.({ startIndex: 2_400, endIndex: 2_450 })
+            }
+          >
+            visible lookahead top
+          </button>
+          <button
+            type="button"
             data-testid="visible-range-far"
             onClick={() =>
               onVisibleRangeChange?.({ startIndex: 5_000, endIndex: 5_020 })
@@ -70,9 +99,19 @@ vi.mock(
           >
             visible far
           </button>
-          {placeholderRow ? (
-            <span>
-              {placeholderRow.refs.join(" ")} {placeholderRow.message}
+          {farPlaceholderRow ? (
+            <span
+              data-testid="far-placeholder"
+              data-author={farPlaceholderRow.author}
+              data-avatar={farPlaceholderRow.authorAvatarUrl ?? ""}
+              data-sha={farPlaceholderRow.sha}
+            >
+              {farPlaceholderRow.refs.join(" ")} {farPlaceholderRow.message}
+            </span>
+          ) : null}
+          {lookaheadPlaceholderRow ? (
+            <span data-testid="lookahead-placeholder">
+              {lookaheadPlaceholderRow.message}
             </span>
           ) : null}
           {data.map((row, index) => (
@@ -211,6 +250,23 @@ describe("CommitList", () => {
         "Stage files and create the initial commit to start repository history.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("renders centered loading while the first commit window is unavailable", async () => {
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    prepareCommitHistoryMock.mockReturnValue(new Promise(() => undefined));
+
+    renderCommitList();
+
+    expect(await screen.findByText("Loading commits...")).toBeInTheDocument();
   });
 
   it("uses backend search to navigate to an off-window commit match", async () => {
@@ -373,6 +429,155 @@ describe("CommitList", () => {
     });
   });
 
+  it("prefetches the next commit-detail window without replacing active rows", async () => {
+    const firstWindowCommits = Array.from({ length: 2_000 }, (_, index) => ({
+      sha: `newest-sha-${index}`,
+      message:
+        index === 0
+          ? "Newest visible commit"
+          : `Loaded visible commit ${index}`,
+      author: "Ada",
+      author_initial: "A",
+      date: 1_700_000_000 - index,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    }));
+    const prefetchedCommit = {
+      sha: "prefetched-sha",
+      message: "Prefetched commit",
+      author: "Grace",
+      author_initial: "G",
+      date: 1_690_000_000,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    };
+
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    getCommitHistoryWindowMock
+      .mockResolvedValueOnce({
+        commits: firstWindowCommits,
+        offset: 0,
+        limit: 2_000,
+        totalCount: 4_000,
+        hasPrevious: false,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        commits: [prefetchedCommit],
+        offset: 2_000,
+        limit: 2_000,
+        totalCount: 4_000,
+        hasPrevious: true,
+        hasMore: false,
+      });
+
+    renderCommitList();
+
+    expect(await screen.findByText("Newest visible commit")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("visible-range-lookahead-bottom"));
+
+    await waitFor(() =>
+      expect(getCommitHistoryWindowMock).toHaveBeenLastCalledWith({
+        path: "/repo",
+        offset: 2_000,
+        limit: 2_000,
+        anchorSha: undefined,
+        anchorRowIndex: undefined,
+      }),
+    );
+    expect(screen.getByTestId("active-row-count")).toHaveTextContent("2000");
+    expect(screen.getByTestId("lookahead-placeholder")).toHaveTextContent(
+      "Prefetched commit",
+    );
+  });
+
+  it("prefetches the previous commit-detail window without replacing active rows", async () => {
+    const activeWindowCommits = Array.from({ length: 2_000 }, (_, index) => ({
+      sha: `active-sha-${index}`,
+      message:
+        index === 0
+          ? "Active visible commit"
+          : `Loaded active commit ${index}`,
+      author: "Ada",
+      author_initial: "A",
+      date: 1_700_000_000 - index,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    }));
+    const prefetchedCommit = {
+      sha: "previous-prefetched-sha",
+      message: "Previous prefetched commit",
+      author: "Grace",
+      author_initial: "G",
+      date: 1_690_000_000,
+      current_branch: "main",
+      source_branch: "main",
+      commit_history: [],
+      files: 1,
+    };
+
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    getCommitHistoryWindowMock
+      .mockResolvedValueOnce({
+        commits: activeWindowCommits,
+        offset: 2_000,
+        limit: 2_000,
+        totalCount: 6_000,
+        hasPrevious: true,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        commits: [prefetchedCommit],
+        offset: 0,
+        limit: 2_000,
+        totalCount: 6_000,
+        hasPrevious: false,
+        hasMore: true,
+      });
+
+    renderCommitList();
+
+    expect(
+      await screen.findByRole("button", { name: "Active visible commit" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("visible-range-lookahead-top"));
+
+    await waitFor(() =>
+      expect(getCommitHistoryWindowMock).toHaveBeenLastCalledWith({
+        path: "/repo",
+        offset: 0,
+        limit: 2_000,
+        anchorSha: undefined,
+        anchorRowIndex: undefined,
+      }),
+    );
+    expect(screen.getByTestId("active-row-count")).toHaveTextContent("2000");
+  });
+
   it("renders loading placeholders while graph viewport data loads separately", async () => {
     const firstWindowCommits = Array.from({ length: 2_000 }, (_, index) => ({
       sha: `newest-sha-${index}`,
@@ -425,7 +630,19 @@ describe("CommitList", () => {
     renderCommitList();
 
     expect(await screen.findByText("Newest visible commit")).toBeInTheDocument();
-    expect(screen.getByText(/Loading\.\.\./)).toBeInTheDocument();
+    expect(screen.getAllByText(/Loading\.\.\./).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("far-placeholder")).toHaveAttribute(
+      "data-author",
+      "",
+    );
+    expect(screen.getByTestId("far-placeholder")).toHaveAttribute(
+      "data-avatar",
+      "",
+    );
+    expect(screen.getByTestId("far-placeholder")).toHaveAttribute(
+      "data-sha",
+      "",
+    );
 
     fireEvent.click(screen.getByTestId("visible-range-far"));
 

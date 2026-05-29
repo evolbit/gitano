@@ -6,6 +6,7 @@ The system SHALL prepare large commit histories and their graph metadata without
 #### Scenario: User opens a repository with a very large commit history
 - **WHEN** the user opens a repository whose history preparation takes longer than an immediate response
 - **THEN** the commit list MUST show a loading state
+- **AND** the loading state MUST be visible inside the commits view before the first bounded row window is available
 - **AND** the repository workspace MUST remain responsive to tab switching, toolbar interactions, and other already-mounted panels while history preparation continues
 
 #### Scenario: History preparation fails
@@ -81,11 +82,30 @@ The system SHALL preserve existing commit list interactions while using backend-
 - **THEN** the frontend MUST request a bounded backend row window around the visible full-history row range
 - **AND** the table scrollbar MUST continue to represent the full prepared history rather than resetting to the loaded window
 
+#### Scenario: User scrolls toward the next or previous commit-detail window
+- **WHEN** the visible full-history range approaches either edge of the active loaded commit-detail window
+- **THEN** the frontend MUST prefetch the adjacent commit-detail window for that scroll direction before the edge is reached
+- **AND** the prefetch response MUST populate the absolute-index row cache without replacing the active visible window
+- **AND** repeated lookahead requests for the same adjacent window SHOULD be deduplicated while in flight or already cached
+
 #### Scenario: User scrolls faster than commit details can load
 - **WHEN** the visible full-history range has graph data but commit row details are not loaded yet
 - **THEN** the graph column MUST render available graph segments for those rows
 - **AND** non-graph commit cells MUST show a loading placeholder instead of an empty row
+- **AND** author, date, SHA, and avatar cells MUST NOT show stale data from a previously rendered commit row
 - **AND** the graph column MUST remain a normal resizable table column
+
+#### Scenario: Placeholder row becomes a loaded commit row
+- **WHEN** a virtualized row is currently rendering a placeholder for an absolute full-history row index
+- **AND** matching commit detail data arrives for that same absolute row index
+- **THEN** the row MUST replace placeholder cells with the matching commit cells coherently
+- **AND** media-bearing cells such as author avatars MUST be keyed or reset so they do not briefly display an avatar from another commit
+
+#### Scenario: Virtualized row is reused for a different full-history index
+- **WHEN** the table recycles a rendered row or cell for a different absolute full-history row index
+- **AND** commit detail data for the new absolute row index is not available yet
+- **THEN** the row MUST render only the placeholder state for the new absolute row index
+- **AND** it MUST NOT retain commit text, author details, date, SHA, refs, or avatar image from the prior row identity
 
 #### Scenario: User scrolls near recently loaded rows
 - **WHEN** commit details were already fetched for a full-history row index
