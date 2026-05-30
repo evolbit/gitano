@@ -4,6 +4,8 @@ export const TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT = "80vh";
 export const TOOLBAR_SELECTOR_DROPDOWN_PANEL_WIDTH = 420;
 export const GIT_ACTION_SUCCESS_SNACKBAR_MS = 3200;
 export const GIT_ACTION_ERROR_SNACKBAR_MS = 8000;
+export const DETACHED_HEAD_LABEL = "Detached HEAD";
+export const NO_BRANCH_LABEL = "No branch";
 export const TOOLBAR_DROPDOWN_ITEM_CLASS =
   "px-4 py-2 transition-colors hover:!bg-zinc-800 focus:!bg-zinc-800 data-[hovered=true]:!bg-zinc-800";
 

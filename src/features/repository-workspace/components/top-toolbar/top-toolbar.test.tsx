@@ -6,6 +6,12 @@ import { useGitActionsStore } from "@/features/repository-workspace/stores/git-a
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import { useWorkspaceUiStore } from "@/features/repository-workspace/stores/workspace-ui-store";
 import {
+  getBranches,
+  getCurrentBranch,
+  getWorktrees,
+} from "@/shared/api/git/branches";
+import { getRepositoryState } from "@/shared/api/repositories";
+import {
   DEFAULT_REPOSITORY_SURFACE_STATE,
   REPOSITORY_SURFACES,
   useRepositorySurfaceStore,
@@ -56,6 +62,11 @@ vi.mock("@/shared/api/repositories", () => ({
   }),
 }));
 
+const getBranchesMock = vi.mocked(getBranches);
+const getCurrentBranchMock = vi.mocked(getCurrentBranch);
+const getWorktreesMock = vi.mocked(getWorktrees);
+const getRepositoryStateMock = vi.mocked(getRepositoryState);
+
 function renderToolbar() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -79,6 +90,22 @@ describe("TopToolbar", () => {
     fetchAllRemotesMock.mockResolvedValue(undefined);
     pushRepositoryMock.mockReset();
     pushRepositoryMock.mockResolvedValue(undefined);
+    getBranchesMock.mockReset();
+    getBranchesMock.mockResolvedValue([]);
+    getCurrentBranchMock.mockReset();
+    getCurrentBranchMock.mockResolvedValue("main");
+    getWorktreesMock.mockReset();
+    getWorktreesMock.mockResolvedValue([]);
+    getRepositoryStateMock.mockReset();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: null,
+      headStatus: "unknown",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
     integrationApiMocks.getProviderPullRequestCount.mockReset();
     integrationApiMocks.getProviderPullRequestCount.mockResolvedValue({
       repository: { owner: "acme", name: "app" },
@@ -159,6 +186,52 @@ describe("TopToolbar", () => {
         "/repo",
         "push-branch-and-tags",
       );
+    });
+  });
+
+  it("shows detached HEAD instead of the first branch for detached worktrees", async () => {
+    getBranchesMock.mockResolvedValue(["codex/test-remote2", "main"]);
+    getCurrentBranchMock.mockResolvedValue("Detached HEAD");
+    getWorktreesMock.mockResolvedValue([
+      {
+        path: "/repo",
+        name: "repo",
+        branch: null,
+        head: "a557509c78608700fd2b1c616b2c658260048dc8",
+        isCurrent: true,
+        isMain: false,
+        isBare: false,
+        isDetached: true,
+      },
+    ]);
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: null,
+      headStatus: "detached",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: true,
+    });
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          repoPath: "/repo",
+          selectedBranch: "codex/test-remote2",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    renderToolbar();
+
+    expect(screen.queryByText("codex/test-remote2")).not.toBeInTheDocument();
+    expect(await screen.findByText("Detached HEAD @ a557509")).toBeInTheDocument();
+    expect(screen.queryByText("codex/test-remote2")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(useRepoStore.getState().tabs[0]?.selectedBranch).toBeNull();
     });
   });
 

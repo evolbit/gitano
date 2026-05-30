@@ -74,4 +74,29 @@ describe("toolbar dropdown components", () => {
     expect(onBranchClick).toHaveBeenCalledOnce();
     expect(onWorktreeClick).toHaveBeenCalledOnce();
   });
+
+  it("shows the detached HEAD commit for detached worktree rows", () => {
+    renderMenu(
+      <ToolbarDropdownBody
+        searchValue=""
+        onSearchChange={vi.fn()}
+      >
+        <WorktreeDropdownItem
+          worktree={{
+            path: "/repo/ef7f",
+            name: "ef7f",
+            branch: null,
+            head: "a557509c78608700fd2b1c616b2c658260048dc8",
+            isCurrent: false,
+            isMain: false,
+            isBare: false,
+            isDetached: true,
+          }}
+          onClick={vi.fn()}
+        />
+      </ToolbarDropdownBody>,
+    );
+
+    expect(screen.getByText(/Detached HEAD @ a557509/)).toBeInTheDocument();
+  });
 });

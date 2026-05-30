@@ -188,6 +188,48 @@ describe("WorkspacesPanel", () => {
     expect(screen.queryByText("Use Worktree")).not.toBeInTheDocument();
   });
 
+  it("clears a stale selected branch for detached current worktrees", async () => {
+    getWorktreesMock.mockResolvedValue([
+      {
+        path: "/repo",
+        name: "ef7f",
+        branch: null,
+        head: "a557509c78608700fd2b1c616b2c658260048dc8",
+        isCurrent: true,
+        isMain: false,
+        isBare: false,
+        isDetached: true,
+      },
+    ]);
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: null,
+      headStatus: "detached",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: true,
+    });
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "repo-1",
+          repoPath: "/repo",
+          selectedBranch: "codex/test-remote2",
+          selectedCommit,
+        },
+      ],
+      activeTabId: "repo-1",
+    });
+
+    renderPanel();
+
+    expect(await screen.findByText(/Detached HEAD @ a557509/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useRepoStore.getState().tabs[0]?.selectedBranch).toBeNull();
+    });
+  });
+
   it("disables Use Worktree for the current worktree without changing delete rules", async () => {
     const user = userEvent.setup();
     renderPanel();

@@ -10,7 +10,7 @@ import {
   TOOLBAR_DROPDOWN_RESULTS_MAX_HEIGHT,
 } from "../../config";
 import type { ToolbarDropdownProps } from "../../types";
-import { getWorktreeDisplayName } from "../../utils";
+import { getDetachedHeadLabel, getWorktreeDisplayName } from "../../utils";
 
 export const ToolbarDropdownBody: React.FC<ToolbarDropdownProps> = ({
   searchValue,
@@ -121,7 +121,7 @@ export const WorktreeDropdownItem: React.FC<{
           {getWorktreeDisplayName(worktree)}
         </span>
         <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-400">
-          {worktree.branch ?? "Detached HEAD"} - {worktree.path}
+          {worktree.branch ?? getDetachedHeadLabel(worktree.head)} - {worktree.path}
         </span>
       </span>
     </div>

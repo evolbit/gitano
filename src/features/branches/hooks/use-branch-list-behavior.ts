@@ -178,7 +178,12 @@ export function useBranchListBehavior() {
     useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const branchRefreshRequestRef = useRef(0);
-  const requiresInitialCommit = repositoryState?.hasCommits === false;
+  const activeRepositoryState =
+    repoPath && repositoryState?.path === repoPath ? repositoryState : null;
+  const effectiveSelectedBranch = activeRepositoryState?.isDetached
+    ? null
+    : (activeRepositoryState?.branch ?? selectedBranch);
+  const requiresInitialCommit = activeRepositoryState?.hasCommits === false;
   const activeBranchListState =
     branchListState.repoPath === (repoPath ?? null)
       ? branchListState
@@ -283,8 +288,14 @@ export function useBranchListBehavior() {
   }, [repoPath]);
 
   useEffect(() => {
-    setSelectedRowBranch(selectedBranch ?? null);
-  }, [repoPath, selectedBranch]);
+    setSelectedRowBranch(effectiveSelectedBranch ?? null);
+  }, [effectiveSelectedBranch, repoPath]);
+
+  useEffect(() => {
+    if (!activeTabId || selectedBranch === effectiveSelectedBranch) return;
+
+    setTabBranch(activeTabId, effectiveSelectedBranch ?? null);
+  }, [activeTabId, effectiveSelectedBranch, selectedBranch, setTabBranch]);
 
   useEffect(() => {
     const handleRepoRefsRefresh = () => {
@@ -515,7 +526,12 @@ export function useBranchListBehavior() {
       failureTitle: string,
       selectedRowAfter: string | null,
     ) => {
-      if (!repoPath || !selectedBranch || pendingGitAction || branchActionLoading) {
+      if (
+        !repoPath ||
+        !effectiveSelectedBranch ||
+        pendingGitAction ||
+        branchActionLoading
+      ) {
         return;
       }
 
@@ -525,7 +541,7 @@ export function useBranchListBehavior() {
           repoPath,
           command,
           targetBranch,
-          selectedBranch,
+          effectiveSelectedBranch,
         );
         setGitActionNotice({
           kind: "success",
@@ -543,11 +559,11 @@ export function useBranchListBehavior() {
     },
     [
       branchActionLoading,
+      effectiveSelectedBranch,
       notifyError,
       pendingGitAction,
       refreshBranchState,
       repoPath,
-      selectedBranch,
       setGitActionNotice,
     ],
   );
@@ -802,7 +818,7 @@ export function useBranchListBehavior() {
 
   return {
     repoPath,
-    selectedBranch,
+    selectedBranch: effectiveSelectedBranch,
     branchTreeExpanded,
     type: branchType,
     branchRefByName,

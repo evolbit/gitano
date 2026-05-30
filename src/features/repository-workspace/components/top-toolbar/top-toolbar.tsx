@@ -56,9 +56,11 @@ import {
 } from "./config";
 import {
   getCreateBaseOptions,
+  getCurrentBranchLabel,
   getPathBasename,
   getPullStrategyLabel,
   getPushModeLabel,
+  getResolvedCurrentBranch,
   getWorktreeDisplayName,
   getWorktreeTargetLabel,
   waitForNextFrame,
@@ -70,6 +72,13 @@ import {
   ToolbarDropdownItem,
   WorktreeDropdownItem,
 } from "./components/toolbar-dropdown/toolbar-dropdown";
+
+type CurrentBranchState = {
+  repoPath: string;
+  branch: string | null;
+  isDetached: boolean;
+  status: "ready" | "error";
+};
 
 const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [workspaceSearch, setWorkspaceSearch] = useState("");
@@ -125,8 +134,16 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   const [worktreesError, setWorktreesError] = useState<string | null>(null);
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
+  const [currentBranchState, setCurrentBranchState] =
+    useState<CurrentBranchState | null>(null);
   const pullRequestCount = usePullRequestCount(repoPath);
-  const requiresInitialCommit = repositoryState?.hasCommits === false;
+  const activeRepositoryState =
+    repoPath && repositoryState?.path === repoPath ? repositoryState : null;
+  const activeCurrentBranchState =
+    repoPath && currentBranchState?.repoPath === repoPath
+      ? currentBranchState
+      : null;
+  const requiresInitialCommit = activeRepositoryState?.hasCommits === false;
   const warmPullRequests = () => {
     if (!repoPath) return;
 
@@ -200,17 +217,45 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
   }, [repoPath, branchesRefreshNonce]);
 
   useEffect(() => {
-    if (!repoPath || !activeTabId) return;
+    if (!repoPath) {
+      setCurrentBranchState(null);
+      return;
+    }
 
     let cancelled = false;
+    if (activeTabId) {
+      setTabBranch(activeTabId, null);
+    }
+    setCurrentBranchState(null);
 
     getCurrentBranch(repoPath)
       .then((branch) => {
         if (cancelled) return;
-        setTabBranch(activeTabId, branch === "Detached HEAD" ? null : branch);
+        const isDetached = branch === "Detached HEAD";
+        const nextBranch = isDetached ? null : branch;
+
+        setCurrentBranchState({
+          repoPath,
+          branch: nextBranch,
+          isDetached,
+          status: "ready",
+        });
+
+        if (activeTabId) {
+          setTabBranch(activeTabId, nextBranch);
+        }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (cancelled) return;
+
+        setCurrentBranchState({
+          repoPath,
+          branch: null,
+          isDetached: false,
+          status: "error",
+        });
+
+        if (activeTabId) {
           setTabBranch(activeTabId, null);
         }
       });
@@ -235,15 +280,39 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
       .includes(workspaceSearch.toLowerCase()),
   );
 
-  const resolvedBranch =
-    selectedBranch ||
-    repositoryState?.branch ||
-    (branchesLoading ? null : branches[0] || null);
   const currentWorktree =
-    worktrees.find((worktree) => worktree.isCurrent) ?? null;
+    worktrees.find((worktree) => worktree.path === repoPath) ??
+    worktrees.find((worktree) => worktree.isCurrent) ??
+    null;
+  const isBranchStateLoading =
+    Boolean(repoPath) &&
+    !activeCurrentBranchState &&
+    !activeRepositoryState &&
+    !currentWorktree;
+  const resolvedBranch = getResolvedCurrentBranch({
+    currentBranch: activeCurrentBranchState?.branch,
+    isDetached: activeCurrentBranchState?.isDetached ?? false,
+    repositoryState: activeRepositoryState,
+    currentWorktree,
+  });
+  const currentBranchLabel = getCurrentBranchLabel({
+    currentBranch: activeCurrentBranchState?.branch,
+    isDetached: activeCurrentBranchState?.isDetached ?? false,
+    repositoryState: activeRepositoryState,
+    currentWorktree,
+    isLoading: isBranchStateLoading,
+  });
   const createBaseOptions = requiresInitialCommit
     ? []
     : getCreateBaseOptions(resolvedBranch);
+
+  useEffect(() => {
+    if (!activeTabId || !selectedBranch || resolvedBranch === selectedBranch) {
+      return;
+    }
+
+    setTabBranch(activeTabId, resolvedBranch);
+  }, [activeTabId, resolvedBranch, selectedBranch, setTabBranch]);
 
   const initialCommitTooltip = "Create the initial commit before using this action";
   const pushTooltip = requiresInitialCommit
@@ -731,8 +800,7 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
                 <Text
                   size="sm"
                   className="max-w-[240px] truncate text-sm text-zinc-400 font-medium">
-                  {selectedBranch ||
-                    (branchesLoading ? "Loading..." : branches[0] || "No branch")}
+                  {currentBranchLabel}
                 </Text>
                 <HiChevronDown
                   className="text-zinc-400 h-4 w-4"

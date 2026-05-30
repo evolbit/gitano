@@ -80,6 +80,17 @@ const WORKTREE_CREATE_MENU_ITEM_CLASS =
 const WORKTREE_TREE_INDENT_STEP = 18;
 const WORKTREE_GROUP_BASE_INDENT = 10;
 const WORKTREE_ROW_BASE_INDENT = 28;
+const DETACHED_HEAD_LABEL = "Detached HEAD";
+const SHORT_COMMIT_SHA_LENGTH = 7;
+
+function getWorktreeBranchLabel(worktree: GitWorktree) {
+  if (worktree.branch) return worktree.branch;
+  if (worktree.head) {
+    return `${DETACHED_HEAD_LABEL} @ ${worktree.head.slice(0, SHORT_COMMIT_SHA_LENGTH)}`;
+  }
+
+  return DETACHED_HEAD_LABEL;
+}
 
 export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const activeTabId = useRepoStore((s) => s.activeTabId);
@@ -124,14 +135,22 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const requiresInitialCommit = repositoryState?.hasCommits === false;
+  const activeTabBranch =
+    activeTab?.repoPath === repoPath ? activeTab.selectedBranch : null;
+  const activeRepositoryState =
+    repositoryState?.path === repoPath ? repositoryState : null;
+  const currentWorktree =
+    worktrees.find((worktree) => worktree.isCurrent) ?? null;
+  const requiresInitialCommit = activeRepositoryState?.hasCommits === false;
 
   const currentBranch =
-    activeTab?.selectedBranch ??
-    worktrees.find((worktree) => worktree.isCurrent)?.branch ??
-    null;
-  const currentWorktreePath =
-    worktrees.find((worktree) => worktree.isCurrent)?.path ?? null;
+    activeRepositoryState?.isDetached || currentWorktree?.isDetached
+      ? null
+      : (activeRepositoryState?.branch ??
+        currentWorktree?.branch ??
+        activeTabBranch ??
+        null);
+  const currentWorktreePath = currentWorktree?.path ?? null;
 
   const createBaseOptions = useMemo(
     () => getCreateBaseOptions(currentBranch),
@@ -231,6 +250,25 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
     window.addEventListener("mousedown", handleClick);
     return () => window.removeEventListener("mousedown", handleClick);
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (
+      !activeTabId ||
+      activeTab?.repoPath !== repoPath ||
+      activeTab.selectedBranch === currentBranch
+    ) {
+      return;
+    }
+
+    updateTab(activeTabId, { selectedBranch: currentBranch });
+  }, [
+    activeTab?.repoPath,
+    activeTab?.selectedBranch,
+    activeTabId,
+    currentBranch,
+    repoPath,
+    updateTab,
+  ]);
 
   useLayoutEffect(() => {
     if (!contextMenu || !menuRef.current || !menuPos) return;
@@ -553,7 +591,7 @@ export function WorkspacesPanel({ repoPath }: WorkspacesPanelProps) {
                   {getWorktreeDisplayName(worktree)}
                 </span>
                 <span className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground">
-                  {worktree.branch ?? "Detached HEAD"} - {worktree.path}
+                  {getWorktreeBranchLabel(worktree)} - {worktree.path}
                 </span>
               </span>
               <button
