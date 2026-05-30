@@ -1,6 +1,7 @@
 import { Tabs } from "@mantine/core";
 import { useEffect, useState, type MouseEvent } from "react";
 import HomePage from "./home-page/home-page";
+import { useActiveRepoRemotePolling } from "@/app/hooks/use-active-repo-remote-polling";
 import { useRepoRealtimeEvents } from "@/app/hooks/use-repo-realtime-events";
 import { SettingsWindow } from "@/features/settings";
 import { RepoTabLayout, TabBar } from "@/features/repository-workspace";
@@ -14,6 +15,7 @@ const HOME_TAB = {
 
 export function AppShell() {
   useRepoRealtimeEvents();
+  useActiveRepoRemotePolling();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const tabs = useRepoStore((s) => s.tabs);

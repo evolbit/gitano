@@ -31,6 +31,10 @@ describe("BranchListHeader", () => {
     expect(onSearchChange).toHaveBeenCalledWith("feature");
     expect(onTypeChange).toHaveBeenCalledWith("remote");
     expect(onCreateBranch).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Local branches" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("disables the create action when branch creation is unavailable", () => {

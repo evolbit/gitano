@@ -24,3 +24,40 @@ pub fn git_commit(path: String, message: String, amend: bool) -> Result<(), Stri
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::{init_repo, run_git, write_file};
+    use std::path::Path;
+
+    #[test]
+    fn git_commit_preserves_multiline_message_body() {
+        let repo = init_repo();
+        write_file(repo.path(), "file.txt", "hello\n");
+        run_git(repo.path(), &["add", "file.txt"]);
+
+        git_commit(
+            repo.path().to_string_lossy().to_string(),
+            "Subject line\n\nBody line".to_string(),
+            false,
+        )
+        .expect("commit should succeed");
+
+        assert_eq!(head_message(repo.path()), "Subject line\n\nBody line");
+    }
+
+    fn head_message(repo_path: &Path) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["log", "-1", "--pretty=%B"])
+            .output()
+            .expect("git log should run");
+
+        assert!(output.status.success(), "git log should succeed");
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end_matches('\n')
+            .to_string()
+    }
+}

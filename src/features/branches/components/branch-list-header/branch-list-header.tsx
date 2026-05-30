@@ -1,10 +1,10 @@
-import type { BranchType } from "../../types";
 import {
   IconCloud,
-  IconDeviceFloppy,
+  IconDeviceDesktop,
   IconPlus,
   IconSearch,
 } from "@/shared/components/icons/icons";
+import type { BranchType } from "../../types";
 
 type BranchListHeaderProps = {
   search: string;
@@ -49,8 +49,9 @@ export function BranchListHeader({
             onClick={() => onTypeChange("local")}
             title="Local branches"
             aria-label="Local branches"
+            aria-pressed={type === "local"}
           >
-            <IconDeviceFloppy size={15} />
+            <IconDeviceDesktop size={15} />
           </button>
           <button
             type="button"
@@ -62,6 +63,7 @@ export function BranchListHeader({
             onClick={() => onTypeChange("remote")}
             title="Remote branches"
             aria-label="Remote branches"
+            aria-pressed={type === "remote"}
           >
             <IconCloud size={15} />
           </button>

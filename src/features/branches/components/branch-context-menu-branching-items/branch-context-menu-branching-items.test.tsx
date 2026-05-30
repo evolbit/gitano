@@ -18,8 +18,7 @@ describe("BranchContextMenuBranchingItems", () => {
     render(
       <BranchContextMenuBranchingItems
         node={node}
-        branchName="feature/auth"
-        type="local"
+        baseRef="feature/auth"
         isBranchNode
         selectedBranch="main"
         onBeginCreateBranch={vi.fn()}
@@ -45,8 +44,7 @@ describe("BranchContextMenuBranchingItems", () => {
     render(
       <BranchContextMenuBranchingItems
         node={node}
-        branchName="feature/auth"
-        type="local"
+        baseRef="feature/auth"
         isBranchNode
         selectedBranch="main"
         onBeginCreateBranch={onBeginCreateBranch}

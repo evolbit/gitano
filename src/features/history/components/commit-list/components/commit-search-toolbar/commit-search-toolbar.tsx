@@ -1,5 +1,4 @@
 import { Tooltip } from "@mantine/core";
-import InputText from "@/shared/components/form/input-text/input-text";
 import { IconChevronRight, IconSearch } from "@/shared/components/icons/icons";
 
 type CommitSearchToolbarProps = {
@@ -22,20 +21,23 @@ export function CommitSearchToolbar({
   search,
 }: CommitSearchToolbarProps) {
   return (
-    <div className="flex items-center pb-4">
-      <InputText
-        value={search}
-        onChange={(event) => onSearchChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            onNavigate(1);
-          }
-        }}
-        placeholder="Search commits..."
-        className="flex-1 bg-zinc-800 rounded-lg px-3 h-9 mr-4"
-        leftIcon={<IconSearch size={18} className="text-zinc-400" />}
-      />
+    <div className="flex items-center gap-2 pb-4">
+      <div className="relative min-w-0 flex-1">
+        <input
+          type="text"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onNavigate(1);
+            }
+          }}
+          placeholder="Search commits..."
+          className="h-8 w-full rounded border border-border bg-background px-3 pl-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+        />
+        <IconSearch className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+      </div>
       <div className="flex items-center gap-2 text-sm text-zinc-400">
         <Tooltip
           label={

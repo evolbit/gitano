@@ -150,6 +150,39 @@ function CommentBody({
   );
 }
 
+function getDiffHunkLineClass(line: string) {
+  const baseClass = "block px-4";
+
+  if (line.startsWith("@@")) {
+    return `${baseClass} bg-background-emphasis text-zinc-400`;
+  }
+
+  if (line.startsWith("+") && !line.startsWith("+++")) {
+    return `${baseClass} bg-emerald-950/50 text-emerald-200`;
+  }
+
+  if (line.startsWith("-") && !line.startsWith("---")) {
+    return `${baseClass} bg-red-950/50 text-red-200`;
+  }
+
+  return `${baseClass} text-zinc-300`;
+}
+
+function DiffHunkPreview({ diffHunk }: { diffHunk: string }) {
+  return (
+    <pre
+      data-testid="pull-request-diff-hunk"
+      className="max-h-44 overflow-auto border-b border-border bg-background py-3 font-mono text-[11px] leading-5"
+    >
+      {diffHunk.split("\n").map((line, index) => (
+        <span key={`${index}-${line}`} className={getDiffHunkLineClass(line)}>
+          {line || " "}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
 function CommentCard({
   thread,
   pendingCommentEdits,
@@ -185,9 +218,7 @@ function CommentCard({
           </span>
         </header>
         {root.diffHunk ? (
-          <pre className="max-h-44 overflow-auto border-b border-border bg-background px-4 py-3 font-mono text-[11px] leading-5 text-zinc-400">
-            {root.diffHunk}
-          </pre>
+          <DiffHunkPreview diffHunk={root.diffHunk} />
         ) : null}
         <div className="p-4">
           <CommentBody

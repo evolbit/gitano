@@ -1,8 +1,14 @@
 import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import type { GitTagRef } from "@/shared/types/git";
-import { IconChevronDown, IconChevronRight, IconDotsVertical, IconFolder, IconTag } from "@/shared/components/icons/icons";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconDotsVertical,
+  IconFolder,
+  IconTag,
+} from "@/shared/components/icons/icons";
 import { classNames } from "@/shared/ui";
-import { TagStatusChip } from "./tag-status-chip";
+import { TagPresenceIcons } from "./tag-status-chip";
 
 type TagTreeProps = {
   nodes: BranchTreeNode[];
@@ -127,7 +133,7 @@ export function TagTree({
               <IconTag size={17} className="text-slate-300" />
             </span>
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
-            {tagRef ? <TagStatusChip tag={tagRef} /> : null}
+            <TagPresenceIcons tag={tagRef} />
             <button
               className={classNames(
                 "ml-auto rounded p-1 transition-colors hover:bg-zinc-700",

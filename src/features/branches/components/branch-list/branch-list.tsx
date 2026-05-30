@@ -62,9 +62,9 @@ export function BranchList() {
           <BranchTree
             nodes={branchList.grouped}
             branchTreeExpanded={branchList.branchTreeExpanded}
+            branchRefByName={branchList.branchRefByName}
             selectedBranch={branchList.selectedBranch}
             selectedRowBranch={branchList.selectedRowBranch}
-            type={branchList.type}
             isRowActionsVisible={branchList.isRowActionsVisible}
             onHoverRow={branchList.setHoveredRowKey}
             onToggleGroup={branchList.toggleGroup}
@@ -79,7 +79,7 @@ export function BranchList() {
             menuPos={branchList.menuPos}
             menuRef={branchList.menuRef}
             selectedBranch={branchList.selectedBranch}
-            type={branchList.type}
+            branchRefByName={branchList.branchRefByName}
             creatingWorktree={branchList.creatingWorktree}
             onCloseContextMenu={branchList.closeContextMenu}
             onBeginCreateBranch={branchList.beginCreateBranch}

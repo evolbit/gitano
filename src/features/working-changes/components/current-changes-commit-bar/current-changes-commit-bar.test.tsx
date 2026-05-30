@@ -1,6 +1,7 @@
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -238,6 +239,93 @@ describe("CurrentChangesCommitBar", () => {
     expect(screen.getByPlaceholderText("Enter commit message")).toHaveValue(
       "Add local AI foundation",
     );
+  });
+
+  it("keeps multiline commit bodies and commits with the keyboard shortcut", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    hasStagedChangesMock.mockResolvedValue(true);
+    commitStagedChangesMock.mockResolvedValue(undefined);
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    const textarea = screen.getByPlaceholderText("Enter commit message");
+    await user.type(textarea, "Add branch polish{enter}{enter}Body details");
+
+    expect(commitStagedChangesMock).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue("Add branch polish\n\nBody details");
+
+    await user.keyboard("{Control>}{Enter}{/Control}");
+
+    await waitFor(() => {
+      expect(commitStagedChangesMock).toHaveBeenCalledWith(
+        "/repo",
+        "Add branch polish\n\nBody details",
+        false,
+      );
+    });
+  });
+
+  it("warns only when the commit subject line is too long", () => {
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    const textarea = screen.getByPlaceholderText("Enter commit message");
+    fireEvent.change(textarea, {
+      target: { value: `${"a".repeat(73)}\nbody` },
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "First line is 73 characters",
+    );
+
+    fireEvent.change(textarea, {
+      target: { value: `Short subject\n${"b".repeat(100)}` },
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("commits and pushes with the push keyboard shortcut", async () => {
+    const user = userEvent.setup();
+    getRepositoryStateMock.mockResolvedValue({
+      path: "/repo",
+      isValid: true,
+      branch: "main",
+      headStatus: "normal",
+      hasCommits: true,
+      isUnborn: false,
+      isDetached: false,
+    });
+    hasStagedChangesMock.mockResolvedValue(true);
+    commitStagedChangesMock.mockResolvedValue(undefined);
+    pushRepositoryMock.mockResolvedValue(undefined);
+
+    render(<CurrentChangesCommitBar repoPath="/repo" />);
+
+    await user.type(screen.getByPlaceholderText("Enter commit message"), "Ship");
+    await user.keyboard("{Control>}{Shift>}{Enter}{/Shift}{/Control}");
+
+    await waitFor(() => {
+      expect(pushRepositoryMock).toHaveBeenCalledWith("/repo");
+    });
   });
 
   it("generates a commit message with the global external agent engine", async () => {

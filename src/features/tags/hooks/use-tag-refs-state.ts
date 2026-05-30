@@ -12,6 +12,7 @@ import {
 } from "@/shared/api/git/tags";
 import { groupNames } from "@/shared/lib/tree/branch-tree";
 import type { GitTagRef } from "@/shared/types/git";
+import type { RefPresenceFilter } from "@/features/repository-workspace";
 import {
   mergeTagRefs,
   splitTagRefsByLocation,
@@ -25,7 +26,18 @@ function getErrorMessage(error: unknown) {
   return error ? String(error) : null;
 }
 
-export function useTagRefsState(repoPath: string, search: string) {
+function hasTagPresence(tag: GitTagRef, filter: RefPresenceFilter) {
+  return Boolean(
+    (filter.local && tag.localObjectId) ||
+      (filter.remote && tag.originObjectId),
+  );
+}
+
+export function useTagRefsState(
+  repoPath: string,
+  search: string,
+  presenceFilter: RefPresenceFilter,
+) {
   const queryClient = useQueryClient();
   const localTagsQuery = useQuery({
     queryKey: tagRefsQueryKeys.local(repoPath),
@@ -90,9 +102,14 @@ export function useTagRefsState(repoPath: string, search: string) {
   );
   const filteredTagRefs = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
-    if (!normalizedSearch) return tagRefs;
-    return tagRefs.filter((tag) => tag.name.toLowerCase().includes(normalizedSearch));
-  }, [search, tagRefs]);
+    return tagRefs
+      .filter((tag) => hasTagPresence(tag, presenceFilter))
+      .filter((tag) =>
+        normalizedSearch
+          ? tag.name.toLowerCase().includes(normalizedSearch)
+          : true,
+      );
+  }, [presenceFilter, search, tagRefs]);
   const groupedTags = useMemo(
     () => groupNames(filteredTagRefs.map((tag) => tag.name)),
     [filteredTagRefs],

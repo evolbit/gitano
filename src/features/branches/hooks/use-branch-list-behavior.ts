@@ -8,13 +8,15 @@ import {
 } from "react";
 import { APP_EVENTS } from "@/shared/config/events";
 import { getRepositoryState } from "@/shared/api/repositories";
-import type { RepositoryState } from "@/shared/types/git";
+import type { GitBranchRef, RepositoryState } from "@/shared/types/git";
 import { useGitActionsStore } from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace";
 import {
+  DEFAULT_REF_PRESENCE_FILTER,
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
 } from "@/features/repository-workspace";
+import type { RefPresenceFilter } from "@/features/repository-workspace";
 import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import { groupBranches } from "@/shared/lib/tree/branch-tree";
 import {
@@ -31,6 +33,7 @@ import {
   createGitWorktree,
   deleteGitBranch,
   getBranches,
+  getBranchRefs,
   getBranchTipSha,
   getCurrentBranch,
   getWorktrees,
@@ -43,8 +46,8 @@ import type {
   BranchContextRequest,
   BranchComparisonSelection,
   BranchCreateFormState,
-  BranchOperationCommand,
   BranchType,
+  BranchOperationCommand,
   MenuPosition,
   PendingRemoteBranchAction,
   RemoteBranchActionCommand,
@@ -52,54 +55,58 @@ import type {
 import {
   buildBranchName,
   dispatchBranchRefreshEvents,
-  filterBranchesByType,
   getErrorDetails,
 } from "../utils";
 
 type BranchListState = {
   repoPath: string | null;
-  type: BranchType;
-  branches: string[];
+  branchRefs: GitBranchRef[];
   hasLoadedOnce: boolean;
 };
 
-type CachedBranchListState = Pick<BranchListState, "branches">;
+type CachedBranchListState = Pick<BranchListState, "branchRefs">;
 
-const branchListCacheByRepoAndType = new Map<string, CachedBranchListState>();
+const branchListCacheByRepo = new Map<string, CachedBranchListState>();
 
-function getBranchListCacheKey(repoPath: string, type: BranchType) {
-  return `${repoPath}:${type}`;
-}
-
-function getInitialBranchListState(
-  repoPath: string | undefined,
-  type: BranchType,
-): BranchListState {
+function getInitialBranchListState(repoPath: string | undefined): BranchListState {
   if (!repoPath) {
     return {
       repoPath: null,
-      type,
-      branches: [],
+      branchRefs: [],
       hasLoadedOnce: false,
     };
   }
 
-  const cached = branchListCacheByRepoAndType.get(
-    getBranchListCacheKey(repoPath, type),
-  );
+  const cached = branchListCacheByRepo.get(repoPath);
 
   return {
     repoPath,
-    type,
-    branches: cached?.branches ?? [],
+    branchRefs: cached?.branchRefs ?? [],
     hasLoadedOnce: Boolean(cached),
   };
 }
 
-function cacheBranchList(repoPath: string, type: BranchType, branches: string[]) {
-  branchListCacheByRepoAndType.set(getBranchListCacheKey(repoPath, type), {
-    branches,
+function cacheBranchList(repoPath: string, branchRefs: GitBranchRef[]) {
+  branchListCacheByRepo.set(repoPath, {
+    branchRefs,
   });
+}
+
+function hasPresence(branchRef: GitBranchRef, filter: RefPresenceFilter) {
+  return Boolean(
+    (filter.local && branchRef.localName) ||
+      (filter.remote && branchRef.originName),
+  );
+}
+
+function branchTypeToPresenceFilter(type: BranchType): RefPresenceFilter {
+  return type === "remote"
+    ? { local: false, remote: true }
+    : { local: true, remote: false };
+}
+
+function branchPresenceFilterToType(filter: RefPresenceFilter): BranchType {
+  return filter.remote && !filter.local ? "remote" : "local";
 }
 
 export function useBranchListBehavior() {
@@ -123,13 +130,21 @@ export function useBranchListBehavior() {
           .branchTreeExpanded
       : DEFAULT_REPO_WORKSPACE_STATE.branchTreeExpanded,
   );
+  const branchPresenceFilter = useWorkspaceUiStore((state) =>
+    repoPath
+      ? ((state.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
+          .branchPresenceFilter ?? DEFAULT_REF_PRESENCE_FILTER)
+      : DEFAULT_REF_PRESENCE_FILTER,
+  );
   const setBranchTreeExpanded = useWorkspaceUiStore(
     (state) => state.setBranchTreeExpanded,
   );
+  const setBranchPresenceFilterStore = useWorkspaceUiStore(
+    (state) => state.setBranchPresenceFilter,
+  );
 
-  const [type, setBranchType] = useState<BranchType>("local");
   const [branchListState, setBranchListState] = useState<BranchListState>(() =>
-    getInitialBranchListState(repoPath, "local"),
+    getInitialBranchListState(repoPath),
   );
   const [loading, setLoading] = useState(
     () => Boolean(repoPath) && !branchListState.hasLoadedOnce,
@@ -165,11 +180,14 @@ export function useBranchListBehavior() {
   const branchRefreshRequestRef = useRef(0);
   const requiresInitialCommit = repositoryState?.hasCommits === false;
   const activeBranchListState =
-    branchListState.repoPath === (repoPath ?? null) &&
-    branchListState.type === type
+    branchListState.repoPath === (repoPath ?? null)
       ? branchListState
-      : getInitialBranchListState(repoPath, type);
-  const { branches, hasLoadedOnce } = activeBranchListState;
+      : getInitialBranchListState(repoPath);
+  const { branchRefs, hasLoadedOnce } = activeBranchListState;
+  const branchType = useMemo(
+    () => branchPresenceFilterToType(branchPresenceFilter),
+    [branchPresenceFilter],
+  );
 
   const refreshBranches = useCallback(async () => {
     if (!repoPath) return;
@@ -179,24 +197,13 @@ export function useBranchListBehavior() {
     setError(null);
 
     try {
-      let nextBranches: string[];
-      if (type === "local") {
-        const [localBranches, remoteBranches] = await Promise.all([
-          getBranches(repoPath, "local"),
-          getBranches(repoPath, "remote"),
-        ]);
-        nextBranches = filterBranchesByType(localBranches, type, remoteBranches);
-      } else {
-        const allBranches = await getBranches(repoPath, type);
-        nextBranches = filterBranchesByType(allBranches, type);
-      }
+      const nextBranchRefs = await getBranchRefs(repoPath);
 
       if (branchRefreshRequestRef.current !== requestId) return;
-      cacheBranchList(repoPath, type, nextBranches);
+      cacheBranchList(repoPath, nextBranchRefs);
       setBranchListState({
         repoPath,
-        type,
-        branches: nextBranches,
+        branchRefs: nextBranchRefs,
         hasLoadedOnce: true,
       });
     } catch (branchError) {
@@ -207,25 +214,22 @@ export function useBranchListBehavior() {
         setLoading(false);
       }
     }
-  }, [repoPath, type]);
+  }, [repoPath]);
 
   const setType = useCallback(
     (nextType: BranchType) => {
-      setBranchType(nextType);
-      const nextState = getInitialBranchListState(repoPath, nextType);
-      setBranchListState(nextState);
-      setLoading(Boolean(repoPath));
-      setError(null);
+      if (!repoPath) return;
+      setBranchPresenceFilterStore(repoPath, branchTypeToPresenceFilter(nextType));
     },
-    [repoPath],
+    [repoPath, setBranchPresenceFilterStore],
   );
 
   useEffect(() => {
-    const nextState = getInitialBranchListState(repoPath, type);
+    const nextState = getInitialBranchListState(repoPath);
     setBranchListState(nextState);
     setLoading(Boolean(repoPath) && !nextState.hasLoadedOnce);
     setError(null);
-  }, [repoPath, type]);
+  }, [repoPath]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -308,17 +312,23 @@ export function useBranchListBehavior() {
     }
   }, [contextMenu, menuPos]);
 
-  const grouped = useMemo(
-    () =>
-      groupBranches(
-        branches.filter((branch) =>
-          search.trim()
-            ? branch.toLowerCase().includes(search.trim().toLowerCase())
-            : true,
-        ),
-      ),
-    [branches, search],
+  const branchRefByName = useMemo(
+    () => new Map(branchRefs.map((branchRef) => [branchRef.name, branchRef])),
+    [branchRefs],
   );
+
+  const grouped = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const activePresenceFilter = branchTypeToPresenceFilter(branchType);
+    const visibleBranchNames = branchRefs
+      .filter((branchRef) => hasPresence(branchRef, activePresenceFilter))
+      .filter((branchRef) =>
+        query ? branchRef.name.toLowerCase().includes(query) : true,
+      )
+      .map((branchRef) => branchRef.name);
+
+    return groupBranches(visibleBranchNames);
+  }, [branchRefs, branchType, search]);
 
   const isRowActionsVisible = useCallback(
     (rowKey: string) =>
@@ -386,7 +396,9 @@ export function useBranchListBehavior() {
       await createGitBranch(repoPath, branchName, createForm.baseRef);
 
       setCreateForm(null);
-      setType("local");
+      if (branchType !== "local") {
+        setBranchPresenceFilterStore(repoPath, branchTypeToPresenceFilter("local"));
+      }
       setSelectedRowBranch(branchName);
       await refreshBranches();
       setGitActionNotice({
@@ -409,7 +421,15 @@ export function useBranchListBehavior() {
     } finally {
       setCreatingBranch(false);
     }
-  }, [createForm, creatingBranch, refreshBranches, repoPath, setGitActionNotice]);
+  }, [
+    branchType,
+    createForm,
+    creatingBranch,
+    refreshBranches,
+    repoPath,
+    setBranchPresenceFilterStore,
+    setGitActionNotice,
+  ]);
 
   const notifyError = useCallback(
     (title: string, noticeError: unknown) => {
@@ -784,6 +804,8 @@ export function useBranchListBehavior() {
     repoPath,
     selectedBranch,
     branchTreeExpanded,
+    type: branchType,
+    branchRefByName,
     grouped,
     loading,
     hasLoadedOnce,
@@ -797,7 +819,6 @@ export function useBranchListBehavior() {
     renameBranchName,
     setRenameBranchName,
     deleteRequest,
-    type,
     setType,
     contextMenu,
     createForm,

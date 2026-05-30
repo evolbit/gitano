@@ -8,6 +8,7 @@ import {
   matchingOriginTagRef,
   mockRepositoryState,
   originTagRef,
+  resetTagsPanelWorkspaceStore,
   renderWithTagsQueryClient,
 } from "./tags-panel-test-setup";
 import { TagsPanel } from "./tags-panel";
@@ -18,6 +19,7 @@ describe("TagsPanel", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    resetTagsPanelWorkspaceStore();
   });
 
   it("shows blocking loading before the first local tag load", async () => {
@@ -68,7 +70,7 @@ describe("TagsPanel", () => {
     renderWithTagsQueryClient(<TagsPanel repoPath="/repo" />);
 
     expect(await screen.findByText("local-first")).toBeInTheDocument();
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.getByTitle("Remote tag state unknown")).toBeInTheDocument();
     expect(screen.queryByText("Loading")).not.toBeInTheDocument();
   });
 
@@ -84,7 +86,8 @@ describe("TagsPanel", () => {
     renderWithTagsQueryClient(<TagsPanel repoPath="/repo" />);
 
     expect(await screen.findByText("v1.0.0")).toBeInTheDocument();
-    expect(await screen.findByText("Local · Origin")).toBeInTheDocument();
+    expect(await screen.findAllByTitle("Local tag")).not.toHaveLength(0);
+    expect(await screen.findAllByTitle("Remote tag")).not.toHaveLength(0);
 
     fireEvent.change(screen.getByPlaceholderText("Search tags..."), {
       target: { value: "release" },
@@ -92,6 +95,42 @@ describe("TagsPanel", () => {
 
     expect(screen.queryByText("v1.0.0")).not.toBeInTheDocument();
     expect(screen.getByText("release")).toBeInTheDocument();
+  });
+
+  it("filters tags by persisted local and remote toggles", async () => {
+    mocks.getLocalTagRefs.mockResolvedValue([
+      matchingLocalTagRef("both"),
+      localTagRef("local-only"),
+    ]);
+    mocks.getOriginTagRefs.mockResolvedValue([
+      matchingOriginTagRef("both"),
+      originTagRef("origin-only"),
+    ]);
+    mockRepositoryState();
+
+    renderWithTagsQueryClient(<TagsPanel repoPath="/repo" />);
+
+    expect(await screen.findByText("both")).toBeInTheDocument();
+    expect(screen.getByText("local-only")).toBeInTheDocument();
+    expect(screen.getByText("origin-only")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Local tags" }));
+
+    expect(screen.getByRole("button", { name: "Local tags" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.queryByText("local-only")).not.toBeInTheDocument();
+    expect(screen.getByText("both")).toBeInTheDocument();
+    expect(screen.getByText("origin-only")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remote tags" }));
+
+    expect(screen.getByRole("button", { name: "Remote tags" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("origin-only")).toBeInTheDocument();
   });
 
   it("creates a tag for the selected commit from the add panel", async () => {
@@ -132,7 +171,7 @@ describe("TagsPanel", () => {
     });
   });
 
-  it("renders local and origin tag status chips", async () => {
+  it("renders local and origin tag presence icons", async () => {
     mocks.getLocalTagRefs.mockResolvedValue([
       matchingLocalTagRef("both"),
       localTagRef("local-only"),
@@ -148,10 +187,12 @@ describe("TagsPanel", () => {
     renderWithTagsQueryClient(<TagsPanel repoPath="/repo" />);
 
     expect(await screen.findByText("both")).toBeInTheDocument();
-    expect(screen.getByText("Local · Origin")).toBeInTheDocument();
-    expect(screen.getByText("Local")).toBeInTheDocument();
-    expect(screen.getByText("Origin")).toBeInTheDocument();
-    expect(screen.getByText("Conflict")).toBeInTheDocument();
+    expect(screen.getAllByTitle("Local tag").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle("Remote tag").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle("No local tag").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle("No remote tag").length).toBeGreaterThan(0);
+    expect(screen.getByTitle("Local tag differs from remote")).toBeInTheDocument();
+    expect(screen.getByTitle("Remote tag differs from local")).toBeInTheDocument();
   });
 
   it("marks local tags unknown when origin tags cannot load", async () => {
@@ -162,7 +203,7 @@ describe("TagsPanel", () => {
     renderWithTagsQueryClient(<TagsPanel repoPath="/repo" />);
 
     expect(await screen.findByText("offline")).toBeInTheDocument();
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    expect(screen.getByTitle("Remote tag state unknown")).toBeInTheDocument();
     expect(screen.getByText(/Origin tags unavailable/)).toBeInTheDocument();
   });
 });

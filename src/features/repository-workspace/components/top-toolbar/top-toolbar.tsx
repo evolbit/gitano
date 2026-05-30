@@ -375,6 +375,9 @@ const TopToolbar: React.FC<TopToolbarProps> = () => {
       }
 
       window.dispatchEvent(new CustomEvent(APP_EVENTS.repoRefsRefresh));
+      if (pullStrategy === "fetch-all" || pullStrategy === "fetch-all-prune") {
+        window.dispatchEvent(new CustomEvent(APP_EVENTS.commitsRefresh));
+      }
     } catch (error) {
       handleGitActionError(
         pullStrategy === "fetch-all" || pullStrategy === "fetch-all-prune"

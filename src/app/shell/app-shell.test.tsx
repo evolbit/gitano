@@ -12,6 +12,10 @@ vi.mock("@/app/hooks/use-repo-realtime-events", () => ({
   useRepoRealtimeEvents: vi.fn(),
 }));
 
+vi.mock("@/app/hooks/use-active-repo-remote-polling", () => ({
+  useActiveRepoRemotePolling: vi.fn(),
+}));
+
 vi.mock("@/shared/platform/tauri/events", () => ({
   listenToEvent: listenToEventMock,
 }));

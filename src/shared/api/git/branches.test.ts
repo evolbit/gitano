@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGitBranch,
+  getBranchRefs,
   getBranches,
   runGitBranchOperation,
 } from "./branches";
@@ -34,6 +35,29 @@ describe("branch Git API", () => {
     ]);
 
     expect(invokeCommandMock).toHaveBeenCalledWith("get_remote_branches", {
+      path: "/repo",
+    });
+  });
+
+  it("uses the unified branch refs command", async () => {
+    const refs = [
+      {
+        name: "main",
+        localName: "main",
+        originName: "origin/main",
+        localTargetId: "abc",
+        originTargetId: "abc",
+        upstreamName: "origin/main",
+        presence: "local-origin",
+        aheadCount: 0,
+        behindCount: 0,
+      },
+    ];
+    invokeCommandMock.mockResolvedValueOnce(refs);
+
+    await expect(getBranchRefs("/repo")).resolves.toEqual(refs);
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("get_branch_refs", {
       path: "/repo",
     });
   });

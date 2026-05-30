@@ -107,6 +107,20 @@ export type TagRefStatus =
   | "conflict"
   | "unknown";
 
+export type BranchRefPresence = "local-origin" | "local" | "origin";
+
+export interface GitBranchRef {
+  name: string;
+  localName: string | null;
+  originName: string | null;
+  localTargetId: string | null;
+  originTargetId: string | null;
+  upstreamName: string | null;
+  presence: BranchRefPresence;
+  aheadCount: number | null;
+  behindCount: number | null;
+}
+
 export interface GitTagRef {
   name: string;
   localObjectId: string | null;

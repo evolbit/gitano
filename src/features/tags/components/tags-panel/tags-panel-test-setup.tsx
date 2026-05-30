@@ -2,6 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { vi } from "vitest";
+import {
+  DEFAULT_PULL_STRATEGY,
+  DEFAULT_PUSH_MODE,
+  DEFAULT_WINDOW_BOUNDS,
+  useWorkspaceUiStore,
+} from "@/features/repository-workspace/stores/workspace-ui-store";
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
   tauriStorage: {
@@ -148,6 +154,15 @@ export function renderWithTagsQueryClient(
       <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
     ),
   };
+}
+
+export function resetTagsPanelWorkspaceStore() {
+  useWorkspaceUiStore.setState({
+    window: DEFAULT_WINDOW_BOUNDS,
+    pullStrategy: DEFAULT_PULL_STRATEGY,
+    pushMode: DEFAULT_PUSH_MODE,
+    repoStateByPath: {},
+  });
 }
 
 export function mockRepositoryState() {

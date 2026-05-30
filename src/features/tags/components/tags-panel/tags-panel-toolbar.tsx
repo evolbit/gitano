@@ -1,16 +1,26 @@
-import { IconPlus, IconSearch } from "@/shared/components/icons/icons";
+import type { RefPresenceFilter } from "@/features/repository-workspace";
+import {
+  IconCloud,
+  IconDeviceDesktop,
+  IconPlus,
+  IconSearch,
+} from "@/shared/components/icons/icons";
 
 type TagsPanelToolbarProps = {
   search: string;
+  presenceFilter: RefPresenceFilter;
   requiresInitialCommit: boolean;
   onSearchChange: (search: string) => void;
+  onTogglePresence: (key: keyof RefPresenceFilter) => void;
   onAddTag: () => void;
 };
 
 export function TagsPanelToolbar({
   search,
+  presenceFilter,
   requiresInitialCommit,
   onSearchChange,
+  onTogglePresence,
   onAddTag,
 }: TagsPanelToolbarProps) {
   return (
@@ -25,6 +35,36 @@ export function TagsPanelToolbar({
             onChange={(event) => onSearchChange(event.target.value)}
           />
           <IconSearch className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+        </div>
+        <div className="flex items-center overflow-hidden rounded border border-border bg-background">
+          <button
+            type="button"
+            className={`flex h-8 w-8 items-center justify-center transition-colors ${
+              presenceFilter.local
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            }`}
+            onClick={() => onTogglePresence("local")}
+            title="Local tags"
+            aria-label="Local tags"
+            aria-pressed={presenceFilter.local}
+          >
+            <IconDeviceDesktop size={15} />
+          </button>
+          <button
+            type="button"
+            className={`flex h-8 w-8 items-center justify-center transition-colors ${
+              presenceFilter.remote
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            }`}
+            onClick={() => onTogglePresence("remote")}
+            title="Remote tags"
+            aria-label="Remote tags"
+            aria-pressed={presenceFilter.remote}
+          >
+            <IconCloud size={15} />
+          </button>
         </div>
         <button
           type="button"
