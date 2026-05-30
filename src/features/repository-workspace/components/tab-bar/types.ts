@@ -14,4 +14,5 @@ export type TabBarProps = {
   onTabClose: (id: string, event: MouseEvent) => void;
   onAddTab: () => void;
   onOpenSettings: () => void;
+  rightAccessory?: ReactNode;
 };

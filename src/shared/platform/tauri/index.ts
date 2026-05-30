@@ -3,4 +3,5 @@ export * from "./dialog";
 export * from "./events";
 export * from "./opener";
 export * from "./storage";
+export * from "./updater";
 export * from "./window";

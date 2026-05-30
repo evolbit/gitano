@@ -23,6 +23,7 @@ const TabBar = ({
   onTabClose,
   onAddTab,
   onOpenSettings,
+  rightAccessory,
 }: TabBarProps) => {
   const [menuOpened, setMenuOpened] = useState(false);
 
@@ -84,6 +85,7 @@ const TabBar = ({
         </Tabs.Tab>
       ))}
       <div className="flex-1" />
+      {rightAccessory}
       <Menu
         shadow="md"
         width={220}

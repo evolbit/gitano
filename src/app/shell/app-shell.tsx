@@ -4,6 +4,7 @@ import HomePage from "./home-page/home-page";
 import { useActiveRepoRemotePolling } from "@/app/hooks/use-active-repo-remote-polling";
 import { useRepoRealtimeEvents } from "@/app/hooks/use-repo-realtime-events";
 import { SettingsWindow } from "@/features/settings";
+import { AppUpdateControl } from "@/features/app-updates";
 import { RepoTabLayout, TabBar } from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace";
 import { listenToEvent } from "@/shared/platform/tauri/events";
@@ -118,6 +119,7 @@ export function AppShell() {
           onTabClose={handleCloseTab}
           onAddTab={handleAddTab}
           onOpenSettings={() => setSettingsOpen(true)}
+          rightAccessory={<AppUpdateControl />}
         />
         {tabs.map((tab) => (
           <Tabs.Panel
