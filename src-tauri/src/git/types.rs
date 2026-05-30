@@ -174,6 +174,28 @@ pub struct TagNameAvailability {
     pub origin_error: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum BranchRefPresence {
+    LocalOrigin,
+    Local,
+    Origin,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchRef {
+    pub name: String,
+    pub local_name: Option<String>,
+    pub origin_name: Option<String>,
+    pub local_target_id: Option<String>,
+    pub origin_target_id: Option<String>,
+    pub upstream_name: Option<String>,
+    pub presence: BranchRefPresence,
+    pub ahead_count: Option<usize>,
+    pub behind_count: Option<usize>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum CommitHistoryMode {
@@ -392,6 +414,18 @@ mod tests {
                     "hunks": {}
                 })
             );
+        }
+    }
+
+    mod branch_ref_presence {
+        use super::*;
+
+        #[test]
+        fn serializes_with_kebab_case_names() {
+            let serialized = serde_json::to_string(&BranchRefPresence::LocalOrigin)
+                .expect("presence should serialize");
+
+            assert_eq!(serialized, "\"local-origin\"");
         }
     }
 

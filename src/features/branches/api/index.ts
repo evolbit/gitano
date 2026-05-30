@@ -3,6 +3,7 @@ export {
   createGitBranch,
   createGitWorktree,
   deleteGitBranch,
+  getBranchRefs,
   getBranches,
   getBranchTipSha,
   getCurrentBranch,

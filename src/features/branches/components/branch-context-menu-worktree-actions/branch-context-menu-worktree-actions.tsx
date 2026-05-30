@@ -6,6 +6,7 @@ import {
 
 type BranchContextMenuWorktreeActionsProps = {
   branchName: string;
+  worktreeBaseRef: string;
   localBranchActionDisabledReason: string | null;
   localBranchActionClass: string;
   createWorktreeDisabledReason: string | null;
@@ -17,6 +18,7 @@ type BranchContextMenuWorktreeActionsProps = {
 
 export function BranchContextMenuWorktreeActions({
   branchName,
+  worktreeBaseRef,
   localBranchActionDisabledReason,
   localBranchActionClass,
   createWorktreeDisabledReason,
@@ -43,7 +45,7 @@ export function BranchContextMenuWorktreeActions({
         title={createWorktreeDisabledReason ?? undefined}
         onClick={() => {
           if (createWorktreeDisabledReason) return;
-          onCreateRandomWorktreeFromBranch(branchName);
+          onCreateRandomWorktreeFromBranch(worktreeBaseRef);
         }}
       >
         {creatingWorktree ? "Creating worktree..." : "Create worktree from"}{" "}

@@ -89,7 +89,11 @@ export function useRepoRealtimeEvents() {
           dispatchEvent(APP_EVENTS.stashesRefresh);
         }
 
-        if (acceptedKinds.has("head") || acceptedKinds.has("branches")) {
+        if (
+          acceptedKinds.has("head") ||
+          acceptedKinds.has("branches") ||
+          acceptedKinds.has("remote-refs")
+        ) {
           dispatchEvent(APP_EVENTS.commitsRefresh);
         }
 

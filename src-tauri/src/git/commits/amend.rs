@@ -24,8 +24,45 @@ pub fn amend_commit_message(path: String, sha: String, new_message: String) -> R
     }
 
     commit
-        .amend(None, None, None, None, Some(&new_message), None)
+        .amend(Some("HEAD"), None, None, None, Some(&new_message), None)
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::{commit_file, init_repo};
+    use std::path::Path;
+    use std::process::Command;
+
+    #[test]
+    fn amend_commit_message_preserves_multiline_message_body() {
+        let repo = init_repo();
+        let sha = commit_file(repo.path(), "file.txt", "hello\n", "initial");
+
+        amend_commit_message(
+            repo.path().to_string_lossy().to_string(),
+            sha,
+            "Subject line\n\nBody line".to_string(),
+        )
+        .expect("amend should succeed");
+
+        assert_eq!(head_message(repo.path()), "Subject line\n\nBody line");
+    }
+
+    fn head_message(repo_path: &Path) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["log", "-1", "--pretty=%B"])
+            .output()
+            .expect("git log should run");
+
+        assert!(output.status.success(), "git log should succeed");
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end_matches('\n')
+            .to_string()
+    }
 }

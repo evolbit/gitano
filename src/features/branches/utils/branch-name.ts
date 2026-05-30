@@ -23,7 +23,7 @@ export function stripRemotePrefix(path: string) {
 
 export function getBranchCreatePrefix(
   node: BranchTreeNode,
-  branchType: BranchType,
+  branchType?: BranchType,
 ) {
   const localPath = branchType === "remote" ? stripRemotePrefix(node.full) : node.full;
 

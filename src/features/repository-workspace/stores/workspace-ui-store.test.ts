@@ -66,4 +66,40 @@ describe("workspace UI store", () => {
     expect(useWorkspaceUiStore.getState().pullStrategy).toBe("pull-ff-only");
     expect(useWorkspaceUiStore.getState().pushMode).toBe("push-branch-and-tags");
   });
+
+  it("persists branch and tag presence filters independently", () => {
+    useWorkspaceUiStore
+      .getState()
+      .setBranchPresenceFilter("/repo", { local: true, remote: false });
+    useWorkspaceUiStore
+      .getState()
+      .setTagPresenceFilter("/repo", { local: false, remote: true });
+
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"]
+        .branchPresenceFilter,
+    ).toEqual({ local: true, remote: false });
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"]
+        .tagPresenceFilter,
+    ).toEqual({ local: false, remote: true });
+  });
+
+  it("normalizes empty branch and tag presence filters", () => {
+    useWorkspaceUiStore
+      .getState()
+      .setBranchPresenceFilter("/repo", { local: false, remote: false });
+    useWorkspaceUiStore
+      .getState()
+      .setTagPresenceFilter("/repo", { local: false, remote: false });
+
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"]
+        .branchPresenceFilter,
+    ).toEqual({ local: true, remote: true });
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"]
+        .tagPresenceFilter,
+    ).toEqual({ local: true, remote: true });
+  });
 });

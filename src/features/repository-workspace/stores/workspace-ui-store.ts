@@ -13,6 +13,10 @@ export type LeftPaneSection =
   | "stashes";
 export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
+export type RefPresenceFilter = {
+  local: boolean;
+  remote: boolean;
+};
 export type PullStrategy =
   | GitFetchMode
   | "pull-ff-if-possible"
@@ -35,9 +39,11 @@ export interface RepoWorkspaceState {
   selectedStashRef: string | null;
   selectedStashDiffPath: string | null;
   branchTreeExpanded: Record<string, boolean>;
+  branchPresenceFilter: RefPresenceFilter;
   worktreeTreeExpanded: Record<string, boolean>;
   worktreeCreateBaseRef: string | null;
   tagTreeExpanded: Record<string, boolean>;
+  tagPresenceFilter: RefPresenceFilter;
   mainChangesExpanded: Record<string, boolean>;
   workingChangesViewMode: WorkspaceViewMode;
   commitChangesViewMode: WorkspaceViewMode;
@@ -65,6 +71,10 @@ interface WorkspaceUiStore {
     repoPath: string,
     expanded: Record<string, boolean>,
   ) => void;
+  setBranchPresenceFilter: (
+    repoPath: string,
+    filter: RefPresenceFilter,
+  ) => void;
   setWorktreeTreeExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -74,6 +84,7 @@ interface WorkspaceUiStore {
     repoPath: string,
     expanded: Record<string, boolean>,
   ) => void;
+  setTagPresenceFilter: (repoPath: string, filter: RefPresenceFilter) => void;
   setMainChangesExpanded: (
     repoPath: string,
     expanded: Record<string, boolean>,
@@ -95,6 +106,10 @@ export const DEFAULT_WINDOW_BOUNDS: WindowBoundsState = {
   height: REPO_LAYOUT.window.height,
 };
 
+export const DEFAULT_REF_PRESENCE_FILTER: RefPresenceFilter = {
+  local: true,
+  remote: true,
+};
 export const DEFAULT_PULL_STRATEGY: PullStrategy = "pull-ff-if-possible";
 export const DEFAULT_PUSH_MODE: GitPushMode = "push-branch";
 
@@ -107,9 +122,11 @@ export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   selectedStashRef: null,
   selectedStashDiffPath: null,
   branchTreeExpanded: {},
+  branchPresenceFilter: DEFAULT_REF_PRESENCE_FILTER,
   worktreeTreeExpanded: {},
   worktreeCreateBaseRef: null,
   tagTreeExpanded: {},
+  tagPresenceFilter: DEFAULT_REF_PRESENCE_FILTER,
   mainChangesExpanded: {},
   workingChangesViewMode: "tree",
   commitChangesViewMode: "tree",
@@ -152,7 +169,24 @@ function getRepoWorkspaceState(
     worktreeTreeExpanded: repoState.worktreeTreeExpanded ?? {},
     worktreeCreateBaseRef: repoState.worktreeCreateBaseRef ?? null,
     tagTreeExpanded: repoState.tagTreeExpanded ?? {},
+    branchPresenceFilter: normalizeRefPresenceFilter(
+      repoState.branchPresenceFilter,
+    ),
+    tagPresenceFilter: normalizeRefPresenceFilter(repoState.tagPresenceFilter),
   };
+}
+
+function normalizeRefPresenceFilter(
+  filter: RefPresenceFilter | null | undefined,
+): RefPresenceFilter {
+  const nextFilter = {
+    local: filter?.local ?? DEFAULT_REF_PRESENCE_FILTER.local,
+    remote: filter?.remote ?? DEFAULT_REF_PRESENCE_FILTER.remote,
+  };
+
+  return nextFilter.local || nextFilter.remote
+    ? nextFilter
+    : DEFAULT_REF_PRESENCE_FILTER;
 }
 
 export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
@@ -194,12 +228,20 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         get().updateRepoState(repoPath, { selectedStashDiffPath: path }),
       setBranchTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { branchTreeExpanded: expanded }),
+      setBranchPresenceFilter: (repoPath, filter) =>
+        get().updateRepoState(repoPath, {
+          branchPresenceFilter: normalizeRefPresenceFilter(filter),
+        }),
       setWorktreeTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { worktreeTreeExpanded: expanded }),
       setWorktreeCreateBaseRef: (repoPath, baseRef) =>
         get().updateRepoState(repoPath, { worktreeCreateBaseRef: baseRef }),
       setTagTreeExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { tagTreeExpanded: expanded }),
+      setTagPresenceFilter: (repoPath, filter) =>
+        get().updateRepoState(repoPath, {
+          tagPresenceFilter: normalizeRefPresenceFilter(filter),
+        }),
       setMainChangesExpanded: (repoPath, expanded) =>
         get().updateRepoState(repoPath, { mainChangesExpanded: expanded }),
       setWorkingChangesViewMode: (repoPath, mode) =>

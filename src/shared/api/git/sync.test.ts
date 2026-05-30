@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAllRemotes,
+  hasRemoteRefUpdates,
   pullRepository,
   pushRepository,
 } from "./sync";
@@ -35,6 +36,16 @@ describe("sync Git API", () => {
     expect(invokeCommandMock).toHaveBeenCalledWith("git_fetch", {
       path: "/repo",
       mode: "fetch-all-prune",
+    });
+  });
+
+  it("checks whether remote refs changed without fetching", async () => {
+    invokeCommandMock.mockResolvedValueOnce(true);
+
+    await expect(hasRemoteRefUpdates("/repo")).resolves.toBe(true);
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_remote_refs_changed", {
+      path: "/repo",
     });
   });
 

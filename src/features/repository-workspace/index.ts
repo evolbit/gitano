@@ -5,6 +5,7 @@ export { useRepoStore } from "./stores/repo-store";
 export {
   DEFAULT_REPO_WORKSPACE_STATE,
   DEFAULT_WINDOW_BOUNDS,
+  DEFAULT_REF_PRESENCE_FILTER,
   DEFAULT_PULL_STRATEGY,
   rehydrateWorkspaceUiStore,
   useWorkspaceUiStore,
@@ -21,6 +22,7 @@ export type {
   HistoryMiddleMode,
   LeftPaneSection,
   PullStrategy,
+  RefPresenceFilter,
   RepoWorkspaceState,
   RightWorkspaceMode,
   WindowBoundsState,

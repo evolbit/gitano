@@ -16,6 +16,7 @@ export {
   IconCloudDownload,
   IconCloudUpload,
   IconCopy,
+  IconDeviceDesktop,
   IconDeviceFloppy,
   IconDotsVertical,
   IconExchange,

@@ -1,4 +1,4 @@
-import type { GitWorktree } from "@/shared/types/git";
+import type { GitBranchRef, GitWorktree } from "@/shared/types/git";
 import { invokeCommand } from "@/shared/platform/tauri/command";
 
 export type BranchListType = "local" | "remote";
@@ -16,6 +16,10 @@ export type RemoteBranchActionCommand =
 export async function getBranches(repoPath: string, type: BranchListType) {
   const command = type === "local" ? "get_branches" : "get_remote_branches";
   return invokeCommand<string[]>(command, { path: repoPath });
+}
+
+export async function getBranchRefs(repoPath: string) {
+  return invokeCommand<GitBranchRef[]>("get_branch_refs", { path: repoPath });
 }
 
 export async function createGitBranch(

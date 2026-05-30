@@ -10,6 +10,7 @@ import {
   REPOSITORY_SURFACES,
   useRepositorySurfaceStore,
 } from "@/features/repository-workspace/stores/repository-surface-store";
+import { APP_EVENTS } from "@/shared/config/events";
 import TopToolbar from "./top-toolbar";
 
 const fetchAllRemotesMock = vi.hoisted(() => vi.fn());
@@ -162,6 +163,10 @@ describe("TopToolbar", () => {
   });
 
   it("persists the prune fetch mode and uses it for toolbar fetch", async () => {
+    const repoRefsRefresh = vi.fn();
+    const commitsRefresh = vi.fn();
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, repoRefsRefresh);
+    window.addEventListener(APP_EVENTS.commitsRefresh, commitsRefresh);
     useRepoStore.setState({
       tabs: [
         {
@@ -189,6 +194,11 @@ describe("TopToolbar", () => {
         "fetch-all-prune",
       );
     });
+    expect(repoRefsRefresh).toHaveBeenCalledOnce();
+    expect(commitsRefresh).toHaveBeenCalledOnce();
+
+    window.removeEventListener(APP_EVENTS.repoRefsRefresh, repoRefsRefresh);
+    window.removeEventListener(APP_EVENTS.commitsRefresh, commitsRefresh);
   });
 
   it("shows the pending pull request count for the active repository", async () => {

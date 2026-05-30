@@ -18,6 +18,7 @@ describe("BranchContextMenuWorktreeActions", () => {
     render(
       <BranchContextMenuWorktreeActions
         branchName="feature/auth"
+        worktreeBaseRef="feature/auth"
         localBranchActionDisabledReason={null}
         localBranchActionClass="cursor-pointer"
         createWorktreeDisabledReason={null}
@@ -41,6 +42,7 @@ describe("BranchContextMenuWorktreeActions", () => {
     render(
       <BranchContextMenuWorktreeActions
         branchName="origin/main"
+        worktreeBaseRef="origin/main"
         localBranchActionDisabledReason="Checkout is only available for local branches"
         localBranchActionClass="cursor-not-allowed"
         createWorktreeDisabledReason="A worktree is already being created"

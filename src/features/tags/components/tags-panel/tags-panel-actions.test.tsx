@@ -9,6 +9,7 @@ import {
   matchingOriginTagRef,
   mockRepositoryState,
   originTagRef,
+  resetTagsPanelWorkspaceStore,
   renderWithTagsQueryClient,
 } from "./tags-panel-test-setup";
 import { TagsPanel } from "./tags-panel";
@@ -19,6 +20,7 @@ describe("TagsPanel actions", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    resetTagsPanelWorkspaceStore();
   });
 
   it("pushes a local-only tag from the context menu without placeholder actions", async () => {

@@ -40,6 +40,7 @@ describe("CommitSearchToolbar", () => {
 
     expect(onSearchChange).toHaveBeenCalledWith("fix cache");
     expect(onNavigate).toHaveBeenCalledWith(1);
+    expect(input).toHaveClass("border-border", "bg-background");
   });
 
   it("disables navigation buttons when there are no matches", () => {

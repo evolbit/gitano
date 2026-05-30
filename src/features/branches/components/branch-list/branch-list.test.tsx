@@ -17,6 +17,7 @@ function branchListState(overrides: Record<string, unknown> = {}) {
     setSearch: vi.fn(),
     type: "local",
     setType: vi.fn(),
+    branchRefByName: new Map(),
     selectedBranch: "main",
     beginCreateBranch: vi.fn(),
     requiresInitialCommit: false,
@@ -112,8 +113,23 @@ describe("BranchList", () => {
     mocks.state = branchListState({
       loading: true,
       hasLoadedOnce: true,
-      type: "remote",
       grouped: [{ type: "branch", name: "main", full: "origin/main" }],
+      branchRefByName: new Map([
+        [
+          "origin/main",
+          {
+            name: "origin/main",
+            localName: null,
+            originName: "origin/main",
+            localTargetId: null,
+            originTargetId: "origin",
+            upstreamName: null,
+            presence: "origin",
+            aheadCount: null,
+            behindCount: null,
+          },
+        ],
+      ]),
     });
 
     render(<BranchList />);

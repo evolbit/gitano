@@ -1,5 +1,6 @@
 import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import { isPriorityBranchName } from "@/shared/lib/tree/branch-tree";
+import type { GitBranchRef } from "@/shared/types/git";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -11,7 +12,6 @@ import {
   PRIORITY_BRANCH_COLOR,
 } from "../../constants";
 import { BranchIcon } from "../branch-icon/branch-icon";
-import type { BranchType } from "../../types";
 
 const BRANCH_TREE_INDENT_STEP = 18;
 const BRANCH_GROUP_BASE_INDENT = 10;
@@ -20,9 +20,9 @@ const BRANCH_ROW_BASE_INDENT = 28;
 type BranchTreeProps = {
   nodes: BranchTreeNode[];
   branchTreeExpanded: Record<string, boolean>;
+  branchRefByName: Map<string, GitBranchRef>;
   selectedBranch?: string | null;
   selectedRowBranch: string | null;
-  type: BranchType;
   isRowActionsVisible: (rowKey: string) => boolean;
   onHoverRow: (rowKey: string | null) => void;
   onToggleGroup: (nodeFull: string, isOpen: boolean) => void;
@@ -35,9 +35,9 @@ type BranchTreeProps = {
 export function BranchTree({
   nodes,
   branchTreeExpanded,
+  branchRefByName,
   selectedBranch,
   selectedRowBranch,
-  type,
   isRowActionsVisible,
   onHoverRow,
   onToggleGroup,
@@ -108,9 +108,9 @@ export function BranchTree({
                 <BranchTree
                   nodes={node.children}
                   branchTreeExpanded={branchTreeExpanded}
+                  branchRefByName={branchRefByName}
                   selectedBranch={selectedBranch}
                   selectedRowBranch={selectedRowBranch}
-                  type={type}
                   isRowActionsVisible={isRowActionsVisible}
                   onHoverRow={onHoverRow}
                   onToggleGroup={onToggleGroup}
@@ -124,7 +124,10 @@ export function BranchTree({
           );
         }
 
-        const selected = (selectedRowBranch ?? selectedBranch) === node.full;
+        const branchRef = branchRefByName.get(node.full);
+        const selectedName = selectedRowBranch ?? selectedBranch;
+        const selected =
+          selectedName === node.full || selectedName === branchRef?.localName;
 
         return (
           <li
@@ -143,8 +146,8 @@ export function BranchTree({
             onMouseLeave={() => onHoverRow(null)}
             onClick={() => onSelectBranch(node.full)}
             onDoubleClick={() => {
-              if (type !== "local") return;
-              onCheckoutBranch(node.full);
+              if (!branchRef?.localName) return;
+              onCheckoutBranch(branchRef.localName);
             }}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -155,6 +158,7 @@ export function BranchTree({
               <BranchIcon name={node.name} />
             </span>
             <span className="w-0 min-w-0 flex-1 truncate">{node.name}</span>
+            <BranchDivergence branchRef={branchRef} />
             <button
               className={`ml-auto flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-zinc-700 ${
                 isRowActionsVisible(node.full) ? "visible" : "invisible"
@@ -174,5 +178,27 @@ export function BranchTree({
         );
       })}
     </ul>
+  );
+}
+
+function BranchDivergence({ branchRef }: { branchRef?: GitBranchRef }) {
+  const aheadCount = branchRef?.aheadCount ?? 0;
+  const behindCount = branchRef?.behindCount ?? 0;
+
+  if (aheadCount <= 0 && behindCount <= 0) return null;
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-foreground">
+      {aheadCount > 0 ? (
+        <span title={`${aheadCount} local commits not pushed`}>
+          {aheadCount}↑
+        </span>
+      ) : null}
+      {behindCount > 0 ? (
+        <span title={`${behindCount} remote commits not pulled`}>
+          {behindCount}↓
+        </span>
+      ) : null}
+    </span>
   );
 }

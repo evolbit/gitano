@@ -18,6 +18,11 @@ import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
 import { isAiSetupRequiredError } from "@/shared/utils/ai-setup-errors";
 import { useEffect, useState } from "react";
+import {
+  COMMIT_PUSH_SHORTCUT_LABEL,
+  COMMIT_SHORTCUT_LABEL,
+  COMMIT_SUBJECT_RECOMMENDED_MAX_LENGTH,
+} from "../../constants";
 import { useStageAndCommit } from "../../hooks/use-stage-and-commit";
 
 type CurrentChangesCommitBarProps = {
@@ -109,6 +114,9 @@ export default function CurrentChangesCommitBar({
     (s) => s.tabs.find((t) => t.id === activeTabId)?.selectedBranch ?? null,
   );
   const isBusy = loading || stashLoading || aiLoading || conflictAiLoading;
+  const commitSubject = message.split(/\r?\n/, 1)[0] ?? "";
+  const subjectIsTooLong =
+    commitSubject.length > COMMIT_SUBJECT_RECOMMENDED_MAX_LENGTH;
 
   useEffect(() => {
     let cancelled = false;
@@ -412,16 +420,26 @@ export default function CurrentChangesCommitBar({
             className="h-20 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             disabled={isBusy}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                if (event.metaKey || event.ctrlKey) {
-                  void handleCommit(true);
-                  return;
-                }
-                void handleCommit();
+              if (
+                event.key !== "Enter" ||
+                (!event.metaKey && !event.ctrlKey)
+              ) {
+                return;
               }
+
+              event.preventDefault();
+              void handleCommit(event.shiftKey ? true : undefined);
             }}
           />
+          {subjectIsTooLong ? (
+            <div
+              role="alert"
+              className="border-t border-border px-2 py-1 text-xs text-amber-300"
+            >
+              First line is {commitSubject.length} characters. Keep commit
+              subjects at {COMMIT_SUBJECT_RECOMMENDED_MAX_LENGTH} or fewer.
+            </div>
+          ) : null}
           <div
             role="group"
             aria-label="Commit actions"
@@ -478,6 +496,7 @@ export default function CurrentChangesCommitBar({
                   void handleCommit();
                 }}
                 disabled={isBusy || !message.trim() || !hasStagedChanges}
+                title={COMMIT_SHORTCUT_LABEL}
                 className="h-8 rounded-l border border-r-0 border-border bg-zinc-800 px-3 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {amend ? "Amend" : "Commit"}
@@ -488,6 +507,7 @@ export default function CurrentChangesCommitBar({
                 disabled={isBusy}
                 className="h-8 rounded-r border border-border bg-zinc-800 px-2 text-xs font-semibold text-zinc-100 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Commit options"
+                title={`Commit and push: ${COMMIT_PUSH_SHORTCUT_LABEL}`}
               >
                 <IconChevronDown size={14} />
               </button>

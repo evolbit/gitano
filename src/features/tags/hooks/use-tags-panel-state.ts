@@ -11,9 +11,11 @@ import {
 } from "@/shared/platform/clipboard";
 import type { GitTagRef } from "@/shared/types/git";
 import {
+  DEFAULT_REF_PRESENCE_FILTER,
   DEFAULT_REPO_WORKSPACE_STATE,
   useWorkspaceUiStore,
 } from "@/features/repository-workspace";
+import type { RefPresenceFilter } from "@/features/repository-workspace";
 import { buildRemoteTagUrl } from "../utils/remote-tag-url";
 import { useTagActionsState } from "./use-tag-actions-state";
 import { useTagContextMenuState } from "./use-tag-context-menu-state";
@@ -29,6 +31,14 @@ export function useTagsPanelState(repoPath: string) {
         .tagTreeExpanded ?? DEFAULT_REPO_WORKSPACE_STATE.tagTreeExpanded,
   );
   const setTagTreeExpanded = useWorkspaceUiStore((s) => s.setTagTreeExpanded);
+  const tagPresenceFilter = useWorkspaceUiStore(
+    (s) =>
+      (s.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
+        .tagPresenceFilter ?? DEFAULT_REF_PRESENCE_FILTER,
+  );
+  const setTagPresenceFilterStore = useWorkspaceUiStore(
+    (s) => s.setTagPresenceFilter,
+  );
   const [search, setSearch] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const {
@@ -41,7 +51,7 @@ export function useTagsPanelState(repoPath: string) {
     showInitialLoading,
     tagRefByName,
     updateTagRefs,
-  } = useTagRefsState(repoPath, search);
+  } = useTagRefsState(repoPath, search, tagPresenceFilter);
   const {
     closeContextMenu,
     contextMenu,
@@ -96,6 +106,19 @@ export function useTagsPanelState(repoPath: string) {
       });
     },
     [repoPath, setTagTreeExpanded, tagTreeExpanded],
+  );
+
+  const toggleTagPresenceFilter = useCallback(
+    (key: keyof RefPresenceFilter) => {
+      const nextFilter = {
+        ...tagPresenceFilter,
+        [key]: !tagPresenceFilter[key],
+      };
+
+      if (!nextFilter.local && !nextFilter.remote) return;
+      setTagPresenceFilterStore(repoPath, nextFilter);
+    },
+    [repoPath, setTagPresenceFilterStore, tagPresenceFilter],
   );
 
   const copyText = useCallback(async (text: string) => {
@@ -202,9 +225,11 @@ export function useTagsPanelState(repoPath: string) {
     tagAnnotated: createForm.tagAnnotated,
     tagDescription: createForm.tagDescription,
     tagName: createForm.tagName,
+    tagPresenceFilter,
     tagRefByName,
     tagTreeExpanded,
     toggleGroup,
+    toggleTagPresenceFilter,
     updateDeleteOrigin,
     updateRenameDialogValue,
   };

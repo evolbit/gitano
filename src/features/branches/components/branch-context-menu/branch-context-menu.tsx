@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import type { GitBranchRef } from "@/shared/types/git";
 import { BranchContextMenuBranchingItems } from "../branch-context-menu-branching-items/branch-context-menu-branching-items";
 import { BranchContextMenuBranchOperations } from "../branch-context-menu-branch-operations/branch-context-menu-branch-operations";
 import { BranchContextMenuCompareItems } from "../branch-context-menu-compare-items/branch-context-menu-compare-items";
@@ -11,7 +12,6 @@ import { BranchContextMenuWorktreeActions } from "../branch-context-menu-worktre
 import type {
   BranchContextMenuState,
   BranchOperationCommand,
-  BranchType,
   MenuPosition,
   PendingRemoteBranchAction,
   RemoteBranchActionCommand,
@@ -23,7 +23,7 @@ type BranchContextMenuProps = {
   menuPos: MenuPosition | null;
   menuRef: RefObject<HTMLDivElement>;
   selectedBranch?: string | null;
-  type: BranchType;
+  branchRefByName: Map<string, GitBranchRef>;
   creatingWorktree: boolean;
   onCloseContextMenu: () => void;
   onBeginCreateBranch: (baseRef: string, prefix?: string) => void;
@@ -57,7 +57,7 @@ export function BranchContextMenu({
   menuPos,
   menuRef,
   selectedBranch,
-  type,
+  branchRefByName,
   creatingWorktree,
   onCloseContextMenu,
   onBeginCreateBranch,
@@ -104,12 +104,17 @@ export function BranchContextMenu({
   if (!contextMenu || !menuPos) return null;
 
   const { node } = contextMenu;
-  const branchName = node.full || node.name;
+  const rowBranchName = node.full || node.name;
+  const branchRef = node.type === "branch" ? branchRefByName.get(node.full) : null;
+  const localBranchName = branchRef?.localName ?? null;
+  const targetBranchName = localBranchName ?? rowBranchName;
+  const baseRef = localBranchName ?? branchRef?.originName ?? rowBranchName;
+  const compareBranchName = localBranchName ?? branchRef?.originName ?? rowBranchName;
   const currentBranchLabel = selectedBranch || "current branch";
   const isBranchNode = node.type !== "group";
   const remoteActionDisabledReason = !isBranchNode
     ? "Remote actions are only available for branches"
-    : type === "remote"
+    : !localBranchName
       ? "Remote actions are only available for local branches"
       : null;
   const remoteActionClass = remoteActionDisabledReason
@@ -117,11 +122,11 @@ export function BranchContextMenu({
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
   const branchOperationDisabledReason = !isBranchNode
     ? "Branch operations are only available for branches"
-    : type === "remote"
+    : !localBranchName
       ? "Branch operations are only available for local branches"
       : !selectedBranch
         ? "Branch operations require a current local branch"
-        : selectedBranch === branchName
+        : selectedBranch === localBranchName
           ? "Source and target branch are the same"
           : null;
   const branchOperationClass = branchOperationDisabledReason
@@ -129,7 +134,7 @@ export function BranchContextMenu({
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
   const localBranchActionDisabledReason = !isBranchNode
     ? "This action is only available for branches"
-    : type === "remote"
+    : !localBranchName
       ? "Checkout is only available for local branches"
       : null;
   const localBranchActionClass = localBranchActionDisabledReason
@@ -147,7 +152,7 @@ export function BranchContextMenu({
     ? "Compare is only available for branches"
     : !selectedBranch
       ? "Compare requires a current local branch"
-      : selectedBranch === branchName
+      : selectedBranch === compareBranchName
         ? "Source and target branch are the same"
         : null;
   const compareActionClass = compareDisabledReason
@@ -195,7 +200,7 @@ export function BranchContextMenu({
     >
       <div className="z-[99999] min-w-[320px] select-none rounded border border-border bg-background-emphasis py-1 text-xs text-zinc-200 shadow-lg">
         <BranchContextMenuRemoteActions
-          branchName={branchName}
+          branchName={targetBranchName}
           disabledReason={remoteActionDisabledReason}
           itemClass={remoteActionClass}
           onRunRemoteAction={(
@@ -209,7 +214,7 @@ export function BranchContextMenu({
             closeMenus();
             onRunRemoteBranchAction(
               command,
-              branchName,
+              targetBranchName,
               pendingAction,
               successTitle,
               successDetails,
@@ -219,7 +224,7 @@ export function BranchContextMenu({
         />
         <BranchContextMenuSeparator />
         <BranchContextMenuBranchOperations
-          branchName={branchName}
+          branchName={targetBranchName}
           selectedBranch={selectedBranch}
           currentBranchLabel={currentBranchLabel}
           disabledReason={branchOperationDisabledReason}
@@ -231,7 +236,8 @@ export function BranchContextMenu({
         />
         <BranchContextMenuSeparator />
         <BranchContextMenuWorktreeActions
-          branchName={branchName}
+          branchName={targetBranchName}
+          worktreeBaseRef={baseRef}
           localBranchActionDisabledReason={localBranchActionDisabledReason}
           localBranchActionClass={localBranchActionClass}
           createWorktreeDisabledReason={createWorktreeDisabledReason}
@@ -249,8 +255,7 @@ export function BranchContextMenu({
         <BranchContextMenuSeparator />
         <BranchContextMenuBranchingItems
           node={node}
-          branchName={branchName}
-          type={type}
+          baseRef={baseRef}
           isBranchNode={isBranchNode}
           selectedBranch={selectedBranch}
           onBeginCreateBranch={onBeginCreateBranch}
@@ -258,7 +263,7 @@ export function BranchContextMenu({
         />
         <BranchContextMenuSeparator />
         <BranchContextMenuCompareItems
-          branchName={branchName}
+          branchName={compareBranchName}
           currentBranch={selectedBranch ?? null}
           disabledReason={compareDisabledReason}
           itemClass={compareActionClass}
@@ -267,7 +272,7 @@ export function BranchContextMenu({
         />
         <BranchContextMenuSeparator />
         <BranchContextMenuOtherActions
-          branchName={branchName}
+          branchName={baseRef}
           showOther={showOther}
           submenuLeft={submenuLeft}
           submenuDirection={submenuDirection}
@@ -281,7 +286,7 @@ export function BranchContextMenu({
         />
         <BranchContextMenuSeparator />
         <BranchContextMenuDangerZone
-          branchName={branchName}
+          branchName={targetBranchName}
           localBranchActionDisabledReason={localBranchActionDisabledReason}
           localBranchActionClass={localBranchActionClass}
           onRequestRenameBranch={(targetBranch) => {

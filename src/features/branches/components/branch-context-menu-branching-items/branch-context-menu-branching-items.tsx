@@ -3,13 +3,11 @@ import {
   BranchContextMenuItem,
   BranchContextMenuSectionTitle,
 } from "../branch-context-menu-parts/branch-context-menu-parts";
-import type { BranchType } from "../../types";
 import { getBranchCreatePrefix } from "../../utils";
 
 type BranchContextMenuBranchingItemsProps = {
   node: BranchTreeNode;
-  branchName: string;
-  type: BranchType;
+  baseRef: string;
   isBranchNode: boolean;
   selectedBranch?: string | null;
   onBeginCreateBranch: (baseRef: string, prefix?: string) => void;
@@ -18,8 +16,7 @@ type BranchContextMenuBranchingItemsProps = {
 
 export function BranchContextMenuBranchingItems({
   node,
-  branchName,
-  type,
+  baseRef,
   isBranchNode,
   selectedBranch,
   onBeginCreateBranch,
@@ -31,10 +28,10 @@ export function BranchContextMenuBranchingItems({
       <BranchContextMenuItem
         className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
         onClick={() => {
-          const prefix = getBranchCreatePrefix(node, type);
-          const baseRef = isBranchNode ? branchName : selectedBranch || "HEAD";
+          const prefix = getBranchCreatePrefix(node);
+          const targetBaseRef = isBranchNode ? baseRef : selectedBranch || "HEAD";
           onCloseMenus();
-          onBeginCreateBranch(baseRef, prefix);
+          onBeginCreateBranch(targetBaseRef, prefix);
         }}
       >
         Create branch here

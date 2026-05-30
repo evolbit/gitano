@@ -1,7 +1,25 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GitBranchRef } from "@/shared/types/git";
 import { BranchContextMenu } from "./branch-context-menu";
+
+const branchRefByName = new Map<string, GitBranchRef>([
+  [
+    "main",
+    {
+      name: "main",
+      localName: "main",
+      originName: "origin/main",
+      localTargetId: "local",
+      originTargetId: "origin",
+      upstreamName: "origin/main",
+      presence: "local-origin",
+      aheadCount: 0,
+      behindCount: 0,
+    },
+  ],
+]);
 
 describe("BranchContextMenu", () => {
   afterEach(() => {
@@ -18,7 +36,7 @@ describe("BranchContextMenu", () => {
         menuPos={{ x: 10, y: 20 }}
         menuRef={createRef<HTMLDivElement>()}
         selectedBranch="develop"
-        type="local"
+        branchRefByName={branchRefByName}
         creatingWorktree={false}
         onCloseContextMenu={onCloseContextMenu}
         onBeginCreateBranch={vi.fn()}
@@ -54,7 +72,7 @@ describe("BranchContextMenu", () => {
         menuPos={null}
         menuRef={createRef<HTMLDivElement>()}
         selectedBranch="main"
-        type="local"
+        branchRefByName={branchRefByName}
         creatingWorktree={false}
         onCloseContextMenu={vi.fn()}
         onBeginCreateBranch={vi.fn()}

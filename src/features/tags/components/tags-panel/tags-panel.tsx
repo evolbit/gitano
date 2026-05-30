@@ -17,8 +17,10 @@ export function TagsPanel({ repoPath }: TagsPanelProps) {
       {panel.loading ? <TagsPanelProgressBar /> : null}
       <TagsPanelToolbar
         search={panel.search}
+        presenceFilter={panel.tagPresenceFilter}
         requiresInitialCommit={panel.requiresInitialCommit}
         onSearchChange={panel.setSearch}
+        onTogglePresence={panel.toggleTagPresenceFilter}
         onAddTag={panel.openAddPanel}
       />
       <div className="flex min-h-0 flex-1 flex-col">

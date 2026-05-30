@@ -13,6 +13,10 @@ export async function fetchAllRemotes(
   return invokeCommand<void>("git_fetch", { path: repoPath, mode });
 }
 
+export async function hasRemoteRefUpdates(repoPath: string) {
+  return invokeCommand<boolean>("git_remote_refs_changed", { path: repoPath });
+}
+
 export async function pullRepository(
   repoPath: string,
   strategy: PullRepositoryStrategy,

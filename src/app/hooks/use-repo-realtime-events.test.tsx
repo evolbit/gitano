@@ -141,4 +141,36 @@ describe("useRepoRealtimeEvents", () => {
     expect(commitsRefresh).toHaveBeenCalledOnce();
     expect(repoRefsRefresh).toHaveBeenCalledOnce();
   });
+
+  it("refreshes commits when remote refs change", () => {
+    useRepoStore.setState({
+      tabs: [
+        {
+          id: "repo",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+      activeTabId: "repo",
+      recentRepos: [],
+      favoriteRepos: [],
+    });
+    const commitsRefresh = vi.fn();
+    const repoRefsRefresh = vi.fn();
+    window.addEventListener(APP_EVENTS.commitsRefresh, commitsRefresh);
+    window.addEventListener(APP_EVENTS.repoRefsRefresh, repoRefsRefresh);
+
+    render(<RepoRealtimeHarness />);
+    repoChangedHandler?.({
+      payload: {
+        repoPath: "/repo",
+        kinds: ["remote-refs"],
+        timestampMs: 1,
+      },
+    });
+
+    expect(commitsRefresh).toHaveBeenCalledOnce();
+    expect(repoRefsRefresh).toHaveBeenCalledOnce();
+  });
 });
