@@ -25,6 +25,10 @@ export function BranchConfirmModals({
   onCancelDelete,
   onConfirmDelete,
 }: BranchConfirmModalsProps) {
+  const deleteTitle = deleteRequest?.force
+    ? "Delete " + deleteRequest.branchName + " (force)"
+    : "Delete Branch";
+
   return (
     <>
       <ConfirmModal
@@ -69,24 +73,31 @@ export function BranchConfirmModals({
 
       <ConfirmModal
         open={deleteRequest !== null}
-        title="Delete Branch"
+        title={deleteTitle}
         description={
           deleteRequest ? (
             <span>
-              Delete <BranchName>{deleteRequest.branchName}</BranchName>?
+              {deleteRequest.force ? "Force delete" : "Delete"}{" "}
+              <BranchName>{deleteRequest.branchName}</BranchName>?
             </span>
           ) : null
         }
         details={
           deleteRequest ? (
             <span>
-              This runs <span className="font-mono">git branch -d</span>. Git
-              will refuse if the branch is checked out or not fully merged.
+              This runs{" "}
+              <span className="font-mono">
+                git branch {deleteRequest.force ? "-D" : "-d"}
+              </span>
+              .{" "}
+              {deleteRequest.force
+                ? "Git will delete the branch even when it is not fully merged, but it will still refuse if the branch is checked out."
+                : "Git will refuse if the branch is checked out or not fully merged."}
             </span>
           ) : null
         }
-        confirmLabel="Delete Branch"
-        loadingLabel="Deleting..."
+        confirmLabel={deleteRequest?.force ? "Force Delete Branch" : "Delete Branch"}
+        loadingLabel={deleteRequest?.force ? "Force deleting..." : "Deleting..."}
         variant="danger"
         loading={branchActionLoading}
         onCancel={onCancelDelete}

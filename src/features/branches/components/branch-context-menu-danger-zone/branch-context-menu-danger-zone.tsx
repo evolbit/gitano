@@ -9,7 +9,7 @@ type BranchContextMenuDangerZoneProps = {
   localBranchActionDisabledReason: string | null;
   localBranchActionClass: string;
   onRequestRenameBranch: (branchName: string) => void;
-  onRequestDeleteBranch: (branchName: string) => void;
+  onRequestDeleteBranch: (branchName: string, force: boolean) => void;
 };
 
 export function BranchContextMenuDangerZone({
@@ -41,10 +41,24 @@ export function BranchContextMenuDangerZone({
         title={localBranchActionDisabledReason ?? undefined}
         onClick={() => {
           if (localBranchActionDisabledReason) return;
-          onRequestDeleteBranch(branchName);
+          onRequestDeleteBranch(branchName, false);
         }}
       >
         Delete <BranchName>{branchName}</BranchName>
+      </BranchContextMenuItem>
+      <BranchContextMenuItem
+        className={
+          localBranchActionDisabledReason
+            ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+            : "px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-300"
+        }
+        title={localBranchActionDisabledReason ?? undefined}
+        onClick={() => {
+          if (localBranchActionDisabledReason) return;
+          onRequestDeleteBranch(branchName, true);
+        }}
+      >
+        Force delete <BranchName>{branchName}</BranchName>
       </BranchContextMenuItem>
     </>
   );

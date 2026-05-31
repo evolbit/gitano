@@ -10,6 +10,7 @@ export type BranchCreateFormState = {
 
 export type BranchContextRequest = {
   branchName: string;
+  force?: boolean;
 };
 
 export type BranchContextMenuState = {

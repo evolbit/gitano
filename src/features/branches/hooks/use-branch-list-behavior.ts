@@ -644,11 +644,17 @@ export function useBranchListBehavior() {
 
     setBranchActionLoading(true);
     try {
-      await deleteGitBranch(repoPath, deleteRequest.branchName);
+      await deleteGitBranch(
+        repoPath,
+        deleteRequest.branchName,
+        Boolean(deleteRequest.force),
+      );
       setGitActionNotice({
         kind: "success",
-        title: "Deleted branch",
-        details: `Deleted ${deleteRequest.branchName}.`,
+        title: deleteRequest.force ? "Force deleted branch" : "Deleted branch",
+        details: deleteRequest.force
+          ? `Force deleted ${deleteRequest.branchName}.`
+          : `Deleted ${deleteRequest.branchName}.`,
         expanded: false,
       });
       await refreshBranchState(undefined);
@@ -781,8 +787,8 @@ export function useBranchListBehavior() {
     setRenameRequest({ branchName });
   }, []);
 
-  const requestDeleteBranch = useCallback((branchName: string) => {
-    setDeleteRequest({ branchName });
+  const requestDeleteBranch = useCallback((branchName: string, force = false) => {
+    setDeleteRequest({ branchName, force });
   }, []);
 
   const openBranchCompare = useCallback(

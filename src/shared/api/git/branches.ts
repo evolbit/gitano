@@ -77,10 +77,15 @@ export async function renameGitBranch(
   });
 }
 
-export async function deleteGitBranch(repoPath: string, branchName: string) {
+export async function deleteGitBranch(
+  repoPath: string,
+  branchName: string,
+  force = false,
+) {
   return invokeCommand<void>("git_delete_branch", {
     path: repoPath,
     branchName,
+    force,
   });
 }
 

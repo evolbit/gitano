@@ -328,9 +328,20 @@ pub async fn git_rename_branch(
 }
 
 #[tauri::command]
-pub async fn git_delete_branch(path: String, branch_name: String) -> Result<(), String> {
+pub async fn git_delete_branch(
+    path: String,
+    branch_name: String,
+    force: Option<bool>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        ensure_repository_has_commits(&path, "git branch -d")?;
+        let force = force.unwrap_or(false);
+        let command_name = if force {
+            "git branch -D"
+        } else {
+            "git branch -d"
+        };
+
+        ensure_repository_has_commits(&path, command_name)?;
         let branch_name = validate_local_branch_name(&branch_name)?;
         ensure_local_branch(&path, branch_name)
             .map_err(|_| format!("Branch not found: {}", branch_name))?;
@@ -342,7 +353,8 @@ pub async fn git_delete_branch(path: String, branch_name: String) -> Result<(), 
             ));
         }
 
-        run_git_status(&path, &["branch", "-d", branch_name], "git branch -d")
+        let delete_flag = if force { "-D" } else { "-d" };
+        run_git_status(&path, &["branch", delete_flag, branch_name], command_name)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -397,4 +409,53 @@ pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> 
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::git_delete_branch;
+    use crate::git::test_support::{commit_file, init_repo, run_git};
+
+    #[test]
+    fn safe_delete_rejects_unmerged_local_branch() {
+        let repo = init_repo();
+        commit_file(repo.path(), "main.txt", "main\n", "main commit");
+        run_git(repo.path(), &["checkout", "-b", "feature/unmerged"]);
+        commit_file(repo.path(), "feature.txt", "feature\n", "feature commit");
+        run_git(repo.path(), &["checkout", "main"]);
+
+        let error = tauri::async_runtime::block_on(git_delete_branch(
+            repo.path().to_string_lossy().to_string(),
+            "feature/unmerged".to_string(),
+            Some(false),
+        ))
+        .expect_err("safe branch delete should reject unmerged branch");
+
+        assert!(error.contains("git branch -d failed"));
+    }
+
+    #[test]
+    fn force_delete_removes_unmerged_local_branch() {
+        let repo = init_repo();
+        commit_file(repo.path(), "main.txt", "main\n", "main commit");
+        run_git(repo.path(), &["checkout", "-b", "feature/unmerged"]);
+        commit_file(repo.path(), "feature.txt", "feature\n", "feature commit");
+        run_git(repo.path(), &["checkout", "main"]);
+
+        tauri::async_runtime::block_on(git_delete_branch(
+            repo.path().to_string_lossy().to_string(),
+            "feature/unmerged".to_string(),
+            Some(true),
+        ))
+        .expect("forced branch delete should remove unmerged branch");
+
+        let error = tauri::async_runtime::block_on(git_delete_branch(
+            repo.path().to_string_lossy().to_string(),
+            "feature/unmerged".to_string(),
+            Some(true),
+        ))
+        .expect_err("deleted branch should be missing");
+
+        assert!(error.contains("Branch not found: feature/unmerged"));
+    }
 }

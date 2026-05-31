@@ -55,4 +55,32 @@ describe("BranchConfirmModals", () => {
 
     expect(onConfirmDelete).toHaveBeenCalledOnce();
   });
+
+  it("shows forced branch deletion details from the delete dialog", () => {
+    const onConfirmDelete = vi.fn();
+
+    render(
+      <BranchConfirmModals
+        renameRequest={null}
+        renameBranchName=""
+        deleteRequest={{ branchName: "feature/auth", force: true }}
+        branchActionLoading={false}
+        onRenameNameChange={vi.fn()}
+        onCancelRename={vi.fn()}
+        onConfirmRename={vi.fn()}
+        onCancelDelete={vi.fn()}
+        onConfirmDelete={onConfirmDelete}
+      />,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Delete feature/auth (force)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/git branch -D/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Force Delete Branch" }));
+
+    expect(onConfirmDelete).toHaveBeenCalledOnce();
+  });
+
 });

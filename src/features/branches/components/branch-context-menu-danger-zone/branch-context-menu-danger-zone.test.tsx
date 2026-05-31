@@ -27,13 +27,16 @@ describe("BranchContextMenuDangerZone", () => {
 
     fireEvent.click(getByExactText("Rename feature/auth"));
     fireEvent.click(getByExactText("Delete feature/auth"));
+    fireEvent.click(getByExactText("Force delete feature/auth"));
 
     expect(onRequestRenameBranch).toHaveBeenCalledWith("feature/auth");
-    expect(onRequestDeleteBranch).toHaveBeenCalledWith("feature/auth");
+    expect(onRequestDeleteBranch).toHaveBeenNthCalledWith(1, "feature/auth", false);
+    expect(onRequestDeleteBranch).toHaveBeenNthCalledWith(2, "feature/auth", true);
   });
 
   it("does not request dangerous actions while disabled", () => {
     const onRequestRenameBranch = vi.fn();
+    const onRequestDeleteBranch = vi.fn();
 
     render(
       <BranchContextMenuDangerZone
@@ -41,12 +44,15 @@ describe("BranchContextMenuDangerZone", () => {
         localBranchActionDisabledReason="Checkout is only available for local branches"
         localBranchActionClass="cursor-not-allowed"
         onRequestRenameBranch={onRequestRenameBranch}
-        onRequestDeleteBranch={vi.fn()}
+        onRequestDeleteBranch={onRequestDeleteBranch}
       />,
     );
 
     fireEvent.click(getByExactText("Rename origin/main"));
+    fireEvent.click(getByExactText("Delete origin/main"));
+    fireEvent.click(getByExactText("Force delete origin/main"));
 
     expect(onRequestRenameBranch).not.toHaveBeenCalled();
+    expect(onRequestDeleteBranch).not.toHaveBeenCalled();
   });
 });

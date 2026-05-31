@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGitBranch,
+  deleteGitBranch,
   getBranchRefs,
   getBranches,
   runGitBranchOperation,
@@ -71,6 +72,19 @@ describe("branch Git API", () => {
       path: "/repo",
       branchName: "feature/auth",
       baseRef: "main",
+    });
+  });
+
+
+  it("passes branch deletion force mode", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await deleteGitBranch("/repo", "feature/auth", true);
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_delete_branch", {
+      path: "/repo",
+      branchName: "feature/auth",
+      force: true,
     });
   });
 

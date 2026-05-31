@@ -7,6 +7,7 @@ Gitano currently splits or summarizes local/remote ref state in ways that hide i
 - Support multi-line commit message entry from the current changes commit box, preserving subject and body when creating or amending commits.
 - Warn when the first commit-message line exceeds Gitano's configured subject-length recommendation, without blocking commits solely because of length.
 - Keep the branches panel's exclusive local/remote mode controls while rendering unified branch rows with ahead/behind divergence counts.
+- Expose an explicit force-delete branch action for local branch rows so users can intentionally run `git branch -D` when safe delete refuses an unmerged branch.
 - Add local and remote filter toggles to the tags panel; at least one toggle MUST remain active, both can be active, and the selection persists independently from the branch panel.
 - Replace tag state chips with separate local computer and remote cloud icon indicators that start muted while state is unknown/loading and resolve to the row text color when known.
 - Refresh commit history and graph data when remote refs change, using the existing repository event model instead of periodic polling.

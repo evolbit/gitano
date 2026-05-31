@@ -52,6 +52,12 @@ The system SHALL derive branch row action availability from the selected row's l
 - **WHEN** the user opens the context menu for a row with a local branch ref
 - **THEN** local branch actions such as checkout, rename, delete, worktree creation, and local branch operations MUST be available according to existing repository constraints
 
+#### Scenario: User force-deletes an unmerged local branch
+- **WHEN** the user opens the context menu for a row with a local branch ref
+- **THEN** the menu MUST offer a force-delete action below the safe delete action
+- **AND** confirming the force-delete action MUST clearly identify the target branch and force mode
+- **AND** the backend MUST delete via `git branch -D` while still refusing to delete the checked-out branch
+
 #### Scenario: User opens menu for an origin-only branch row
 - **WHEN** the user opens the context menu for a row that exists only on origin
 - **THEN** actions requiring a local branch MUST be disabled or omitted with a clear reason

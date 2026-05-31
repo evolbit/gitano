@@ -22,6 +22,7 @@
 - [x] 3.4 Render `N↑` and `N↓` divergence badges before the row action menu for comparable branch rows.
 - [x] 3.5 Update branch context menu action availability to use row presence metadata instead of panel-wide local/remote mode.
 - [x] 3.6 Update branch panel tests for local/remote mode, persisted state, divergence badges, and context menu availability.
+- [x] 3.7 Add a force-delete branch context-menu action below safe delete, with explicit confirmation copy and backend `git branch -D` support.
 
 ## 4. Tags Panel UI
 

@@ -49,7 +49,7 @@ type BranchContextMenuProps = {
   onCopyBranchTipSha: (branchName: string) => void;
   onCompareBranch: (comparison: BranchComparisonSelection) => void;
   onRequestRenameBranch: (branchName: string) => void;
-  onRequestDeleteBranch: (branchName: string) => void;
+  onRequestDeleteBranch: (branchName: string, force: boolean) => void;
 };
 
 export function BranchContextMenu({
@@ -293,9 +293,9 @@ export function BranchContextMenu({
             closeMenus();
             onRequestRenameBranch(targetBranch);
           }}
-          onRequestDeleteBranch={(targetBranch) => {
+          onRequestDeleteBranch={(targetBranch, force) => {
             closeMenus();
-            onRequestDeleteBranch(targetBranch);
+            onRequestDeleteBranch(targetBranch, force);
           }}
         />
       </div>
