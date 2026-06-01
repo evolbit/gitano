@@ -33,6 +33,8 @@ tempfile = "3"
 notify = "8.2.0"
 futures-util = "0.3.31"
 reqwest = { version = "0.12.20", default-features = false, features = ["json", "stream", "rustls-tls"] }
+base64 = "0.22.1"
+ring = "0.17.14"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

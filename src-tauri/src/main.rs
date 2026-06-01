@@ -4,6 +4,7 @@
 mod ai;
 mod git;
 mod integrations;
+mod licensing;
 mod platform;
 
 use std::time::Duration;
@@ -99,6 +100,9 @@ fn main() {
             git::get_stash_file_diff,
             git::sync_repo_watchers,
             ai::ai_get_entitlement_status,
+            licensing::license_get_status,
+            licensing::license_import_file,
+            licensing::license_refresh_validation,
             ai::ai_get_model_catalog,
             ai::ai_get_external_agent_catalog,
             ai::ai_get_external_agent_status,

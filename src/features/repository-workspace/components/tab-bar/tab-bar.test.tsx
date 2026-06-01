@@ -10,6 +10,7 @@ describe("TabBar", () => {
 
   it("renders repository tabs and dispatches application menu actions", async () => {
     const onAddTab = vi.fn();
+    const onOpenLicense = vi.fn();
     const onOpenSettings = vi.fn();
 
     render(
@@ -23,6 +24,7 @@ describe("TabBar", () => {
             activeTab="repo"
             onTabClose={vi.fn()}
             onAddTab={onAddTab}
+            onOpenLicense={onOpenLicense}
             onOpenSettings={onOpenSettings}
           />
         </Tabs>
@@ -35,9 +37,13 @@ describe("TabBar", () => {
     fireEvent.click(await screen.findByText("New tab"));
 
     fireEvent.click(screen.getByLabelText("Open application menu"));
+    fireEvent.click(await screen.findByText("License"));
+
+    fireEvent.click(screen.getByLabelText("Open application menu"));
     fireEvent.click(await screen.findByText("Settings"));
 
     expect(onAddTab).toHaveBeenCalledOnce();
+    expect(onOpenLicense).toHaveBeenCalledOnce();
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
 });

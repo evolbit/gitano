@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { openDirectoryDialog } from "./dialog";
+import { openDirectoryDialog, openLicenseFileDialog } from "./dialog";
 
 const openMock = vi.hoisted(() => vi.fn());
 
@@ -27,5 +27,18 @@ describe("openDirectoryDialog", () => {
     openMock.mockResolvedValueOnce(["/repo"]);
 
     await expect(openDirectoryDialog()).resolves.toBeNull();
+  });
+
+  it("opens a license file picker", async () => {
+    openMock.mockResolvedValueOnce("/tmp/license.gitano-license");
+
+    await expect(openLicenseFileDialog()).resolves.toBe(
+      "/tmp/license.gitano-license",
+    );
+
+    expect(openMock).toHaveBeenCalledWith({
+      multiple: false,
+      filters: [{ name: "Gitano license", extensions: ["gitano-license", "json"] }],
+    });
   });
 });

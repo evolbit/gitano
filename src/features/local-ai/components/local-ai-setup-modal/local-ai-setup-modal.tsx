@@ -352,7 +352,7 @@ export function LocalAiSetupModal({
             </span>
             <select
               value={selectedEngineValue}
-              disabled={loading}
+              disabled={loading || entitlement?.entitled === false}
               className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-blue-500/60"
               onChange={(event) => {
                 const value = event.target.value;

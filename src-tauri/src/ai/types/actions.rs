@@ -16,8 +16,9 @@ pub struct LocalAiEntitlementStatus {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum LocalAiEntitlementSource {
-    DevelopmentStub,
     License,
+    StaleValidation,
+    Invalid,
     Missing,
 }
 

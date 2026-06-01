@@ -2,20 +2,24 @@ import { Tabs } from "@mantine/core";
 import { useEffect, useState, type MouseEvent } from "react";
 import HomePage from "./home-page/home-page";
 import { useRepoRealtimeEvents } from "@/app/hooks/use-repo-realtime-events";
+import { LicenseWindow } from "@/features/license";
 import { SettingsWindow } from "@/features/settings";
 import { RepoTabLayout, TabBar } from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace";
+import { getLicenseStatus, refreshLicenseValidation } from "@/shared/api/license";
 import { listenToEvent } from "@/shared/platform/tauri/events";
 
 const HOME_TAB = {
   id: "home",
   label: "",
 };
+const LICENSE_VALIDATION_REFRESH_MS = 60 * 60 * 1000;
 
 export function AppShell() {
   useRepoRealtimeEvents();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [licenseOpen, setLicenseOpen] = useState(false);
   const tabs = useRepoStore((s) => s.tabs);
   const activeTab = useRepoStore((s) => s.activeTabId);
   const addTab = useRepoStore((s) => s.addTab);
@@ -61,6 +65,30 @@ export function AppShell() {
       unlisten.then((fn) => fn());
     };
   }, [tabs, activeTab, closeTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshLicense = async () => {
+      try {
+        const status = await getLicenseStatus();
+        if (!cancelled && status.licenseId) {
+          await refreshLicenseValidation({ force: false });
+        }
+      } catch {
+        // License status remains local when validation is temporarily unavailable.
+      }
+    };
+
+    void refreshLicense();
+    const intervalId = window.setInterval(
+      () => void refreshLicense(),
+      LICENSE_VALIDATION_REFRESH_MS,
+    );
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
@@ -115,6 +143,7 @@ export function AppShell() {
           activeTab={activeTab || ""}
           onTabClose={handleCloseTab}
           onAddTab={handleAddTab}
+          onOpenLicense={() => setLicenseOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
         />
         {tabs.map((tab) => (
@@ -134,6 +163,10 @@ export function AppShell() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         repoPath={activeRepoPath}
+      />
+      <LicenseWindow
+        open={licenseOpen}
+        onClose={() => setLicenseOpen(false)}
       />
     </div>
   );
