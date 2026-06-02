@@ -13,6 +13,10 @@ export type RemoteBranchActionCommand =
   | "git_branch_push"
   | "git_branch_set_upstream";
 
+export type RemoteBranchOperationCommand =
+  | "git_branch_merge_remote_into_current"
+  | "git_branch_rebase_current_onto_remote";
+
 export async function getBranches(repoPath: string, type: BranchListType) {
   const command = type === "local" ? "get_branches" : "get_remote_branches";
   return invokeCommand<string[]>(command, { path: repoPath });
@@ -45,6 +49,16 @@ export async function checkoutGitBranch(repoPath: string, branchName: string) {
   });
 }
 
+export async function checkoutRemoteGitBranch(
+  repoPath: string,
+  branchName: string,
+) {
+  return invokeCommand<void>("git_checkout_remote_branch", {
+    path: repoPath,
+    branchName,
+  });
+}
+
 export async function runGitBranchOperation(
   repoPath: string,
   command: BranchOperationCommand,
@@ -55,6 +69,17 @@ export async function runGitBranchOperation(
     path: repoPath,
     targetBranch,
     sourceBranch,
+  });
+}
+
+export async function runRemoteGitBranchOperation(
+  repoPath: string,
+  command: RemoteBranchOperationCommand,
+  branchName: string,
+) {
+  return invokeCommand<void>(command, {
+    path: repoPath,
+    branchName,
   });
 }
 
@@ -86,6 +111,13 @@ export async function deleteGitBranch(
     path: repoPath,
     branchName,
     force,
+  });
+}
+
+export async function deleteRemoteGitBranch(repoPath: string, branchName: string) {
+  return invokeCommand<void>("git_delete_remote_branch", {
+    path: repoPath,
+    branchName,
   });
 }
 

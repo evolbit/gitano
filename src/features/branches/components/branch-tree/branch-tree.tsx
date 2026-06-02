@@ -12,6 +12,7 @@ import {
   PRIORITY_BRANCH_COLOR,
 } from "../../constants";
 import { BranchIcon } from "../branch-icon/branch-icon";
+import type { BranchType } from "../../types";
 
 const BRANCH_TREE_INDENT_STEP = 18;
 const BRANCH_GROUP_BASE_INDENT = 10;
@@ -21,6 +22,7 @@ type BranchTreeProps = {
   nodes: BranchTreeNode[];
   branchTreeExpanded: Record<string, boolean>;
   branchRefByName: Map<string, GitBranchRef>;
+  branchType: BranchType;
   selectedBranch?: string | null;
   selectedRowBranch: string | null;
   isRowActionsVisible: (rowKey: string) => boolean;
@@ -36,6 +38,7 @@ export function BranchTree({
   nodes,
   branchTreeExpanded,
   branchRefByName,
+  branchType,
   selectedBranch,
   selectedRowBranch,
   isRowActionsVisible,
@@ -109,6 +112,7 @@ export function BranchTree({
                   nodes={node.children}
                   branchTreeExpanded={branchTreeExpanded}
                   branchRefByName={branchRefByName}
+                  branchType={branchType}
                   selectedBranch={selectedBranch}
                   selectedRowBranch={selectedRowBranch}
                   isRowActionsVisible={isRowActionsVisible}
@@ -125,6 +129,10 @@ export function BranchTree({
         }
 
         const branchRef = branchRefByName.get(node.full);
+        const checkoutBranchName =
+          branchType === "remote" && branchRef?.originName
+            ? branchRef.originName
+            : branchRef?.localName;
         const selectedName = selectedRowBranch ?? selectedBranch;
         const selected =
           selectedName === node.full || selectedName === branchRef?.localName;
@@ -146,8 +154,8 @@ export function BranchTree({
             onMouseLeave={() => onHoverRow(null)}
             onClick={() => onSelectBranch(node.full)}
             onDoubleClick={() => {
-              if (!branchRef?.localName) return;
-              onCheckoutBranch(branchRef.localName);
+              if (!checkoutBranchName) return;
+              onCheckoutBranch(checkoutBranchName);
             }}
             onContextMenu={(event) => {
               event.preventDefault();

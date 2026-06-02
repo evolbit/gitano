@@ -25,7 +25,9 @@ export function BranchConfirmModals({
   onCancelDelete,
   onConfirmDelete,
 }: BranchConfirmModalsProps) {
-  const deleteTitle = deleteRequest?.force
+  const deleteTitle = deleteRequest?.remote
+    ? "Delete " + deleteRequest.branchName
+    : deleteRequest?.force
     ? "Delete " + deleteRequest.branchName + " (force)"
     : "Delete Branch";
 
@@ -87,17 +89,33 @@ export function BranchConfirmModals({
             <span>
               This runs{" "}
               <span className="font-mono">
-                git branch {deleteRequest.force ? "-D" : "-d"}
+                {deleteRequest.remote
+                  ? "git push origin --delete"
+                  : `git branch ${deleteRequest.force ? "-D" : "-d"}`}
               </span>
               .{" "}
-              {deleteRequest.force
+              {deleteRequest.remote
+                ? "The branch will be deleted from origin. Local branches with the same name will not be deleted."
+                : deleteRequest.force
                 ? "Git will delete the branch even when it is not fully merged, but it will still refuse if the branch is checked out."
                 : "Git will refuse if the branch is checked out or not fully merged."}
             </span>
           ) : null
         }
-        confirmLabel={deleteRequest?.force ? "Force Delete Branch" : "Delete Branch"}
-        loadingLabel={deleteRequest?.force ? "Force deleting..." : "Deleting..."}
+        confirmLabel={
+          deleteRequest?.remote
+            ? "Delete Remote Branch"
+            : deleteRequest?.force
+              ? "Force Delete Branch"
+              : "Delete Branch"
+        }
+        loadingLabel={
+          deleteRequest?.remote
+            ? "Deleting remote branch..."
+            : deleteRequest?.force
+              ? "Force deleting..."
+              : "Deleting..."
+        }
         variant="danger"
         loading={branchActionLoading}
         onCancel={onCancelDelete}

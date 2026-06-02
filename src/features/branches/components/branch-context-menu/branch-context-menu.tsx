@@ -6,15 +6,20 @@ import { BranchContextMenuBranchOperations } from "../branch-context-menu-branch
 import { BranchContextMenuCompareItems } from "../branch-context-menu-compare-items/branch-context-menu-compare-items";
 import { BranchContextMenuDangerZone } from "../branch-context-menu-danger-zone/branch-context-menu-danger-zone";
 import { BranchContextMenuOtherActions } from "../branch-context-menu-other-actions/branch-context-menu-other-actions";
+import { BranchContextMenuPullRequestActions } from "../branch-context-menu-pull-request-actions/branch-context-menu-pull-request-actions";
+import { BranchContextMenuRemoteBranchOperations } from "../branch-context-menu-remote-branch-operations/branch-context-menu-remote-branch-operations";
 import { BranchContextMenuRemoteActions } from "../branch-context-menu-remote-actions/branch-context-menu-remote-actions";
 import { BranchContextMenuSeparator } from "../branch-context-menu-parts/branch-context-menu-parts";
 import { BranchContextMenuWorktreeActions } from "../branch-context-menu-worktree-actions/branch-context-menu-worktree-actions";
 import type {
+  BranchType,
   BranchContextMenuState,
   BranchOperationCommand,
+  MatchingBranchPullRequest,
   MenuPosition,
   PendingRemoteBranchAction,
   RemoteBranchActionCommand,
+  RemoteBranchOperationCommand,
   BranchComparisonSelection,
 } from "../../types";
 
@@ -24,7 +29,10 @@ type BranchContextMenuProps = {
   menuRef: RefObject<HTMLDivElement>;
   selectedBranch?: string | null;
   branchRefByName: Map<string, GitBranchRef>;
+  branchType: BranchType;
   creatingWorktree: boolean;
+  matchingPullRequestByHead: Map<string, MatchingBranchPullRequest>;
+  remoteUrl: string | null;
   onCloseContextMenu: () => void;
   onBeginCreateBranch: (baseRef: string, prefix?: string) => void;
   onCheckoutBranch: (branchName: string) => void;
@@ -35,6 +43,13 @@ type BranchContextMenuProps = {
     successDetails: string,
     failureTitle: string,
     selectedRowAfter: string | null,
+  ) => void;
+  onRunRemoteBranchOperation: (
+    command: RemoteBranchOperationCommand,
+    branchName: string,
+    successTitle: string,
+    successDetails: string,
+    failureTitle: string,
   ) => void;
   onRunRemoteBranchAction: (
     command: RemoteBranchActionCommand,
@@ -47,9 +62,14 @@ type BranchContextMenuProps = {
   onCreateRandomWorktreeFromBranch: (baseRef: string) => void;
   onCopyText: (text: string, successTitle: string, successDetails: string) => void;
   onCopyBranchTipSha: (branchName: string) => void;
+  onCopyRemoteBranchUrl: (branchName: string) => void;
+  onCopyRemoteCommitUrl: (branchName: string, commitSha: string) => void;
   onCompareBranch: (comparison: BranchComparisonSelection) => void;
+  onOpenPullRequestReview: (pullRequest: MatchingBranchPullRequest) => void;
+  onOpenPullRequestUrl: (url: string) => void;
   onRequestRenameBranch: (branchName: string) => void;
   onRequestDeleteBranch: (branchName: string, force: boolean) => void;
+  onRequestDeleteRemoteBranch: (branchName: string) => void;
 };
 
 export function BranchContextMenu({
@@ -58,18 +78,27 @@ export function BranchContextMenu({
   menuRef,
   selectedBranch,
   branchRefByName,
+  branchType,
   creatingWorktree,
+  matchingPullRequestByHead,
+  remoteUrl,
   onCloseContextMenu,
   onBeginCreateBranch,
   onCheckoutBranch,
   onRunBranchOperation,
+  onRunRemoteBranchOperation,
   onRunRemoteBranchAction,
   onCreateRandomWorktreeFromBranch,
   onCopyText,
   onCopyBranchTipSha,
+  onCopyRemoteBranchUrl,
+  onCopyRemoteCommitUrl,
   onCompareBranch,
+  onOpenPullRequestReview,
+  onOpenPullRequestUrl,
   onRequestRenameBranch,
   onRequestDeleteBranch,
+  onRequestDeleteRemoteBranch,
 }: BranchContextMenuProps) {
   const [showOther, setShowOther] = useState(false);
   const [submenuLeft, setSubmenuLeft] = useState(true);
@@ -107,9 +136,21 @@ export function BranchContextMenu({
   const rowBranchName = node.full || node.name;
   const branchRef = node.type === "branch" ? branchRefByName.get(node.full) : null;
   const localBranchName = branchRef?.localName ?? null;
-  const targetBranchName = localBranchName ?? rowBranchName;
-  const baseRef = localBranchName ?? branchRef?.originName ?? rowBranchName;
-  const compareBranchName = localBranchName ?? branchRef?.originName ?? rowBranchName;
+  const originBranchName = branchRef?.originName ?? null;
+  const isRemoteRow = branchType === "remote" && Boolean(originBranchName);
+  const remoteLogicalBranchName = originBranchName?.replace(/^origin\//, "") ?? null;
+  const matchingPullRequest = remoteLogicalBranchName
+    ? (matchingPullRequestByHead.get(remoteLogicalBranchName) ?? null)
+    : null;
+  const targetBranchName = isRemoteRow
+    ? (originBranchName ?? rowBranchName)
+    : (localBranchName ?? rowBranchName);
+  const baseRef = isRemoteRow
+    ? (originBranchName ?? rowBranchName)
+    : (localBranchName ?? originBranchName ?? rowBranchName);
+  const compareBranchName = isRemoteRow
+    ? (originBranchName ?? rowBranchName)
+    : (localBranchName ?? originBranchName ?? rowBranchName);
   const currentBranchLabel = selectedBranch || "current branch";
   const isBranchNode = node.type !== "group";
   const remoteActionDisabledReason = !isBranchNode
@@ -122,6 +163,8 @@ export function BranchContextMenu({
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
   const branchOperationDisabledReason = !isBranchNode
     ? "Branch operations are only available for branches"
+    : isRemoteRow
+      ? null
     : !localBranchName
       ? "Branch operations are only available for local branches"
       : !selectedBranch
@@ -134,8 +177,8 @@ export function BranchContextMenu({
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
   const localBranchActionDisabledReason = !isBranchNode
     ? "This action is only available for branches"
-    : !localBranchName
-      ? "Checkout is only available for local branches"
+    : !targetBranchName
+      ? "Checkout is only available for branches"
       : null;
   const localBranchActionClass = localBranchActionDisabledReason
     ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
@@ -156,6 +199,16 @@ export function BranchContextMenu({
         ? "Source and target branch are the same"
         : null;
   const compareActionClass = compareDisabledReason
+    ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
+    : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
+  const remoteBranchOperationDisabledReason = !isBranchNode
+    ? "Branch operations are only available for branches"
+    : !isRemoteRow || !originBranchName
+      ? "Remote branch operations are only available for remote branches"
+      : !selectedBranch
+        ? "Remote branch operations require a current local branch"
+        : null;
+  const remoteBranchOperationClass = remoteBranchOperationDisabledReason
     ? "px-4 py-2 text-zinc-500 cursor-not-allowed"
     : "px-4 py-2 hover:bg-zinc-700 cursor-pointer";
 
@@ -199,41 +252,57 @@ export function BranchContextMenu({
       onMouseLeave={handleMenuMouseLeave}
     >
       <div className="z-[99999] min-w-[320px] select-none rounded border border-border bg-background-emphasis py-1 text-xs text-zinc-200 shadow-lg">
-        <BranchContextMenuRemoteActions
-          branchName={targetBranchName}
-          disabledReason={remoteActionDisabledReason}
-          itemClass={remoteActionClass}
-          onRunRemoteAction={(
-            command,
-            pendingAction,
-            successTitle,
-            successDetails,
-            failureTitle,
-          ) => {
-            if (remoteActionDisabledReason) return;
-            closeMenus();
-            onRunRemoteBranchAction(
-              command,
-              targetBranchName,
-              pendingAction,
-              successTitle,
-              successDetails,
-              failureTitle,
-            );
-          }}
-        />
-        <BranchContextMenuSeparator />
-        <BranchContextMenuBranchOperations
-          branchName={targetBranchName}
-          selectedBranch={selectedBranch}
-          currentBranchLabel={currentBranchLabel}
-          disabledReason={branchOperationDisabledReason}
-          itemClass={branchOperationClass}
-          onRunBranchOperation={(...args) => {
-            closeMenus();
-            onRunBranchOperation(...args);
-          }}
-        />
+        {isRemoteRow && originBranchName ? null : (
+          <>
+            <BranchContextMenuRemoteActions
+              branchName={targetBranchName}
+              disabledReason={remoteActionDisabledReason}
+              itemClass={remoteActionClass}
+              onRunRemoteAction={(
+                command,
+                pendingAction,
+                successTitle,
+                successDetails,
+                failureTitle,
+              ) => {
+                if (remoteActionDisabledReason) return;
+                closeMenus();
+                onRunRemoteBranchAction(
+                  command,
+                  targetBranchName,
+                  pendingAction,
+                  successTitle,
+                  successDetails,
+                  failureTitle,
+                );
+              }}
+            />
+            <BranchContextMenuSeparator />
+            <BranchContextMenuBranchOperations
+              branchName={targetBranchName}
+              selectedBranch={selectedBranch}
+              currentBranchLabel={currentBranchLabel}
+              disabledReason={branchOperationDisabledReason}
+              itemClass={branchOperationClass}
+              onRunBranchOperation={(...args) => {
+                closeMenus();
+                onRunBranchOperation(...args);
+              }}
+            />
+          </>
+        )}
+        {isRemoteRow && originBranchName ? (
+          <BranchContextMenuRemoteBranchOperations
+            remoteBranchName={originBranchName}
+            currentBranchLabel={currentBranchLabel}
+            disabledReason={remoteBranchOperationDisabledReason}
+            itemClass={remoteBranchOperationClass}
+            onRunRemoteBranchOperation={(...args) => {
+              closeMenus();
+              onRunRemoteBranchOperation(...args);
+            }}
+          />
+        ) : null}
         <BranchContextMenuSeparator />
         <BranchContextMenuWorktreeActions
           branchName={targetBranchName}
@@ -273,6 +342,9 @@ export function BranchContextMenu({
         <BranchContextMenuSeparator />
         <BranchContextMenuOtherActions
           branchName={baseRef}
+          remoteBranchName={originBranchName}
+          remoteCommitSha={branchRef?.originTargetId ?? null}
+          hasRemoteProviderUrl={Boolean(remoteUrl)}
           showOther={showOther}
           submenuLeft={submenuLeft}
           submenuDirection={submenuDirection}
@@ -281,12 +353,35 @@ export function BranchContextMenu({
           onCloseMenus={closeMenus}
           onCopyText={onCopyText}
           onCopyBranchTipSha={onCopyBranchTipSha}
+          onCopyRemoteBranchUrl={onCopyRemoteBranchUrl}
+          onCopyRemoteCommitUrl={onCopyRemoteCommitUrl}
           onSubmenuMouseEnter={handleSubmenuMouseEnter}
           onSubmenuMouseLeave={handleSubmenuMouseLeave}
         />
+        {matchingPullRequest ? (
+          <>
+            <BranchContextMenuSeparator />
+            <BranchContextMenuPullRequestActions
+              pullRequest={matchingPullRequest}
+              onCopyText={(...args) => {
+                closeMenus();
+                onCopyText(...args);
+              }}
+              onOpenPullRequestReview={(pullRequest) => {
+                closeMenus();
+                onOpenPullRequestReview(pullRequest);
+              }}
+              onOpenPullRequestUrl={(url) => {
+                closeMenus();
+                onOpenPullRequestUrl(url);
+              }}
+            />
+          </>
+        ) : null}
         <BranchContextMenuSeparator />
         <BranchContextMenuDangerZone
           branchName={targetBranchName}
+          remoteBranchName={isRemoteRow ? originBranchName : null}
           localBranchActionDisabledReason={localBranchActionDisabledReason}
           localBranchActionClass={localBranchActionClass}
           onRequestRenameBranch={(targetBranch) => {
@@ -296,6 +391,10 @@ export function BranchContextMenu({
           onRequestDeleteBranch={(targetBranch, force) => {
             closeMenus();
             onRequestDeleteBranch(targetBranch, force);
+          }}
+          onRequestDeleteRemoteBranch={(targetBranch) => {
+            closeMenus();
+            onRequestDeleteRemoteBranch(targetBranch);
           }}
         />
       </div>

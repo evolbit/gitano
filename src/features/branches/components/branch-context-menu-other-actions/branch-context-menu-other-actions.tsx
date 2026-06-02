@@ -3,6 +3,9 @@ import { IconChevronRight } from "@/shared/components/icons/icons";
 
 type BranchContextMenuOtherActionsProps = {
   branchName: string;
+  remoteBranchName: string | null;
+  remoteCommitSha: string | null;
+  hasRemoteProviderUrl: boolean;
   showOther: boolean;
   submenuLeft: boolean;
   submenuDirection: "down" | "up";
@@ -11,12 +14,17 @@ type BranchContextMenuOtherActionsProps = {
   onCloseMenus: () => void;
   onCopyText: (text: string, successTitle: string, successDetails: string) => void;
   onCopyBranchTipSha: (branchName: string) => void;
+  onCopyRemoteBranchUrl: (branchName: string) => void;
+  onCopyRemoteCommitUrl: (branchName: string, commitSha: string) => void;
   onSubmenuMouseEnter: () => void;
   onSubmenuMouseLeave: () => void;
 };
 
 export function BranchContextMenuOtherActions({
   branchName,
+  remoteBranchName,
+  remoteCommitSha,
+  hasRemoteProviderUrl,
   showOther,
   submenuLeft,
   submenuDirection,
@@ -25,6 +33,8 @@ export function BranchContextMenuOtherActions({
   onCloseMenus,
   onCopyText,
   onCopyBranchTipSha,
+  onCopyRemoteBranchUrl,
+  onCopyRemoteCommitUrl,
   onSubmenuMouseEnter,
   onSubmenuMouseLeave,
 }: BranchContextMenuOtherActionsProps) {
@@ -69,6 +79,28 @@ export function BranchContextMenuOtherActions({
           >
             Copy commit sha
           </div>
+          {remoteBranchName && hasRemoteProviderUrl ? (
+            <div
+              className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
+              onClick={() => {
+                onCloseMenus();
+                onCopyRemoteBranchUrl(remoteBranchName);
+              }}
+            >
+              Copy branch URL
+            </div>
+          ) : null}
+          {remoteBranchName && remoteCommitSha && hasRemoteProviderUrl ? (
+            <div
+              className="cursor-pointer px-4 py-2 hover:bg-zinc-700"
+              onClick={() => {
+                onCloseMenus();
+                onCopyRemoteCommitUrl(remoteBranchName, remoteCommitSha);
+              }}
+            >
+              Copy commit URL on origin
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

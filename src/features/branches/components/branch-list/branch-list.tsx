@@ -63,6 +63,7 @@ export function BranchList() {
             nodes={branchList.grouped}
             branchTreeExpanded={branchList.branchTreeExpanded}
             branchRefByName={branchList.branchRefByName}
+            branchType={branchList.branchType}
             selectedBranch={branchList.selectedBranch}
             selectedRowBranch={branchList.selectedRowBranch}
             isRowActionsVisible={branchList.isRowActionsVisible}
@@ -80,7 +81,10 @@ export function BranchList() {
             menuRef={branchList.menuRef}
             selectedBranch={branchList.selectedBranch}
             branchRefByName={branchList.branchRefByName}
+            branchType={branchList.branchType}
             creatingWorktree={branchList.creatingWorktree}
+            matchingPullRequestByHead={branchList.matchingPullRequestByHead}
+            remoteUrl={branchList.remoteUrl}
             onCloseContextMenu={branchList.closeContextMenu}
             onBeginCreateBranch={branchList.beginCreateBranch}
             onCheckoutBranch={(branchName) => {
@@ -88,6 +92,9 @@ export function BranchList() {
             }}
             onRunBranchOperation={(...args) => {
               void branchList.runBranchOperation(...args);
+            }}
+            onRunRemoteBranchOperation={(...args) => {
+              void branchList.runRemoteBranchOperation(...args);
             }}
             onRunRemoteBranchAction={(...args) => {
               void branchList.runRemoteBranchAction(...args);
@@ -101,9 +108,22 @@ export function BranchList() {
             onCopyBranchTipSha={(branchName) => {
               void branchList.copyBranchTipSha(branchName);
             }}
+            onCopyRemoteBranchUrl={(branchName) => {
+              void branchList.copyRemoteBranchUrl(branchName);
+            }}
+            onCopyRemoteCommitUrl={(branchName, commitSha) => {
+              void branchList.copyRemoteCommitUrl(branchName, commitSha);
+            }}
             onCompareBranch={branchList.openBranchCompare}
+            onOpenPullRequestReview={(pullRequest) => {
+              void branchList.openPullRequestReview(pullRequest);
+            }}
+            onOpenPullRequestUrl={(url) => {
+              void branchList.openPullRequestUrl(url);
+            }}
             onRequestRenameBranch={branchList.requestRenameBranch}
             onRequestDeleteBranch={branchList.requestDeleteBranch}
+            onRequestDeleteRemoteBranch={branchList.requestDeleteRemoteBranch}
           />
         </div>
         {branchList.createForm ? (

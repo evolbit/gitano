@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BranchTreeNode } from "@/shared/lib/tree/branch-tree";
 import type { GitBranchRef } from "@/shared/types/git";
@@ -30,11 +31,12 @@ const branchRefs = new Map<string, GitBranchRef>([
   ],
 ]);
 
-function renderTree(overrides = {}) {
+function renderTree(overrides: Partial<ComponentProps<typeof BranchTree>> = {}) {
   const props = {
     nodes,
     branchTreeExpanded: { feature: true },
     branchRefByName: branchRefs,
+    branchType: "local" as const,
     selectedBranch: "main",
     selectedRowBranch: null,
     isRowActionsVisible: () => true,
@@ -73,8 +75,9 @@ describe("BranchTree", () => {
     );
   });
 
-  it("does not checkout remote-only rows on double click", () => {
+  it("checks out remote rows through their origin branch name on double click", () => {
     const props = renderTree({
+      branchType: "remote",
       branchRefByName: new Map<string, GitBranchRef>([
         [
           "feature/login",
@@ -95,7 +98,7 @@ describe("BranchTree", () => {
 
     fireEvent.doubleClick(screen.getByText("login"));
 
-    expect(props.onCheckoutBranch).not.toHaveBeenCalled();
+    expect(props.onCheckoutBranch).toHaveBeenCalledWith("origin/feature/login");
   });
 
   it("opens the context menu from row actions", () => {

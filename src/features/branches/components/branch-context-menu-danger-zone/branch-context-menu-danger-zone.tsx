@@ -6,19 +6,37 @@ import {
 
 type BranchContextMenuDangerZoneProps = {
   branchName: string;
+  remoteBranchName: string | null;
   localBranchActionDisabledReason: string | null;
   localBranchActionClass: string;
   onRequestRenameBranch: (branchName: string) => void;
   onRequestDeleteBranch: (branchName: string, force: boolean) => void;
+  onRequestDeleteRemoteBranch: (branchName: string) => void;
 };
 
 export function BranchContextMenuDangerZone({
   branchName,
+  remoteBranchName,
   localBranchActionDisabledReason,
   localBranchActionClass,
   onRequestRenameBranch,
   onRequestDeleteBranch,
+  onRequestDeleteRemoteBranch,
 }: BranchContextMenuDangerZoneProps) {
+  if (remoteBranchName) {
+    return (
+      <>
+        <BranchContextMenuSectionTitle>Danger zone</BranchContextMenuSectionTitle>
+        <BranchContextMenuItem
+          className="px-4 py-2 hover:bg-zinc-700 cursor-pointer text-red-400"
+          onClick={() => onRequestDeleteRemoteBranch(remoteBranchName)}
+        >
+          Delete <BranchName>{remoteBranchName}</BranchName>...
+        </BranchContextMenuItem>
+      </>
+    );
+  }
+
   return (
     <>
       <BranchContextMenuSectionTitle>Danger zone</BranchContextMenuSectionTitle>

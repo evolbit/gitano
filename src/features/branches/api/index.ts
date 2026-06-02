@@ -1,8 +1,10 @@
 export {
+  checkoutRemoteGitBranch,
   checkoutGitBranch,
   createGitBranch,
   createGitWorktree,
   deleteGitBranch,
+  deleteRemoteGitBranch,
   getBranchRefs,
   getBranches,
   getBranchTipSha,
@@ -10,5 +12,6 @@ export {
   getWorktrees,
   renameGitBranch,
   runGitBranchOperation,
+  runRemoteGitBranchOperation,
   runRemoteBranchAction,
 } from "@/shared/api/git/branches";

@@ -7,9 +7,22 @@ import {
   useState,
 } from "react";
 import { APP_EVENTS } from "@/shared/config/events";
+import {
+  listProviderPullRequests,
+  prepareProviderPullRequestRefs,
+} from "@/shared/api/integrations";
+import type { PullRequestListItem } from "@/shared/api/integrations";
+import { getRemoteUrl } from "@/shared/api/git/commits";
+import {
+  buildRemoteBranchUrl,
+  buildRemoteCommitUrl,
+} from "@/shared/lib/git/remote-url";
 import { getRepositoryState } from "@/shared/api/repositories";
 import type { GitBranchRef, RepositoryState } from "@/shared/types/git";
-import { useGitActionsStore } from "@/features/repository-workspace";
+import {
+  useGitActionsStore,
+  useRepositorySurfaceStore,
+} from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace";
 import {
   DEFAULT_REF_PRESENCE_FILTER,
@@ -23,15 +36,18 @@ import {
   writeClipboardText,
   writeClipboardTextFromPromise,
 } from "@/shared/platform/clipboard";
+import { openExternalUrl } from "@/shared/platform/tauri/opener";
 import {
   buildDefaultWorktreeFolder,
   generateRandomWorkbranchName,
 } from "@/features/worktrees";
 import {
+  checkoutRemoteGitBranch,
   checkoutGitBranch,
   createGitBranch,
   createGitWorktree,
   deleteGitBranch,
+  deleteRemoteGitBranch,
   getBranches,
   getBranchRefs,
   getBranchTipSha,
@@ -39,6 +55,7 @@ import {
   getWorktrees,
   renameGitBranch,
   runGitBranchOperation,
+  runRemoteGitBranchOperation,
   runRemoteBranchAction as runRemoteGitBranchAction,
 } from "../api";
 import type {
@@ -48,9 +65,11 @@ import type {
   BranchCreateFormState,
   BranchType,
   BranchOperationCommand,
+  MatchingBranchPullRequest,
   MenuPosition,
   PendingRemoteBranchAction,
   RemoteBranchActionCommand,
+  RemoteBranchOperationCommand,
 } from "../types";
 import {
   buildBranchName,
@@ -109,6 +128,24 @@ function branchPresenceFilterToType(filter: RefPresenceFilter): BranchType {
   return filter.remote && !filter.local ? "remote" : "local";
 }
 
+function stripOriginPrefix(branchName: string) {
+  return branchName.replace(/^origin\//, "");
+}
+
+function toMatchingPullRequest(
+  pullRequest: PullRequestListItem,
+): MatchingBranchPullRequest {
+  return {
+    number: pullRequest.number,
+    title: pullRequest.title,
+    htmlUrl: pullRequest.htmlUrl,
+    baseRef: pullRequest.base.refName,
+    headRef: pullRequest.head.refName,
+    baseLabel: pullRequest.base.label,
+    headLabel: pullRequest.head.label,
+  };
+}
+
 export function useBranchListBehavior() {
   const activeTabId = useRepoStore((state) => state.activeTabId);
   const tab = useRepoStore((state) =>
@@ -124,6 +161,9 @@ export function useBranchListBehavior() {
     (state) => state.setPendingAction,
   );
   const setGitActionNotice = useGitActionsStore((state) => state.setNotice);
+  const showPullRequestReview = useRepositorySurfaceStore(
+    (state) => state.showPullRequestReview,
+  );
   const branchTreeExpanded = useWorkspaceUiStore((state) =>
     repoPath
       ? (state.repoStateByPath[repoPath] ?? DEFAULT_REPO_WORKSPACE_STATE)
@@ -176,6 +216,10 @@ export function useBranchListBehavior() {
     useState<BranchComparisonSelection | null>(null);
   const [repositoryState, setRepositoryState] =
     useState<RepositoryState | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+  const [matchingPullRequestByHead, setMatchingPullRequestByHead] = useState<
+    Map<string, MatchingBranchPullRequest>
+  >(() => new Map());
   const menuRef = useRef<HTMLDivElement>(null);
   const branchRefreshRequestRef = useRef(0);
   const activeRepositoryState =
@@ -256,6 +300,8 @@ export function useBranchListBehavior() {
   useEffect(() => {
     if (!repoPath) {
       setRepositoryState(null);
+      setRemoteUrl(null);
+      setMatchingPullRequestByHead(new Map());
       return;
     }
 
@@ -284,6 +330,60 @@ export function useBranchListBehavior() {
     return () => {
       cancelled = true;
       window.removeEventListener(APP_EVENTS.repoRefsRefresh, handleRepoRefsRefresh);
+    };
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!repoPath) {
+      setRemoteUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void getRemoteUrl(repoPath, "origin")
+      .then((nextRemoteUrl) => {
+        if (!cancelled) setRemoteUrl(nextRemoteUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!repoPath) {
+      setMatchingPullRequestByHead(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    void listProviderPullRequests({
+      providerId: "github",
+      path: repoPath,
+    })
+      .then((pullRequests) => {
+        if (cancelled) return;
+
+        setMatchingPullRequestByHead(
+          new Map(
+            pullRequests.map((pullRequest) => [
+              pullRequest.head.refName,
+              toMatchingPullRequest(pullRequest),
+            ]),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMatchingPullRequestByHead(new Map());
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, [repoPath]);
 
@@ -486,18 +586,26 @@ export function useBranchListBehavior() {
       }
 
       setBranchActionLoading(true);
+      const isRemoteBranch = branchName.startsWith("origin/");
+      const checkedOutBranch = isRemoteBranch
+        ? stripOriginPrefix(branchName)
+        : branchName;
       try {
-        await checkoutGitBranch(repoPath, branchName);
+        if (isRemoteBranch) {
+          await checkoutRemoteGitBranch(repoPath, branchName);
+        } else {
+          await checkoutGitBranch(repoPath, branchName);
+        }
 
-        setTabBranch(activeTabId, branchName);
-        setSelectedRowBranch(branchName);
+        setTabBranch(activeTabId, checkedOutBranch);
+        setSelectedRowBranch(checkedOutBranch);
         setGitActionNotice({
           kind: "success",
           title: "Checked out branch",
-          details: `Checked out ${branchName}.`,
+          details: `Checked out ${checkedOutBranch}.`,
           expanded: false,
         });
-        await refreshBranchState(branchName);
+        await refreshBranchState(checkedOutBranch);
       } catch (checkoutError) {
         notifyError("Checkout failed", checkoutError);
         await refreshBranchState();
@@ -514,6 +622,51 @@ export function useBranchListBehavior() {
       repoPath,
       setGitActionNotice,
       setTabBranch,
+    ],
+  );
+
+  const runRemoteBranchOperation = useCallback(
+    async (
+      command: RemoteBranchOperationCommand,
+      branchName: string,
+      successTitle: string,
+      successDetails: string,
+      failureTitle: string,
+    ) => {
+      if (
+        !repoPath ||
+        !effectiveSelectedBranch ||
+        pendingGitAction ||
+        branchActionLoading
+      ) {
+        return;
+      }
+
+      setBranchActionLoading(true);
+      try {
+        await runRemoteGitBranchOperation(repoPath, command, branchName);
+        setGitActionNotice({
+          kind: "success",
+          title: successTitle,
+          details: successDetails,
+          expanded: false,
+        });
+        await refreshBranchState(effectiveSelectedBranch);
+      } catch (operationError) {
+        notifyError(failureTitle, operationError);
+        await refreshBranchState();
+      } finally {
+        setBranchActionLoading(false);
+      }
+    },
+    [
+      branchActionLoading,
+      effectiveSelectedBranch,
+      notifyError,
+      pendingGitAction,
+      refreshBranchState,
+      repoPath,
+      setGitActionNotice,
     ],
   );
 
@@ -644,17 +797,27 @@ export function useBranchListBehavior() {
 
     setBranchActionLoading(true);
     try {
-      await deleteGitBranch(
-        repoPath,
-        deleteRequest.branchName,
-        Boolean(deleteRequest.force),
-      );
+      if (deleteRequest.remote) {
+        await deleteRemoteGitBranch(repoPath, deleteRequest.branchName);
+      } else {
+        await deleteGitBranch(
+          repoPath,
+          deleteRequest.branchName,
+          Boolean(deleteRequest.force),
+        );
+      }
       setGitActionNotice({
         kind: "success",
-        title: deleteRequest.force ? "Force deleted branch" : "Deleted branch",
-        details: deleteRequest.force
-          ? `Force deleted ${deleteRequest.branchName}.`
-          : `Deleted ${deleteRequest.branchName}.`,
+        title: deleteRequest.remote
+          ? "Deleted remote branch"
+          : deleteRequest.force
+            ? "Force deleted branch"
+            : "Deleted branch",
+        details: deleteRequest.remote
+          ? `Deleted ${deleteRequest.branchName} from origin.`
+          : deleteRequest.force
+            ? `Force deleted ${deleteRequest.branchName}.`
+            : `Deleted ${deleteRequest.branchName}.`,
         expanded: false,
       });
       await refreshBranchState(undefined);
@@ -791,6 +954,77 @@ export function useBranchListBehavior() {
     setDeleteRequest({ branchName, force });
   }, []);
 
+  const requestDeleteRemoteBranch = useCallback((branchName: string) => {
+    setDeleteRequest({ branchName, remote: true });
+  }, []);
+
+  const copyRemoteBranchUrl = useCallback(
+    async (branchName: string) => {
+      if (!remoteUrl) return;
+      const branchUrl = buildRemoteBranchUrl(remoteUrl, stripOriginPrefix(branchName));
+      if (!branchUrl) return;
+
+      await copyText(
+        branchUrl,
+        "Copied branch URL",
+        `Copied remote URL for ${branchName}.`,
+      );
+    },
+    [copyText, remoteUrl],
+  );
+
+  const copyRemoteCommitUrl = useCallback(
+    async (branchName: string, commitSha: string) => {
+      if (!remoteUrl) return;
+      const commitUrl = buildRemoteCommitUrl(remoteUrl, commitSha);
+      if (!commitUrl) return;
+
+      await copyText(
+        commitUrl,
+        "Copied commit URL",
+        `Copied remote commit URL for ${branchName}.`,
+      );
+    },
+    [copyText, remoteUrl],
+  );
+
+  const openPullRequestReview = useCallback(
+    async (pullRequest: MatchingBranchPullRequest) => {
+      if (!repoPath) return;
+
+      try {
+        const refs = await prepareProviderPullRequestRefs({
+          providerId: "github",
+          path: repoPath,
+          number: pullRequest.number,
+          baseRef: pullRequest.baseRef,
+        });
+        showPullRequestReview(repoPath, pullRequest.number, {
+          number: pullRequest.number,
+          title: pullRequest.title,
+          baseRef: refs.baseRef,
+          headRef: refs.headRef,
+          baseLabel: pullRequest.baseLabel,
+          headLabel: pullRequest.headLabel,
+        });
+      } catch (reviewError) {
+        notifyError("Open pull request review failed", reviewError);
+      }
+    },
+    [notifyError, repoPath, showPullRequestReview],
+  );
+
+  const openPullRequestUrl = useCallback(
+    async (url: string) => {
+      try {
+        await openExternalUrl(url);
+      } catch (openError) {
+        notifyError("Open pull request failed", openError);
+      }
+    },
+    [notifyError],
+  );
+
   const openBranchCompare = useCallback(
     (comparison: BranchComparisonSelection) => {
       if (requiresInitialCommit) {
@@ -828,6 +1062,7 @@ export function useBranchListBehavior() {
     branchTreeExpanded,
     type: branchType,
     branchRefByName,
+    branchType,
     grouped,
     loading,
     hasLoadedOnce,
@@ -862,9 +1097,14 @@ export function useBranchListBehavior() {
     createBranch,
     checkoutBranch,
     runBranchOperation,
+    runRemoteBranchOperation,
     copyText,
     copyBranchTipSha,
+    copyRemoteBranchUrl,
+    copyRemoteCommitUrl,
     openBranchCompare,
+    openPullRequestReview,
+    openPullRequestUrl,
     closeBranchCompare,
     renameBranch,
     deleteBranch,
@@ -872,6 +1112,9 @@ export function useBranchListBehavior() {
     createRandomWorktreeFromBranch,
     requestRenameBranch,
     requestDeleteBranch,
+    requestDeleteRemoteBranch,
+    matchingPullRequestByHead,
+    remoteUrl,
     cancelRenameBranch,
     cancelDeleteBranch,
   };

@@ -83,4 +83,32 @@ describe("BranchConfirmModals", () => {
     expect(onConfirmDelete).toHaveBeenCalledOnce();
   });
 
+  it("shows remote branch deletion details from the delete dialog", () => {
+    const onConfirmDelete = vi.fn();
+
+    render(
+      <BranchConfirmModals
+        renameRequest={null}
+        renameBranchName=""
+        deleteRequest={{ branchName: "origin/feature/auth", remote: true }}
+        branchActionLoading={false}
+        onRenameNameChange={vi.fn()}
+        onCancelRename={vi.fn()}
+        onConfirmRename={vi.fn()}
+        onCancelDelete={vi.fn()}
+        onConfirmDelete={onConfirmDelete}
+      />,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Delete origin/feature/auth" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/git push origin --delete/)).toBeInTheDocument();
+    expect(screen.getByText(/deleted from origin/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Remote Branch" }));
+
+    expect(onConfirmDelete).toHaveBeenCalledOnce();
+  });
+
 });

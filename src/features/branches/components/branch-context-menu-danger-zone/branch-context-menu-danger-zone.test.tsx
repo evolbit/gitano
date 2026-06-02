@@ -18,10 +18,12 @@ describe("BranchContextMenuDangerZone", () => {
     render(
       <BranchContextMenuDangerZone
         branchName="feature/auth"
+        remoteBranchName={null}
         localBranchActionDisabledReason={null}
         localBranchActionClass="cursor-pointer"
         onRequestRenameBranch={onRequestRenameBranch}
         onRequestDeleteBranch={onRequestDeleteBranch}
+        onRequestDeleteRemoteBranch={vi.fn()}
       />,
     );
 
@@ -41,10 +43,12 @@ describe("BranchContextMenuDangerZone", () => {
     render(
       <BranchContextMenuDangerZone
         branchName="origin/main"
+        remoteBranchName={null}
         localBranchActionDisabledReason="Checkout is only available for local branches"
         localBranchActionClass="cursor-not-allowed"
         onRequestRenameBranch={onRequestRenameBranch}
         onRequestDeleteBranch={onRequestDeleteBranch}
+        onRequestDeleteRemoteBranch={vi.fn()}
       />,
     );
 
@@ -54,5 +58,27 @@ describe("BranchContextMenuDangerZone", () => {
 
     expect(onRequestRenameBranch).not.toHaveBeenCalled();
     expect(onRequestDeleteBranch).not.toHaveBeenCalled();
+  });
+
+  it("requests remote branch deletion separately", () => {
+    const onRequestDeleteRemoteBranch = vi.fn();
+
+    render(
+      <BranchContextMenuDangerZone
+        branchName="origin/feature/auth"
+        remoteBranchName="origin/feature/auth"
+        localBranchActionDisabledReason={null}
+        localBranchActionClass="cursor-pointer"
+        onRequestRenameBranch={vi.fn()}
+        onRequestDeleteBranch={vi.fn()}
+        onRequestDeleteRemoteBranch={onRequestDeleteRemoteBranch}
+      />,
+    );
+
+    fireEvent.click(getByExactText("Delete origin/feature/auth..."));
+
+    expect(onRequestDeleteRemoteBranch).toHaveBeenCalledWith(
+      "origin/feature/auth",
+    );
   });
 });

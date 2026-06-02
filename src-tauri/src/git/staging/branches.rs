@@ -11,6 +11,19 @@ fn validate_local_branch_name(branch_name: &str) -> Result<&str, String> {
     Ok(branch_name)
 }
 
+fn validate_origin_branch_name(branch_name: &str) -> Result<&str, String> {
+    let branch_name = branch_name.trim();
+
+    if branch_name.is_empty() {
+        return Err("Remote branch is required.".to_string());
+    }
+
+    branch_name
+        .strip_prefix("origin/")
+        .filter(|remote_branch| !remote_branch.is_empty())
+        .ok_or_else(|| format!("Expected an origin remote branch: {}", branch_name))
+}
+
 fn validate_branch_name_format(path: &str, branch_name: &str) -> Result<(), String> {
     run_git_status(
         path,
@@ -84,12 +97,35 @@ fn ensure_local_branch(path: &str, branch_name: &str) -> Result<(), String> {
     .map_err(|_| format!("Remote actions require a local branch: {}", branch_name))
 }
 
+fn ensure_origin_branch(path: &str, remote_branch_name: &str) -> Result<(), String> {
+    let ref_name = format!("refs/remotes/origin/{}", remote_branch_name);
+    run_git_status(
+        path,
+        &["show-ref", "--verify", "--quiet", &ref_name],
+        "git show-ref",
+    )
+    .map_err(|_| format!("Remote branch not found: origin/{}", remote_branch_name))
+}
+
 fn current_branch(path: &str) -> Result<String, String> {
     run_git_output(
         path,
         &["branch", "--show-current"],
         "git branch --show-current",
     )
+}
+
+fn ensure_current_local_branch(path: &str, action: &str) -> Result<String, String> {
+    let branch = current_branch(path)?;
+
+    if branch.is_empty() {
+        return Err(format!("{} requires a current local branch.", action));
+    }
+
+    ensure_local_branch(path, &branch)
+        .map_err(|_| format!("{} requires a current local branch.", action))?;
+
+    Ok(branch)
 }
 
 fn ensure_branch_can_fast_forward(
@@ -177,6 +213,35 @@ pub async fn git_checkout_branch(path: String, branch_name: String) -> Result<()
         ensure_local_branch(&path, branch_name)
             .map_err(|_| format!("Checkout requires a local branch: {}", branch_name))?;
         run_git_status(&path, &["checkout", branch_name], "git checkout")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_checkout_remote_branch(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git checkout")?;
+        let remote_branch_name = validate_origin_branch_name(&branch_name)?;
+        validate_branch_name_format(&path, remote_branch_name)?;
+        ensure_origin_branch(&path, remote_branch_name)?;
+
+        if ensure_local_branch(&path, remote_branch_name).is_ok() {
+            return run_git_status(&path, &["checkout", remote_branch_name], "git checkout");
+        }
+
+        let remote_ref = format!("origin/{}", remote_branch_name);
+        run_git_status(
+            &path,
+            &[
+                "checkout",
+                "--track",
+                "-b",
+                remote_branch_name,
+                &remote_ref,
+            ],
+            "git checkout --track",
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -300,6 +365,42 @@ pub async fn git_branch_rebase_onto(
 }
 
 #[tauri::command]
+pub async fn git_branch_merge_remote_into_current(
+    path: String,
+    branch_name: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git merge")?;
+        let remote_branch_name = validate_origin_branch_name(&branch_name)?;
+        ensure_origin_branch(&path, remote_branch_name)?;
+        ensure_current_local_branch(&path, "git merge")?;
+
+        let remote_ref = format!("origin/{}", remote_branch_name);
+        run_git_status(&path, &["merge", &remote_ref], "git merge")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_branch_rebase_current_onto_remote(
+    path: String,
+    branch_name: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git rebase")?;
+        let remote_branch_name = validate_origin_branch_name(&branch_name)?;
+        ensure_origin_branch(&path, remote_branch_name)?;
+        ensure_current_local_branch(&path, "git rebase")?;
+
+        let remote_ref = format!("origin/{}", remote_branch_name);
+        run_git_status(&path, &["rebase", &remote_ref], "git rebase")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn git_rename_branch(
     path: String,
     old_branch_name: String,
@@ -361,6 +462,23 @@ pub async fn git_delete_branch(
 }
 
 #[tauri::command]
+pub async fn git_delete_remote_branch(path: String, branch_name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ensure_repository_has_commits(&path, "git push --delete")?;
+        let remote_branch_name = validate_origin_branch_name(&branch_name)?;
+        ensure_origin_branch(&path, remote_branch_name)?;
+
+        run_git_status(
+            &path,
+            &["push", "origin", "--delete", remote_branch_name],
+            "git push --delete",
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn git_branch_tip_sha(path: String, branch_name: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         ensure_repository_has_commits(&path, "git rev-parse")?;
@@ -413,8 +531,60 @@ pub async fn git_branch_pull_fast_forward(path: String, branch_name: String) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::git_delete_branch;
+    use super::{
+        git_branch_merge_remote_into_current, git_branch_rebase_current_onto_remote,
+        git_checkout_remote_branch, git_delete_branch, git_delete_remote_branch,
+    };
     use crate::git::test_support::{commit_file, init_repo, run_git};
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn git_output(repo_path: &std::path::Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(args)
+            .output()
+            .expect("git command should run");
+
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn init_repo_with_origin() -> (TempDir, TempDir) {
+        let remote = tempfile::tempdir().expect("remote repo should be created");
+        run_git(remote.path(), &["init", "--bare"]);
+
+        let repo = init_repo();
+        commit_file(repo.path(), "main.txt", "main\n", "main commit");
+        run_git(
+            repo.path(),
+            &["remote", "add", "origin", remote.path().to_str().unwrap()],
+        );
+        run_git(repo.path(), &["push", "-u", "origin", "main"]);
+
+        (repo, remote)
+    }
+
+    fn create_origin_branch(repo: &TempDir, branch_name: &str) {
+        run_git(repo.path(), &["checkout", "-b", branch_name]);
+        commit_file(
+            repo.path(),
+            &format!("{}.txt", branch_name.replace('/', "-")),
+            "remote\n",
+            &format!("{} commit", branch_name),
+        );
+        run_git(repo.path(), &["push", "-u", "origin", branch_name]);
+        run_git(repo.path(), &["checkout", "main"]);
+        run_git(repo.path(), &["branch", "-D", branch_name]);
+    }
 
     #[test]
     fn safe_delete_rejects_unmerged_local_branch() {
@@ -457,5 +627,138 @@ mod tests {
         .expect_err("deleted branch should be missing");
 
         assert!(error.contains("Branch not found: feature/unmerged"));
+    }
+
+    #[test]
+    fn checkout_remote_branch_creates_tracking_local_branch() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+
+        tauri::async_runtime::block_on(git_checkout_remote_branch(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect("remote checkout should create local branch");
+
+        assert_eq!(
+            git_output(repo.path(), &["branch", "--show-current"]),
+            "feature/login"
+        );
+        assert_eq!(
+            git_output(
+                repo.path(),
+                &[
+                    "rev-parse",
+                    "--abbrev-ref",
+                    "--symbolic-full-name",
+                    "@{upstream}",
+                ],
+            ),
+            "origin/feature/login"
+        );
+    }
+
+    #[test]
+    fn checkout_remote_branch_uses_existing_local_counterpart() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+        run_git(repo.path(), &["checkout", "-b", "feature/login", "main"]);
+        run_git(repo.path(), &["checkout", "main"]);
+
+        tauri::async_runtime::block_on(git_checkout_remote_branch(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect("remote checkout should use local branch");
+
+        assert_eq!(
+            git_output(repo.path(), &["branch", "--show-current"]),
+            "feature/login"
+        );
+    }
+
+    #[test]
+    fn merge_remote_branch_into_current_branch() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+
+        tauri::async_runtime::block_on(git_branch_merge_remote_into_current(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect("remote branch should merge");
+
+        assert_eq!(git_output(repo.path(), &["branch", "--show-current"]), "main");
+        assert!(repo.path().join("feature-login.txt").exists());
+    }
+
+    #[test]
+    fn rebase_current_branch_onto_remote_branch() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+        commit_file(repo.path(), "main-2.txt", "main\n", "main second commit");
+        let local_tip_before = git_output(repo.path(), &["rev-parse", "HEAD"]);
+
+        tauri::async_runtime::block_on(git_branch_rebase_current_onto_remote(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect("current branch should rebase onto remote branch");
+
+        let local_tip_after = git_output(repo.path(), &["rev-parse", "HEAD"]);
+        assert_ne!(local_tip_after, local_tip_before);
+        assert!(repo.path().join("feature-login.txt").exists());
+        assert!(repo.path().join("main-2.txt").exists());
+    }
+
+    #[test]
+    fn delete_remote_branch_removes_branch_from_origin() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+
+        tauri::async_runtime::block_on(git_delete_remote_branch(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect("remote branch should be deleted");
+
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["ls-remote", "--heads", "origin", "feature/login"])
+            .output()
+            .expect("git ls-remote should run");
+
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    }
+
+    #[test]
+    fn remote_branch_commands_reject_non_origin_refs() {
+        let (repo, _remote) = init_repo_with_origin();
+
+        let error = tauri::async_runtime::block_on(git_checkout_remote_branch(
+            repo.path().to_string_lossy().to_string(),
+            "upstream/feature/login".to_string(),
+        ))
+        .expect_err("non-origin ref should be rejected");
+
+        assert!(error.contains("Expected an origin remote branch"));
+    }
+
+    #[test]
+    fn remote_merge_rejects_detached_head() {
+        let (repo, _remote) = init_repo_with_origin();
+        create_origin_branch(&repo, "feature/login");
+        let head = git_output(repo.path(), &["rev-parse", "HEAD"]);
+        run_git(repo.path(), &["checkout", "--detach", &head]);
+
+        let error = tauri::async_runtime::block_on(git_branch_merge_remote_into_current(
+            repo.path().to_string_lossy().to_string(),
+            "origin/feature/login".to_string(),
+        ))
+        .expect_err("detached head should be rejected");
+
+        assert!(error.contains("requires a current local branch"));
     }
 }

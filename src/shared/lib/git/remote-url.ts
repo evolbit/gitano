@@ -6,7 +6,11 @@ function stripLeadingSlashes(path: string) {
   return path.replace(/^\/+/, "");
 }
 
-function normalizeWebRemoteUrl(remoteUrl: string): string | null {
+export function encodeRefPath(refName: string) {
+  return refName.split("/").map(encodeURIComponent).join("/");
+}
+
+export function normalizeWebRemoteUrl(remoteUrl: string): string | null {
   const trimmed = remoteUrl.trim();
   if (!trimmed) return null;
 
@@ -61,4 +65,30 @@ export function buildRemoteCommitUrl(remoteUrl: string, sha: string) {
   }
 
   return `${baseUrl}/commit/${encodedSha}`;
+}
+
+export function buildRemoteBranchUrl(remoteUrl: string, branchName: string) {
+  const baseUrl = normalizeWebRemoteUrl(remoteUrl);
+  const trimmedBranchName = branchName.trim();
+
+  if (!baseUrl || !trimmedBranchName) return null;
+
+  const host = (() => {
+    try {
+      return new URL(baseUrl).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const encodedBranchName = encodeRefPath(trimmedBranchName);
+
+  if (host.includes("gitlab")) {
+    return `${baseUrl}/-/tree/${encodedBranchName}`;
+  }
+
+  if (host.includes("bitbucket")) {
+    return `${baseUrl}/src/${encodedBranchName}`;
+  }
+
+  return `${baseUrl}/tree/${encodedBranchName}`;
 }

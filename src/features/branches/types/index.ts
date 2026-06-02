@@ -11,6 +11,7 @@ export type BranchCreateFormState = {
 export type BranchContextRequest = {
   branchName: string;
   force?: boolean;
+  remote?: boolean;
 };
 
 export type BranchContextMenuState = {
@@ -33,6 +34,20 @@ export type RemoteBranchActionCommand =
   | "git_branch_pull_fast_forward"
   | "git_branch_push"
   | "git_branch_set_upstream";
+
+export type RemoteBranchOperationCommand =
+  | "git_branch_merge_remote_into_current"
+  | "git_branch_rebase_current_onto_remote";
+
+export type MatchingBranchPullRequest = {
+  number: number;
+  title: string;
+  htmlUrl: string;
+  baseRef: string;
+  headRef: string;
+  baseLabel: string;
+  headLabel: string;
+};
 
 export type PendingRemoteBranchAction = "pull" | "push";
 

@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  checkoutRemoteGitBranch,
   createGitBranch,
   deleteGitBranch,
+  deleteRemoteGitBranch,
   getBranchRefs,
   getBranches,
   runGitBranchOperation,
+  runRemoteGitBranchOperation,
 } from "./branches";
 
 const invokeCommandMock = vi.hoisted(() => vi.fn());
@@ -85,6 +88,46 @@ describe("branch Git API", () => {
       path: "/repo",
       branchName: "feature/auth",
       force: true,
+    });
+  });
+
+  it("checks out remote branches through the tracking checkout command", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await checkoutRemoteGitBranch("/repo", "origin/feature/auth");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_checkout_remote_branch", {
+      path: "/repo",
+      branchName: "origin/feature/auth",
+    });
+  });
+
+  it("passes typed remote branch operation commands through", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await runRemoteGitBranchOperation(
+      "/repo",
+      "git_branch_merge_remote_into_current",
+      "origin/feature/auth",
+    );
+
+    expect(invokeCommandMock).toHaveBeenCalledWith(
+      "git_branch_merge_remote_into_current",
+      {
+        path: "/repo",
+        branchName: "origin/feature/auth",
+      },
+    );
+  });
+
+  it("deletes remote branches through the remote delete command", async () => {
+    invokeCommandMock.mockResolvedValueOnce(undefined);
+
+    await deleteRemoteGitBranch("/repo", "origin/feature/auth");
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("git_delete_remote_branch", {
+      path: "/repo",
+      branchName: "origin/feature/auth",
     });
   });
 
