@@ -18,6 +18,11 @@ The system SHALL use local AI to review branch comparison diffs for actionable c
 - **THEN** the review result MUST state that no actionable findings were returned
 - **AND** the result MUST NOT invent low-value informational findings to fill the output
 
+#### Scenario: Review output is structurally empty
+- **WHEN** the local model returns branch review JSON with no actionable findings, no review notes, and no meaningful summary
+- **THEN** the review result MUST be rejected as unusable local model output
+- **AND** the UI MUST NOT present that response as a successful no-finding review
+
 #### Scenario: Review output avoids generic summaries
 - **WHEN** branch AI review completes
 - **THEN** the result MUST prioritize changed-code findings over branch summaries
@@ -34,7 +39,7 @@ The system SHALL represent inline AI review findings with anchors that can be ma
 #### Scenario: Finding anchor is invalid
 - **WHEN** an AI review finding references a file, side, or line that does not exist in the active comparison diff
 - **THEN** the system MUST NOT render that finding as inline diff feedback
-- **AND** the system MAY show the finding as an unanchored review note if the note is still useful
+- **AND** the system MUST show the finding as an unanchored review note when the finding still has useful title, explanation, recommendation, or suggested comment text
 
 #### Scenario: Finding is not line-specific
 - **WHEN** the local model identifies a concern that cannot be tied to a specific changed line

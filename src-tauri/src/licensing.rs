@@ -11,7 +11,9 @@ const LICENSE_FILE_NAME: &str = "license.json";
 const LICENSE_VALIDATION_GRACE_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 const CLOCK_ROLLBACK_TOLERANCE_MS: i64 = 10 * 60 * 1000;
 const LICENSE_REQUIRED_REASON: &str = "AI features require a valid Gitano license.";
-const DEV_AI_ENTITLEMENT_ENV: &str = "GITANO_DEV_AI_ENTITLEMENT";
+pub(crate) const DEV_AI_ENTITLEMENT_ENV: &str = "GITANO_DEV_AI_ENTITLEMENT";
+pub(crate) const LOCAL_AI_DEV_ENTITLEMENT_ENV: &str = "GITANO_LOCAL_AI_DEV_ENTITLEMENT";
+const DEV_AI_ENTITLEMENT_ENVS: [&str; 2] = [DEV_AI_ENTITLEMENT_ENV, LOCAL_AI_DEV_ENTITLEMENT_ENV];
 const CURRENT_PUBLIC_KEY_ID: &str = "gitano-license-key-2026-01";
 const CURRENT_PUBLIC_KEY_B64: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
@@ -552,8 +554,8 @@ fn development_ai_entitlement_enabled() -> bool {
     // TODO(licensing): remove this debug-only bypass before production distribution.
     #[cfg(debug_assertions)]
     {
-        return std::env::var(DEV_AI_ENTITLEMENT_ENV)
-            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        return development_entitlement_from_process_env()
+            .or_else(development_entitlement_from_env_file)
             .unwrap_or(false);
     }
 
@@ -561,6 +563,70 @@ fn development_ai_entitlement_enabled() -> bool {
     {
         false
     }
+}
+
+fn development_entitlement_from_process_env() -> Option<bool> {
+    DEV_AI_ENTITLEMENT_ENVS.iter().find_map(|key| {
+        std::env::var(key)
+            .ok()
+            .map(|value| parse_development_flag(&value))
+    })
+}
+
+fn development_entitlement_from_env_file() -> Option<bool> {
+    env_file_search_roots()
+        .into_iter()
+        .flat_map(|root| root.ancestors().map(Path::to_path_buf).collect::<Vec<_>>())
+        .flat_map(|root| [root.join(".env.local"), root.join(".env")])
+        .find_map(|path| {
+            fs::read_to_string(path)
+                .ok()
+                .and_then(|contents| development_entitlement_from_env_contents(&contents))
+        })
+}
+
+fn development_entitlement_from_env_contents(contents: &str) -> Option<bool> {
+    DEV_AI_ENTITLEMENT_ENVS.iter().find_map(|key| {
+        parse_env_file_value(contents, key).map(|value| parse_development_flag(&value))
+    })
+}
+
+fn env_file_search_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(current_dir) = std::env::current_dir() {
+        roots.push(current_dir);
+    }
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            roots.push(exe_dir.to_path_buf());
+        }
+    }
+    roots
+}
+
+fn parse_env_file_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            return None;
+        }
+
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let (name, value) = line.split_once('=')?;
+        if name.trim() != key {
+            return None;
+        }
+
+        let value = value.trim().trim_matches('"').trim_matches('\'').trim();
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+fn parse_development_flag(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
 }
 
 fn validation_required_at_ms(last_validated_at_ms: i64) -> i64 {
@@ -611,6 +677,7 @@ mod tests {
         previous_license_home: Option<std::ffi::OsString>,
         previous_public_key: Option<std::ffi::OsString>,
         previous_dev_entitlement: Option<std::ffi::OsString>,
+        previous_local_ai_dev_entitlement: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
@@ -618,11 +685,15 @@ mod tests {
             let previous_license_home = std::env::var_os("GITANO_LICENSE_HOME");
             let previous_public_key = std::env::var_os("GITANO_LICENSE_TEST_PUBLIC_KEY");
             let previous_dev_entitlement = std::env::var_os(DEV_AI_ENTITLEMENT_ENV);
+            let previous_local_ai_dev_entitlement = std::env::var_os(LOCAL_AI_DEV_ENTITLEMENT_ENV);
             std::env::set_var("GITANO_LICENSE_HOME", path);
+            std::env::set_var(DEV_AI_ENTITLEMENT_ENV, "0");
+            std::env::set_var(LOCAL_AI_DEV_ENTITLEMENT_ENV, "0");
             Self {
                 previous_license_home,
                 previous_public_key,
                 previous_dev_entitlement,
+                previous_local_ai_dev_entitlement,
             }
         }
     }
@@ -640,6 +711,10 @@ mod tests {
             match &self.previous_dev_entitlement {
                 Some(value) => std::env::set_var(DEV_AI_ENTITLEMENT_ENV, value),
                 None => std::env::remove_var(DEV_AI_ENTITLEMENT_ENV),
+            }
+            match &self.previous_local_ai_dev_entitlement {
+                Some(value) => std::env::set_var(LOCAL_AI_DEV_ENTITLEMENT_ENV, value),
+                None => std::env::remove_var(LOCAL_AI_DEV_ENTITLEMENT_ENV),
             }
         }
     }
@@ -864,6 +939,55 @@ mod tests {
         assert_eq!(status.plan, LicensePlan::Premium);
         assert!(status.ai_entitled);
         assert_eq!(status.license_id.as_deref(), Some("development"));
+    }
+
+    #[test]
+    fn debug_dev_entitlement_accepts_local_ai_env_alias() {
+        let _lock = crate::ai::local_ai_env_lock().lock().unwrap();
+        let temp_dir = tempdir().expect("temp dir");
+        let _guard = EnvGuard::set_license_home(temp_dir.path());
+        std::env::remove_var(DEV_AI_ENTITLEMENT_ENV);
+        std::env::set_var(LOCAL_AI_DEV_ENTITLEMENT_ENV, "1");
+
+        let status = license_status();
+
+        assert_eq!(status.plan, LicensePlan::Premium);
+        assert!(status.ai_entitled);
+        assert_eq!(status.license_id.as_deref(), Some("development"));
+    }
+
+    #[test]
+    fn debug_dev_entitlement_reads_env_file() {
+        let _lock = crate::ai::local_ai_env_lock().lock().unwrap();
+        let temp_dir = tempdir().expect("temp dir");
+        let _guard = EnvGuard::set_license_home(temp_dir.path());
+        let previous_dir = std::env::current_dir().expect("current dir");
+        std::env::remove_var(DEV_AI_ENTITLEMENT_ENV);
+        std::env::remove_var(LOCAL_AI_DEV_ENTITLEMENT_ENV);
+        fs::write(
+            temp_dir.path().join(".env"),
+            format!("{}=1\n", DEV_AI_ENTITLEMENT_ENV),
+        )
+        .expect("write .env");
+        std::env::set_current_dir(temp_dir.path()).expect("set current dir");
+
+        let status = license_status();
+
+        std::env::set_current_dir(previous_dir).expect("restore current dir");
+        assert_eq!(status.plan, LicensePlan::Premium);
+        assert!(status.ai_entitled);
+        assert_eq!(status.license_id.as_deref(), Some("development"));
+    }
+
+    #[test]
+    fn development_entitlement_env_file_parser_accepts_local_ai_alias() {
+        assert_eq!(
+            development_entitlement_from_env_contents(&format!(
+                "export {}='true'\n",
+                LOCAL_AI_DEV_ENTITLEMENT_ENV
+            )),
+            Some(true)
+        );
     }
 
     #[test]

@@ -38,14 +38,27 @@ mod tests {
     fn missing_license_reports_missing_entitlement() {
         let _guard = crate::ai::local_ai_env_lock().lock().unwrap();
         let previous_home = std::env::var_os("GITANO_LICENSE_HOME");
+        let previous_dev_entitlement = std::env::var_os(crate::licensing::DEV_AI_ENTITLEMENT_ENV);
+        let previous_local_ai_dev_entitlement =
+            std::env::var_os(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV);
         let temp_dir = tempfile::tempdir().expect("temp dir");
         std::env::set_var("GITANO_LICENSE_HOME", temp_dir.path());
+        std::env::set_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV, "0");
+        std::env::set_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV, "0");
 
         let status = entitlement_status();
 
         match previous_home {
             Some(value) => std::env::set_var("GITANO_LICENSE_HOME", value),
             None => std::env::remove_var("GITANO_LICENSE_HOME"),
+        }
+        match previous_dev_entitlement {
+            Some(value) => std::env::set_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV, value),
+            None => std::env::remove_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV),
+        }
+        match previous_local_ai_dev_entitlement {
+            Some(value) => std::env::set_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV, value),
+            None => std::env::remove_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV),
         }
 
         assert!(!status.entitled);

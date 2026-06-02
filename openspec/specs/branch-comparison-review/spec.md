@@ -265,6 +265,21 @@ The system SHALL expose premium local AI code review from the branch comparison 
 - **AND** each inline finding MUST be associated with a validated changed diff line before it is shown as inline feedback
 - **AND** the result MUST identify whether it came from cache or a fresh local run
 
+#### Scenario: Branch review has no actionable findings
+- **WHEN** local AI branch review completes with a meaningful no-finding result
+- **THEN** the branch comparison modal MUST show the model's no-finding summary
+- **AND** the modal MUST distinguish that state from a model-output error
+
+#### Scenario: Branch review output is unusable
+- **WHEN** local AI branch review fails because the model returned unusable structured output
+- **THEN** the branch comparison modal MUST show the failure through the local AI error path
+- **AND** the modal MUST NOT show "No actionable review findings returned" as the final result
+
+#### Scenario: Branch review has omitted context
+- **WHEN** a branch review or branch analysis result includes omitted files or omitted sections metadata
+- **THEN** the result modal MUST show a compact indication that context was omitted or truncated
+- **AND** the indication MUST remain visible for both cached and fresh results
+
 #### Scenario: User applies an AI finding
 - **WHEN** the user applies an AI review finding as feedback
 - **THEN** the system MUST create or update a bot-authored draft review thread at the finding's diff-line anchor

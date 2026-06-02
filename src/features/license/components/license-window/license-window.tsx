@@ -1,13 +1,13 @@
-import ReactDOM from "react-dom";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getLicenseStatus,
   importLicenseFile,
   refreshLicenseValidation,
   type LicenseStatus,
 } from "@/shared/api/license";
-import { IconCheck, IconCloud, IconFolder, IconX } from "@/shared/components/icons/icons";
+import { IconCloud, IconFolder, IconX } from "@/shared/components/icons/icons";
 import { openLicenseFileDialog } from "@/shared/platform/tauri/dialog";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ReactDOM from "react-dom";
 
 type LicenseWindowProps = {
   open: boolean;
@@ -118,10 +118,13 @@ export function LicenseWindow({ open, onClose }: LicenseWindowProps) {
           <div className={`rounded border p-4 ${statusTone}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase text-zinc-400">Current plan</div>
-                <div className="mt-1 text-lg font-semibold">{statusLabel(status)}</div>
+                <div className="text-xs uppercase text-zinc-400">
+                  Current plan
+                </div>
+                <div className="mt-1 text-lg font-semibold">
+                  {statusLabel(status)}
+                </div>
               </div>
-              {status?.aiEntitled ? <IconCheck size={24} /> : <IconX size={24} />}
             </div>
             {status?.reason ? (
               <p className="mt-3 text-sm text-zinc-300">{status.reason}</p>
@@ -131,7 +134,10 @@ export function LicenseWindow({ open, onClose }: LicenseWindowProps) {
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <InfoRow label="License ID" value={status?.licenseId ?? "None"} />
             <InfoRow label="Customer" value={status?.customerEmail ?? "None"} />
-            <InfoRow label="Expires" value={formatDate(status?.expiresAtMs ?? null)} />
+            <InfoRow
+              label="Expires"
+              value={formatDate(status?.expiresAtMs ?? null)}
+            />
             <InfoRow
               label="Validation due"
               value={formatDate(status?.validationRequiredAtMs ?? null)}
