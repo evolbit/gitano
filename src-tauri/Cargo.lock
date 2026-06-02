@@ -1504,6 +1504,7 @@ dependencies = [
 name = "gitano"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures-util",
  "git2",
  "notify",
@@ -1511,6 +1512,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest 0.12.20",
+ "ring",
  "serde",
  "serde_json",
  "sha2",

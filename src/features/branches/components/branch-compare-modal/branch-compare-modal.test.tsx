@@ -314,7 +314,7 @@ describe("BranchCompareModal local AI", () => {
     ]);
     localAiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
-      source: "developmentStub",
+      source: "license",
       reason: "dev",
     });
     localAiMocks.getLocalAiModelPreferences.mockResolvedValue({

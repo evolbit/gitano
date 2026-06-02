@@ -22,6 +22,7 @@ const TabBar = ({
   activeTab,
   onTabClose,
   onAddTab,
+  onOpenLicense,
   onOpenSettings,
   rightAccessory,
 }: TabBarProps) => {
@@ -35,6 +36,11 @@ const TabBar = ({
   const handleOpenSettings = () => {
     setMenuOpened(false);
     onOpenSettings();
+  };
+
+  const handleOpenLicense = () => {
+    setMenuOpened(false);
+    onOpenLicense();
   };
 
   return (
@@ -115,6 +121,13 @@ const TabBar = ({
           >
             <IconPlus size={15} className="shrink-0" />
             New tab
+          </button>
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center px-4 py-2 text-left text-zinc-200 transition-colors hover:bg-zinc-700"
+            onClick={handleOpenLicense}
+          >
+            License
           </button>
           <button
             type="button"

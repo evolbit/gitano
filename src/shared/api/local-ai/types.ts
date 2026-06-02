@@ -12,7 +12,7 @@ export type LocalAiActionKind =
 
 export type LocalAiEntitlementStatus = {
   entitled: boolean;
-  source: "developmentStub" | "license" | "missing";
+  source: "license" | "staleValidation" | "invalid" | "missing";
   reason: string | null;
 };
 

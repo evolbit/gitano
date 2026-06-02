@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod git;
 pub mod integrations;
+pub mod licensing;
 mod platform;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::Emitter;

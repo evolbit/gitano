@@ -2,6 +2,10 @@ use crate::git::repository_state::ensure_repository_has_commits;
 use git2::{Oid, Repository};
 use std::process::Command;
 
+const DEFAULT_PUSH_MODE: &str = "push-branch";
+const PUSH_BRANCH_AND_TAGS_MODE: &str = "push-branch-and-tags";
+const DEFAULT_REMOTE_NAME: &str = "origin";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PushMode {
     Branch,
@@ -15,9 +19,9 @@ enum FetchMode {
 }
 
 fn parse_push_mode(mode: Option<&str>) -> Result<PushMode, String> {
-    match mode.unwrap_or("push-branch") {
-        "push-branch" => Ok(PushMode::Branch),
-        "push-branch-and-tags" => Ok(PushMode::BranchAndTags),
+    match mode.unwrap_or(DEFAULT_PUSH_MODE) {
+        DEFAULT_PUSH_MODE => Ok(PushMode::Branch),
+        PUSH_BRANCH_AND_TAGS_MODE => Ok(PushMode::BranchAndTags),
         other => Err(format!("Unsupported push mode: {}", other)),
     }
 }
@@ -75,14 +79,74 @@ fn remote_refs_changed_from_ls_remote_output(repo: &Repository, output: &str) ->
         })
 }
 
+fn run_git_output(path: &str, args: &[&str], action: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+
+    Err(format!(
+        "{} failed: {}",
+        action,
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+fn current_branch(path: &str) -> Result<String, String> {
+    let branch = run_git_output(
+        path,
+        &["branch", "--show-current"],
+        "git branch --show-current",
+    )?;
+    if branch.is_empty() {
+        return Err("git push requires a checked-out local branch.".to_string());
+    }
+    Ok(branch)
+}
+
+fn current_branch_has_upstream(path: &str) -> Result<bool, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args([
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    Ok(output.status.success())
+}
+
+fn push_current_branch(path: &str) -> Result<(), String> {
+    if current_branch_has_upstream(path)? {
+        return run_git_status(path, &["push"], "git push");
+    }
+
+    let branch = current_branch(path)?;
+    run_git_status(
+        path,
+        &["push", "--set-upstream", DEFAULT_REMOTE_NAME, &branch],
+        "git push --set-upstream",
+    )
+}
+
 #[tauri::command]
 pub async fn git_push(path: String, mode: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         ensure_repository_has_commits(&path, "git push")?;
         match parse_push_mode(mode.as_deref())? {
-            PushMode::Branch => run_git_status(&path, &["push"], "git push"),
+            PushMode::Branch => push_current_branch(&path),
             PushMode::BranchAndTags => {
-                run_git_status(&path, &["push"], "git push")?;
+                push_current_branch(&path)?;
                 run_git_status(&path, &["push", "--tags"], "git push --tags").map_err(|error| {
                     format!(
                         "Branch push completed, but tag publishing failed: {}",
@@ -188,6 +252,38 @@ pub async fn git_pull(path: String, strategy: String) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::git::test_support::{commit_file, init_repo, run_git};
+    use std::path::Path;
+    use tempfile::{tempdir, TempDir};
+
+    fn git_stdout(repo_path: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(args)
+            .output()
+            .expect("git command should run");
+
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn add_bare_origin(repo_path: &Path) -> TempDir {
+        let remote = tempdir().expect("bare remote should be created");
+        run_git(remote.path(), &["init", "--bare"]);
+        let remote_path = remote.path().to_string_lossy().to_string();
+        run_git(
+            repo_path,
+            &["remote", "add", DEFAULT_REMOTE_NAME, &remote_path],
+        );
+        remote
+    }
 
     #[test]
     fn parse_push_mode_defaults_to_branch_push() {
@@ -292,5 +388,73 @@ mod tests {
             result,
             Err("Unsupported pull strategy: pull-octopus".to_string())
         );
+    }
+
+    #[test]
+    fn branch_push_sets_upstream_for_current_branch_without_tracking() {
+        let repo = init_repo();
+        commit_file(repo.path(), "file.txt", "content\n", "initial");
+        run_git(repo.path(), &["checkout", "-b", "feature/new-branch"]);
+        let _remote = add_bare_origin(repo.path());
+
+        tauri::async_runtime::block_on(git_push(
+            repo.path().to_string_lossy().to_string(),
+            Some(DEFAULT_PUSH_MODE.to_string()),
+        ))
+        .expect("first branch push should set upstream");
+
+        let upstream = git_stdout(
+            repo.path(),
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        );
+        let remote_ref = git_stdout(
+            repo.path(),
+            &[
+                "ls-remote",
+                "--heads",
+                DEFAULT_REMOTE_NAME,
+                "feature/new-branch",
+            ],
+        );
+
+        assert_eq!(upstream, "origin/feature/new-branch");
+        assert!(remote_ref.contains("refs/heads/feature/new-branch"));
+    }
+
+    #[test]
+    fn branch_and_tags_push_sets_upstream_before_publishing_tags() {
+        let repo = init_repo();
+        commit_file(repo.path(), "file.txt", "content\n", "initial");
+        run_git(repo.path(), &["checkout", "-b", "feature/with-tags"]);
+        run_git(repo.path(), &["tag", "v1.0.0"]);
+        let _remote = add_bare_origin(repo.path());
+
+        tauri::async_runtime::block_on(git_push(
+            repo.path().to_string_lossy().to_string(),
+            Some(PUSH_BRANCH_AND_TAGS_MODE.to_string()),
+        ))
+        .expect("first branch and tags push should set upstream and publish tags");
+
+        let upstream = git_stdout(
+            repo.path(),
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        );
+        let remote_tag = git_stdout(
+            repo.path(),
+            &["ls-remote", "--tags", DEFAULT_REMOTE_NAME, "v1.0.0"],
+        );
+
+        assert_eq!(upstream, "origin/feature/with-tags");
+        assert!(remote_tag.contains("refs/tags/v1.0.0"));
     }
 }

@@ -17,6 +17,12 @@ The system SHALL make the workspace toolbar `Pull` and `Push` controls executabl
 - **THEN** branch-and-tags push mode MUST attempt to push the active branch and then publish local tags
 - **THEN** the push action MUST NOT delete remote tags
 
+#### Scenario: User pushes a current branch without upstream tracking
+- **WHEN** the active branch has no configured upstream
+- **AND** the user activates a toolbar or commit-box push action
+- **THEN** the system MUST push the active branch to `origin`
+- **AND** the system MUST set `origin/<branch>` as the active branch upstream
+
 ### Requirement: Fetch exposes tag and prune modes
 The system SHALL make toolbar fetch operations fetch tags by default and expose pruning as a separate explicit option.
 

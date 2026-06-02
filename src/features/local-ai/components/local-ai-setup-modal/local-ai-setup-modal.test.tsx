@@ -68,7 +68,7 @@ describe("LocalAiSetupModal", () => {
     apiMocks.getExternalAiAgentCatalog.mockResolvedValue([]);
     apiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
-      source: "developmentStub",
+      source: "license",
       reason: "dev",
     });
     apiMocks.getLocalAiModelPreferences.mockResolvedValue({

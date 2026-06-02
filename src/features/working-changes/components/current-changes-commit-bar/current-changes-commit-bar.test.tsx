@@ -499,7 +499,7 @@ describe("CurrentChangesCommitBar", () => {
     localAiMocks.getLocalAiModelCatalog.mockResolvedValue([localAiModel]);
     localAiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
-      source: "developmentStub",
+      source: "license",
       reason: "dev",
     });
     localAiMocks.getLocalAiModelPreferences.mockResolvedValue({

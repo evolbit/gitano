@@ -7,6 +7,8 @@ import type { TauriEvent } from "@/shared/platform/tauri/events";
 
 const listenToEventMock = vi.hoisted(() => vi.fn());
 const unlistenMock = vi.hoisted(() => vi.fn());
+const getLicenseStatusMock = vi.hoisted(() => vi.fn());
+const refreshLicenseValidationMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/app/hooks/use-repo-realtime-events", () => ({
   useRepoRealtimeEvents: vi.fn(),
@@ -18,6 +20,11 @@ vi.mock("@/app/hooks/use-active-repo-remote-polling", () => ({
 
 vi.mock("@/shared/platform/tauri/events", () => ({
   listenToEvent: listenToEventMock,
+}));
+
+vi.mock("@/shared/api/license", () => ({
+  getLicenseStatus: getLicenseStatusMock,
+  refreshLicenseValidation: refreshLicenseValidationMock,
 }));
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
@@ -38,6 +45,15 @@ vi.mock("@/features/settings", () => ({
   }) => (open ? <div>Settings for {repoPath ?? "none"}</div> : null),
 }));
 
+vi.mock("@/features/license", () => ({
+  LicenseWindow: ({
+    open,
+  }: {
+    open: boolean;
+    onClose: () => void;
+  }) => (open ? <div>License window</div> : null),
+}));
+
 vi.mock("@/features/repository-workspace", async () => {
   const actual = await vi.importActual<typeof import("@/features/repository-workspace")>(
     "@/features/repository-workspace",
@@ -49,11 +65,13 @@ vi.mock("@/features/repository-workspace", async () => {
     TabBar: ({
       tabs,
       onAddTab,
+      onOpenLicense,
       onOpenSettings,
       onTabClose,
     }: {
       tabs: Array<{ id: string; repoPath: string }>;
       onAddTab: () => void;
+      onOpenLicense: () => void;
       onOpenSettings: () => void;
       onTabClose: (id: string, event: React.MouseEvent) => void;
     }) => (
@@ -63,6 +81,11 @@ vi.mock("@/features/repository-workspace", async () => {
           type="button"
           onClick={onAddTab}>
           Add tab
+        </button>
+        <button
+          type="button"
+          onClick={onOpenLicense}>
+          License
         </button>
         <button
           type="button"
@@ -112,6 +135,8 @@ describe("AppShell", () => {
       menuEventHandler = handler;
       return Promise.resolve(unlistenMock);
     });
+    getLicenseStatusMock.mockResolvedValue({ licenseId: null });
+    refreshLicenseValidationMock.mockResolvedValue({});
     dateNowMock = vi.spyOn(Date, "now").mockReturnValue(123);
     useRepoStore.setState({
       tabs: [],
@@ -186,5 +211,23 @@ describe("AppShell", () => {
 
     unmount();
     await waitFor(() => expect(unlistenMock).toHaveBeenCalledOnce());
+  });
+
+  it("opens license management from the application tab bar", async () => {
+    renderAppShell();
+
+    fireEvent.click(await screen.findByRole("button", { name: "License" }));
+
+    expect(await screen.findByText("License window")).toBeInTheDocument();
+  });
+
+  it("refreshes imported licenses in the background", async () => {
+    getLicenseStatusMock.mockResolvedValue({ licenseId: "lic_123" });
+
+    renderAppShell();
+
+    await waitFor(() => {
+      expect(refreshLicenseValidationMock).toHaveBeenCalledWith({ force: false });
+    });
   });
 });

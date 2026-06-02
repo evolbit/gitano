@@ -1,42 +1,33 @@
 use super::types::{LocalAiEntitlementSource, LocalAiEntitlementStatus};
+use crate::licensing::{ensure_feature_entitled, license_status, PREMIUM_AI_FEATURE};
 
 pub fn entitlement_status() -> LocalAiEntitlementStatus {
-    let dev_enabled = std::env::var("GITANO_LOCAL_AI_DEV_ENTITLEMENT")
-        .map(|value| value != "0" && value.to_lowercase() != "false")
-        .unwrap_or(true);
-
-    development_entitlement_status(dev_enabled)
-}
-
-pub fn development_entitlement_status(enabled: bool) -> LocalAiEntitlementStatus {
-    if enabled {
-        // TODO(local-ai-license): replace this development stub with signed
-        // premium license verification before shipping paid local AI.
-        return LocalAiEntitlementStatus {
-            entitled: true,
-            source: LocalAiEntitlementSource::DevelopmentStub,
-            reason: Some("Development local AI entitlement is enabled.".to_string()),
-        };
-    }
+    let status = license_status();
+    let source = if status.ai_entitled {
+        LocalAiEntitlementSource::License
+    } else {
+        match status.state {
+            crate::licensing::LicenseState::ValidationRequired => {
+                LocalAiEntitlementSource::StaleValidation
+            }
+            crate::licensing::LicenseState::Invalid
+            | crate::licensing::LicenseState::Expired
+            | crate::licensing::LicenseState::WrongMachine
+            | crate::licensing::LicenseState::ValidationFailed
+            | crate::licensing::LicenseState::Revoked => LocalAiEntitlementSource::Invalid,
+            _ => LocalAiEntitlementSource::Missing,
+        }
+    };
 
     LocalAiEntitlementStatus {
-        entitled: false,
-        source: LocalAiEntitlementSource::Missing,
-        reason: Some("Local AI requires a premium license.".to_string()),
+        entitled: status.ai_entitled,
+        source,
+        reason: status.reason,
     }
 }
 
 pub fn ensure_entitled() -> Result<LocalAiEntitlementStatus, String> {
-    let status = entitlement_status();
-
-    if status.entitled {
-        Ok(status)
-    } else {
-        Err(status
-            .reason
-            .clone()
-            .unwrap_or_else(|| "Local AI requires a premium license.".to_string()))
-    }
+    ensure_feature_entitled(PREMIUM_AI_FEATURE).map(|_| entitlement_status())
 }
 
 #[cfg(test)]
@@ -44,16 +35,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn development_stub_allows_local_ai_when_enabled() {
-        let status = development_entitlement_status(true);
+    fn missing_license_reports_missing_entitlement() {
+        let _guard = crate::ai::local_ai_env_lock().lock().unwrap();
+        let previous_home = std::env::var_os("GITANO_LICENSE_HOME");
+        let previous_dev_entitlement = std::env::var_os(crate::licensing::DEV_AI_ENTITLEMENT_ENV);
+        let previous_local_ai_dev_entitlement =
+            std::env::var_os(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV);
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        std::env::set_var("GITANO_LICENSE_HOME", temp_dir.path());
+        std::env::set_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV, "0");
+        std::env::set_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV, "0");
 
-        assert!(status.entitled);
-        assert_eq!(status.source, LocalAiEntitlementSource::DevelopmentStub);
-    }
+        let status = entitlement_status();
 
-    #[test]
-    fn development_stub_can_report_missing_entitlement() {
-        let status = development_entitlement_status(false);
+        match previous_home {
+            Some(value) => std::env::set_var("GITANO_LICENSE_HOME", value),
+            None => std::env::remove_var("GITANO_LICENSE_HOME"),
+        }
+        match previous_dev_entitlement {
+            Some(value) => std::env::set_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV, value),
+            None => std::env::remove_var(crate::licensing::DEV_AI_ENTITLEMENT_ENV),
+        }
+        match previous_local_ai_dev_entitlement {
+            Some(value) => std::env::set_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV, value),
+            None => std::env::remove_var(crate::licensing::LOCAL_AI_DEV_ENTITLEMENT_ENV),
+        }
 
         assert!(!status.entitled);
         assert_eq!(status.source, LocalAiEntitlementSource::Missing);

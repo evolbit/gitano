@@ -330,7 +330,7 @@ describe("SettingsWindow", () => {
     });
     apiMocks.getLocalAiEntitlementStatus.mockResolvedValue({
       entitled: true,
-      source: "developmentStub",
+      source: "license",
       reason: null,
     });
     apiMocks.getLocalAiRuntimeStatus.mockResolvedValue({
