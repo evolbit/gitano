@@ -43,6 +43,7 @@ export {
   IconPlus,
   IconPoint,
   IconQuestionMark,
+  IconRefresh,
   IconSearch,
   IconSparkles,
   IconStack2,

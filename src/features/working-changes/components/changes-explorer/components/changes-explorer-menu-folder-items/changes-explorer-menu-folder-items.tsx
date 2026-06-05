@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
-import { ChangesExplorerCheckboxState } from "../../utils";
+import { ChangesExplorerCheckboxState, isConflictedFile } from "../../utils";
 import { ChangesExplorerMenuButton } from "../changes-explorer-menu-button/changes-explorer-menu-button";
 import { getShowInFileManagerLabel } from "../../utils";
 
@@ -41,6 +41,22 @@ export const ChangesExplorerFolderMenuItems = memo(
     const stageLabel =
       checkboxState === "checked" ? "Unstage Folder" : "Stage Folder";
     const showInFileManagerLabel = getShowInFileManagerLabel();
+    const hasStageableFiles = filesInFolder.some(
+      (file) => !isConflictedFile(file),
+    );
+
+    if (!hasStageableFiles) {
+      return (
+        <>
+          <ChangesExplorerMenuButton disabled>
+            Resolve Conflicts
+          </ChangesExplorerMenuButton>
+          <ChangesExplorerMenuButton disabled>
+            {showInFileManagerLabel}
+          </ChangesExplorerMenuButton>
+        </>
+      );
+    }
 
     return (
       <>

@@ -15,9 +15,10 @@ use super::super::prompts::{
 };
 use super::super::runtime::start_managed_runtime_if_installed;
 use super::super::types::{
-    ExternalAiPromptRequest, LocalAiActionKind, LocalAiBranchReviewResult, LocalAiModelEntry,
-    LocalAiPreferences, LocalAiRunMetadata, LocalAiRunProgressState, LocalAiRunRequest,
-    LocalAiRunResult, LocalAiStructuredResult,
+    ExternalAiPromptRequest, LocalAiActionKind, LocalAiBranchReviewResult,
+    LocalAiConflictCandidate, LocalAiConflictCandidateResult, LocalAiConflictScope,
+    LocalAiModelEntry, LocalAiPreferences, LocalAiRunMetadata, LocalAiRunProgressState,
+    LocalAiRunRequest, LocalAiRunResult, LocalAiStructuredResult,
 };
 use super::action_context::{build_external_agent_context, build_local_action_context};
 use super::branch_review::{merge_branch_review_blocks, BRANCH_REVIEW_PARALLEL_CALLS};
@@ -298,7 +299,10 @@ async fn run_local_model_action(
         formatting_message(request.action_kind),
         None,
     );
-    let structured = parse_structured_result(request.action_kind, &raw_response)?;
+    let structured = normalize_scoped_conflict_result(
+        &git_context,
+        parse_structured_result(request.action_kind, &raw_response)?,
+    )?;
     let pipeline = AiRunPipeline::from_context(
         PROMPT_VERSION,
         local_run.model_id,
@@ -398,6 +402,7 @@ async fn run_external_agent_action(
                 &external_agent_option_values,
             )
         })?;
+    let structured = normalize_scoped_conflict_result(&git_context, structured)?;
     let pipeline = AiRunPipeline::from_context(
         EXTERNAL_AGENT_PROMPT_VERSION,
         format!("external:{}", agent_id),
@@ -406,6 +411,64 @@ async fn run_external_agent_action(
     );
 
     finish_action_run(app, request, cache_key, pipeline, structured)
+}
+
+fn normalize_scoped_conflict_result(
+    context: &LocalAiGitContext,
+    structured: LocalAiStructuredResult,
+) -> Result<LocalAiStructuredResult, String> {
+    let Some(input) = &context.conflict_candidate_input else {
+        return Ok(structured);
+    };
+    let LocalAiStructuredResult::ConflictCandidate(candidate_result) = structured else {
+        return Err(
+            "Local AI did not return a reviewable conflict candidate for the selected scope."
+                .to_string(),
+        );
+    };
+
+    let summary = candidate_result.summary;
+    let candidate = match (input.scope.clone(), candidate_result.candidate) {
+        (
+            scope @ LocalAiConflictScope::Region { .. },
+            LocalAiConflictCandidate::RegionReplacement { replacement, .. },
+        ) => LocalAiConflictCandidate::RegionReplacement {
+            scope,
+            summary: summary.clone(),
+            replacement,
+            input_signatures: input.signatures.clone(),
+        },
+        (
+            scope @ LocalAiConflictScope::File { .. },
+            LocalAiConflictCandidate::FullFileResult { content, .. },
+        ) => LocalAiConflictCandidate::FullFileResult {
+            scope,
+            summary: summary.clone(),
+            content,
+            input_signatures: input.signatures.clone(),
+        },
+        (LocalAiConflictScope::Region { .. }, _) => {
+            return Err(
+                "Local AI returned a file candidate for a region-scoped conflict fix."
+                    .to_string(),
+            );
+        }
+        (LocalAiConflictScope::File { .. }, _) => {
+            return Err(
+                "Local AI returned a region candidate for a file-scoped conflict fix."
+                    .to_string(),
+            );
+        }
+    };
+
+    Ok(LocalAiStructuredResult::ConflictCandidate(
+        LocalAiConflictCandidateResult {
+            file_path: input.scope.file_path().to_string(),
+            scope: input.scope.clone(),
+            summary,
+            candidate,
+        },
+    ))
 }
 
 async fn run_segmented_branch_review(

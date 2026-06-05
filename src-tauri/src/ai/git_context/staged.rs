@@ -40,6 +40,7 @@ pub(super) fn staged_external_agent_context(repo_path: &str) -> Result<LocalAiGi
         prompt_context: content,
         input_digest: digest,
         metadata: empty_metadata(),
+        conflict_candidate_input: None,
     })
 }
 
@@ -79,6 +80,7 @@ pub(super) fn staged_context(repo_path: &str) -> Result<LocalAiGitContext, Strin
         prompt_context: content,
         input_digest: digest,
         metadata: empty_metadata(),
+        conflict_candidate_input: None,
     })
 }
 

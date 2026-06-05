@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { createDiffHunk } from "@/test/fixtures/git";
 import { partitionFiles } from "./partition-files";
@@ -39,6 +40,26 @@ describe("partitionFiles", () => {
     ]);
     expect(sections[1].files.map((entry) => entry.path)).toEqual([
       "src/new.ts",
+    ]);
+  });
+
+  it("puts conflicted files in a dedicated first section", () => {
+    const sections = partitionFiles(
+      [
+        file("src/modified.ts", ChangeType.Modified),
+        file("src/conflicted.ts", ChangeType.Conflicted),
+        file("src/new.ts", ChangeType.Added, true),
+      ],
+      "tracked-untracked",
+    );
+
+    expect(sections.map((section) => section.name)).toEqual([
+      "Conflicts",
+      "Tracked",
+      "Untracked",
+    ]);
+    expect(sections[0].files.map((entry) => entry.path)).toEqual([
+      "src/conflicted.ts",
     ]);
   });
 

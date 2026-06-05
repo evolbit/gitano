@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::git::conflicts::types::GitConflictSignatures;
+
 use super::LocalAiActionKind;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -17,6 +19,8 @@ pub struct LocalAiRunRequest {
     pub base_ref: Option<String>,
     pub head_ref: Option<String>,
     pub comparison_mode: Option<String>,
+    #[serde(default)]
+    pub conflict_scope: Option<LocalAiConflictScope>,
     #[serde(default)]
     pub external_agent_option_overrides: HashMap<String, String>,
 }
@@ -135,12 +139,65 @@ pub struct LocalAiConflictSuggestionsResult {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LocalAiConflictScope {
+    Region {
+        file_path: String,
+        region_id: String,
+    },
+    File {
+        file_path: String,
+    },
+}
+
+impl LocalAiConflictScope {
+    pub fn file_path(&self) -> &str {
+        match self {
+            Self::Region { file_path, .. } | Self::File { file_path } => file_path,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LocalAiConflictCandidate {
+    RegionReplacement {
+        scope: LocalAiConflictScope,
+        summary: String,
+        replacement: String,
+        input_signatures: GitConflictSignatures,
+    },
+    FullFileResult {
+        scope: LocalAiConflictScope,
+        summary: String,
+        content: String,
+        input_signatures: GitConflictSignatures,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiConflictCandidateResult {
+    pub file_path: String,
+    pub scope: LocalAiConflictScope,
+    pub summary: String,
+    pub candidate: LocalAiConflictCandidate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalAiConflictCandidateInput {
+    pub scope: LocalAiConflictScope,
+    pub signatures: GitConflictSignatures,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum LocalAiStructuredResult {
     CommitMessage(LocalAiCommitMessageResult),
     Analysis(LocalAiAnalysisResult),
     BranchReview(LocalAiBranchReviewResult),
     ConflictSuggestions(LocalAiConflictSuggestionsResult),
+    ConflictCandidate(LocalAiConflictCandidateResult),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

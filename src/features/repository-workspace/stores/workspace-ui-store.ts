@@ -11,7 +11,11 @@ export type LeftPaneSection =
   | "workspaces"
   | "tags"
   | "stashes";
-export type RightWorkspaceMode = "history" | "working-diff" | "stash-diff";
+export type RightWorkspaceMode =
+  | "history"
+  | "working-diff"
+  | "stash-diff"
+  | "conflict-resolution";
 export type HistoryMiddleMode = "commit-list" | "commit-diff";
 export type RefPresenceFilter = {
   local: boolean;
@@ -35,6 +39,7 @@ export interface RepoWorkspaceState {
   rightWorkspaceMode: RightWorkspaceMode;
   historyMiddleMode: HistoryMiddleMode;
   selectedWorkingDiffPath: string | null;
+  selectedConflictPath: string | null;
   selectedCommitDiffPath: string | null;
   selectedStashRef: string | null;
   selectedStashDiffPath: string | null;
@@ -64,6 +69,7 @@ interface WorkspaceUiStore {
   setRightWorkspaceMode: (repoPath: string, mode: RightWorkspaceMode) => void;
   setHistoryMiddleMode: (repoPath: string, mode: HistoryMiddleMode) => void;
   setSelectedWorkingDiffPath: (repoPath: string, path: string | null) => void;
+  setSelectedConflictPath: (repoPath: string, path: string | null) => void;
   setSelectedCommitDiffPath: (repoPath: string, path: string | null) => void;
   setSelectedStashRef: (repoPath: string, stashRef: string | null) => void;
   setSelectedStashDiffPath: (repoPath: string, path: string | null) => void;
@@ -118,6 +124,7 @@ export const DEFAULT_REPO_WORKSPACE_STATE: RepoWorkspaceState = {
   rightWorkspaceMode: "history",
   historyMiddleMode: "commit-list",
   selectedWorkingDiffPath: null,
+  selectedConflictPath: null,
   selectedCommitDiffPath: null,
   selectedStashRef: null,
   selectedStashDiffPath: null,
@@ -163,6 +170,7 @@ function getRepoWorkspaceState(
     rightWorkspaceMode: repoState.rightWorkspaceMode ?? "history",
     historyMiddleMode: repoState.historyMiddleMode ?? "commit-list",
     selectedWorkingDiffPath: repoState.selectedWorkingDiffPath ?? null,
+    selectedConflictPath: repoState.selectedConflictPath ?? null,
     selectedCommitDiffPath: repoState.selectedCommitDiffPath ?? null,
     selectedStashRef: repoState.selectedStashRef ?? null,
     selectedStashDiffPath: repoState.selectedStashDiffPath ?? null,
@@ -220,6 +228,8 @@ export const useWorkspaceUiStore = create<WorkspaceUiStore>()(
         get().updateRepoState(repoPath, { historyMiddleMode: mode }),
       setSelectedWorkingDiffPath: (repoPath, path) =>
         get().updateRepoState(repoPath, { selectedWorkingDiffPath: path }),
+      setSelectedConflictPath: (repoPath, path) =>
+        get().updateRepoState(repoPath, { selectedConflictPath: path }),
       setSelectedCommitDiffPath: (repoPath, path) =>
         get().updateRepoState(repoPath, { selectedCommitDiffPath: path }),
       setSelectedStashRef: (repoPath, stashRef) =>

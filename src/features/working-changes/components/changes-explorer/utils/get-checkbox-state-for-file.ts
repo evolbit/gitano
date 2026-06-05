@@ -3,6 +3,7 @@ import {
   ChangesExplorerCheckboxState,
   ChangesExplorerStagedLinesState,
 } from "./types";
+import { isConflictedFile } from "./is-conflicted-file";
 import { isUntrackedFile } from "./is-untracked-file";
 
 export function getCheckboxStateForFile(
@@ -12,6 +13,8 @@ export function getCheckboxStateForFile(
   isWholeFileStaged: (filePath: string) => boolean,
   isPartiallyStaged: (filePath: string) => boolean,
 ): ChangesExplorerCheckboxState {
+  if (isConflictedFile(file)) return "unchecked" as const;
+
   const fileStaged = stagedLines[file.path] || {};
   const hunks = "hunks" in file ? file.hunks : [];
   let totalStageable = 0;

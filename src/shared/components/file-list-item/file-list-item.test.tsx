@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import { createFileChange } from "@/test/fixtures/git";
 import FileListItem from "./file-list-item";
 
@@ -35,5 +36,23 @@ describe("FileListItem", () => {
 
     expect(screen.queryByText("+0")).not.toBeInTheDocument();
     expect(screen.queryByText("-0")).not.toBeInTheDocument();
+  });
+
+  it("renders conflicted files with the conflict icon style", () => {
+    const { container } = render(
+      <FileListItem
+        file={createFileChange({
+          status: ChangeType.Conflicted,
+          insertions: 0,
+          deletions: 0,
+        })}
+      />,
+    );
+
+    expect(container.querySelector("svg")?.className.baseVal).toContain(
+      "text-amber-400",
+    );
+    expect(screen.getByText("+0")).toBeInTheDocument();
+    expect(screen.getByText("-0")).toBeInTheDocument();
   });
 });

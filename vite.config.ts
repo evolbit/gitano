@@ -22,6 +22,9 @@ export default defineConfig(async () => ({
     setupFiles: "./src/test/setup.ts",
     css: true,
   },
+  optimizeDeps: {
+    include: ["@monaco-editor/react", "monaco-editor"],
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

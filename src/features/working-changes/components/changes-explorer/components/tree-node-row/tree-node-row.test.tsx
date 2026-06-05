@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import type { ChangesExplorerTreeNode } from "@/shared/lib/tree/changes-explorer-tree";
 import { TreeNodeRow } from "./tree-node-row";
 
@@ -16,6 +17,29 @@ const folderNode: ChangesExplorerTreeNode = {
   name: "src",
   children: [fileNode],
   files: [fileNode.file],
+};
+
+const conflictFile = {
+  path: "src/conflict.ts",
+  status: ChangeType.Conflicted,
+  insertions: 0,
+  deletions: 0,
+  conflictCount: 2,
+};
+
+const conflictFileNode: ChangesExplorerTreeNode = {
+  kind: "file",
+  path: "src/conflict.ts",
+  name: "conflict.ts",
+  file: conflictFile,
+};
+
+const conflictFolderNode: ChangesExplorerTreeNode = {
+  kind: "folder",
+  path: "src",
+  name: "src",
+  children: [conflictFileNode],
+  files: [conflictFile],
 };
 
 function renderRow(node: ChangesExplorerTreeNode, overrides = {}) {
@@ -77,5 +101,22 @@ describe("TreeNodeRow", () => {
     renderRow(fileNode, { fileCommentCounts: { "src/app.ts": 1 } });
 
     expect(screen.getByLabelText("1 PR comment")).toBeInTheDocument();
+  });
+
+  it("shows conflict metadata without a file checkbox", () => {
+    renderRow(conflictFileNode);
+
+    expect(screen.getByText("2 conflicts")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Toggle file selection" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits folder checkbox for conflict-only folders", () => {
+    renderRow(conflictFolderNode);
+
+    expect(
+      screen.queryByRole("button", { name: "Toggle file selection" }),
+    ).not.toBeInTheDocument();
   });
 });

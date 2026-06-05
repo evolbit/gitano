@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DiffHunk, FileChangeWithHunks } from "@/shared/types/git";
+import { ChangeType, type DiffHunk, type FileChangeWithHunks } from "@/shared/types/git";
 import { getCheckboxStateForFile } from "./get-checkbox-state-for-file";
 import type { ChangesExplorerStagedLinesState } from "./types";
 
@@ -113,5 +113,20 @@ describe("getCheckboxStateForFile", () => {
         state.isPartiallyStaged,
       ),
     ).toBe("indeterminate");
+  });
+
+  it("returns unchecked for conflicted files", () => {
+    const file = changedFile(ChangeType.Conflicted);
+    const state = stateFor({ [file.path]: { isWholeFileStaged: true } });
+
+    expect(
+      getCheckboxStateForFile(
+        file,
+        state.stagedLines,
+        state.isStagedNewFile,
+        state.isWholeFileStaged,
+        state.isPartiallyStaged,
+      ),
+    ).toBe("unchecked");
   });
 });

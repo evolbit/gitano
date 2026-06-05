@@ -16,4 +16,33 @@ export type {
   WorkingDirectoryChangesResponse,
 } from "./git";
 export { ChangeType } from "./git";
-
+export type {
+  GitConflictAiCandidate,
+  GitConflictAiCandidateKind,
+  GitConflictAiCandidateScope,
+  GitConflictAiScopeKind,
+  GitConflictContentKind,
+  GitConflictContentRange,
+  GitConflictFileDetail,
+  GitConflictKind,
+  GitConflictLineEnding,
+  GitConflictRegion,
+  GitConflictSide,
+  GitConflictSignatures,
+  GitConflictSize,
+  GitConflictSizeClass,
+  GitConflictStaleError,
+  GitConflictSummary,
+  GitConflictVersion,
+} from "./git-conflicts";
+export {
+  GIT_CONFLICT_AI_CANDIDATE_KIND,
+  GIT_CONFLICT_AI_SCOPE_KIND,
+  GIT_CONFLICT_CONTENT_KIND,
+  GIT_CONFLICT_KIND,
+  GIT_CONFLICT_LINE_ENDING,
+  GIT_CONFLICT_SIDE,
+  GIT_CONFLICT_SIZE_CLASS,
+  GIT_CONFLICT_STALE_ERROR_CODE,
+  GIT_CONFLICT_STALE_ERROR_MESSAGE,
+} from "./git-conflicts";

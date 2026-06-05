@@ -94,7 +94,9 @@ fn build_staged_file_state(
 }
 
 fn change_type_from_status(status: Status) -> ChangeType {
-    if status.is_wt_new() {
+    if status.contains(Status::CONFLICTED) {
+        ChangeType::Conflicted
+    } else if status.is_wt_new() {
         ChangeType::Added
     } else if status.is_wt_deleted() {
         ChangeType::Deleted

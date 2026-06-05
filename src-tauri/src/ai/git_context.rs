@@ -1,5 +1,7 @@
 use super::context_window::prompt_context_budget_chars;
-use super::types::{LocalAiActionKind, LocalAiRunMetadata, LocalAiRunRequest};
+use super::types::{
+    LocalAiActionKind, LocalAiConflictCandidateInput, LocalAiRunMetadata, LocalAiRunRequest,
+};
 use sha2::{Digest, Sha256};
 use std::process::Command;
 
@@ -32,6 +34,7 @@ pub struct LocalAiGitContext {
     pub prompt_context: String,
     pub input_digest: String,
     pub metadata: LocalAiRunMetadata,
+    pub conflict_candidate_input: Option<LocalAiConflictCandidateInput>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +93,9 @@ pub fn build_git_context(
                 request.action_kind,
             )?
         }
-        LocalAiActionKind::MergeConflictSuggestions => conflict_context(&request.repo_path)?,
+        LocalAiActionKind::MergeConflictSuggestions => {
+            conflict_context(&request.repo_path, request.conflict_scope.as_ref())?
+        }
     };
 
     Ok(apply_context_budget(
@@ -135,7 +140,7 @@ pub fn build_external_agent_git_context(
             )
         }
         LocalAiActionKind::MergeConflictSuggestions => {
-            conflict_external_agent_context(&request.repo_path)
+            conflict_external_agent_context(&request.repo_path, request.conflict_scope.as_ref())
         }
     }
 }
@@ -303,6 +308,7 @@ mod tests {
             prompt_context: "a".repeat(20_000),
             input_digest: "input".to_string(),
             metadata: empty_metadata(),
+            conflict_candidate_input: None,
         };
 
         let budgeted = apply_context_budget(context, 3_000);

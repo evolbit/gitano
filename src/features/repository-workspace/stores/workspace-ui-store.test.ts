@@ -36,6 +36,21 @@ describe("workspace UI store", () => {
     });
   });
 
+  it("stores selected conflict path independently from working diff path", () => {
+    useWorkspaceUiStore
+      .getState()
+      .setSelectedWorkingDiffPath("/repo", "src/normal.ts");
+    useWorkspaceUiStore
+      .getState()
+      .setSelectedConflictPath("/repo", "src/conflict.ts");
+
+    expect(useWorkspaceUiStore.getState().repoStateByPath["/repo"]).toEqual({
+      ...DEFAULT_REPO_WORKSPACE_STATE,
+      selectedWorkingDiffPath: "src/normal.ts",
+      selectedConflictPath: "src/conflict.ts",
+    });
+  });
+
   it("normalizes the legacy folders left pane section during repo updates", () => {
     useWorkspaceUiStore.setState({
       repoStateByPath: {

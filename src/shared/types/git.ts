@@ -152,6 +152,7 @@ export enum ChangeType {
   Renamed = "renamed",
   Copied = "copied",
   TypeChanged = "typeChanged",
+  Conflicted = "conflicted",
 }
 
 export interface FileChange {
@@ -162,7 +163,8 @@ export interface FileChange {
     | "modified"
     | "renamed"
     | "copied"
-    | "typeChanged";
+    | "typeChanged"
+    | "conflicted";
   insertions: number;
   deletions: number;
 }

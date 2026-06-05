@@ -1,9 +1,19 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
-import { DiffLine, FileChange } from "@/shared/types/git";
+import { ChangeType, type DiffLine, type FileChange } from "@/shared/types/git";
 import FileListItem from "@/shared/components/file-list-item/file-list-item";
 import { IconCheck, IconSearch } from "@/shared/components/icons/icons";
 import { DiffFileListProps } from "./types";
+
+const ALLOWED_CHANGE_STATUSES: readonly FileChange["status"][] = [
+  ChangeType.Added,
+  ChangeType.Deleted,
+  ChangeType.Modified,
+  ChangeType.Renamed,
+  ChangeType.Copied,
+  ChangeType.TypeChanged,
+  ChangeType.Conflicted,
+];
 
 // Type guard to know whether the ref is an object with .current
 function isRefObject(r: unknown): r is React.RefObject<HTMLUListElement> {
@@ -43,21 +53,11 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
     const setStagedNewFile = useStagedLinesStore((s) => s.setStagedNewFile);
     const isStagedNewFile = useStagedLinesStore((s) => s.isStagedNewFile);
 
-    // Normalize the status to lowercase and cast it to the correct type
-    const allowedStatuses = [
-      "added",
-      "deleted",
-      "modified",
-      "renamed",
-      "copied",
-      "typeChanged",
-    ] as const;
-    type AllowedStatus = (typeof allowedStatuses)[number];
     const normalizedFiles = files.map((file) => ({
       ...file,
-      status: allowedStatuses.includes((file.status as any).toLowerCase())
-        ? ((file.status as string).toLowerCase() as AllowedStatus)
-        : ("modified" as AllowedStatus),
+      status: ALLOWED_CHANGE_STATUSES.includes(file.status)
+        ? file.status
+        : ChangeType.Modified,
     }));
 
     // File filtering
@@ -167,18 +167,11 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
             </li>
           ) : (
             filteredFiles.map((file, idx) => {
-              // Normalize the status to the allowed values
-              const allowedStatuses = [
-                "added",
-                "deleted",
-                "modified",
-                "renamed",
-                "copied",
-                "typeChanged",
-              ];
-              const normalizedStatus = allowedStatuses.includes(file.status)
+              const normalizedStatus = ALLOWED_CHANGE_STATUSES.includes(
+                file.status,
+              )
                 ? (file.status as FileChange["status"])
-                : ("modified" as FileChange["status"]);
+                : ChangeType.Modified;
               const fileForList: FileChange = {
                 ...file,
                 status: normalizedStatus,
@@ -204,8 +197,9 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                 stagedCount += fileStaged[hunkIdx]?.size || 0;
               }
               // Detect an empty new file
+              const isConflicted = file.status === ChangeType.Conflicted;
               const isNewFile =
-                file.status === "added" &&
+                file.status === ChangeType.Added &&
                 hunks.length === 1 &&
                 hunks[0].is_new_file;
 
@@ -234,6 +228,7 @@ const DiffFileList = forwardRef<HTMLUListElement, DiffFileListProps>(
                   <div className="flex min-w-0 items-center gap-1.5">
                     {/* Per-file checkbox, only when showFileCheckboxes is enabled */}
                     {showFileCheckboxes &&
+                      !isConflicted &&
                       (() => {
                         const toggleFileSelection = () => {
                           if (isNewFile) {

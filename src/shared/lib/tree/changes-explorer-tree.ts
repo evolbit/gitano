@@ -4,11 +4,20 @@ import {
   FileChangeWithHunks,
   WorkingChangeFileSummary,
 } from "@/shared/types/git";
+import { ChangeType } from "@/shared/types/git";
+import type { GitConflictSummary } from "@/shared/types/git-conflicts";
+
+export type ChangesExplorerConflictFile = Omit<FileChange, "status"> &
+  Partial<Omit<GitConflictSummary, "path" | "status">> & {
+    status: ChangeType.Conflicted;
+    isUntracked?: false;
+  };
 
 export type ChangesExplorerFile =
   | FileChange
   | FileChangeWithHunks
-  | WorkingChangeFileSummary;
+  | WorkingChangeFileSummary
+  | ChangesExplorerConflictFile;
 
 export type ChangesExplorerTreeNode =
   | {

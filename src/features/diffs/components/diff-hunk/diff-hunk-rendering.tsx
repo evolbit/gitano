@@ -12,12 +12,20 @@ import type {
   SplitRow,
   StageableBlock,
 } from "../../types";
+import type {
+  InlineDiffHighlightRange,
+  InlineDiffHighlightRangesByLine,
+} from "./inline-diff-highlights";
 
 export const EMPTY_SET = new Set<number>();
 const SOURCE_WRAP_CLASS = "min-w-0 whitespace-pre-wrap break-words";
 const SOURCE_WRAP_STYLE: React.CSSProperties = { overflowWrap: "anywhere" };
 const CENTER_GUTTER_CLASS =
   "flex min-h-7 self-stretch w-6 shrink-0 items-center justify-center select-none transition-colors duration-75 ease-out";
+const ADDED_INLINE_HIGHLIGHT_CLASS =
+  "box-decoration-clone rounded-[2px] bg-green-700/70 text-green-50";
+const DELETED_INLINE_HIGHLIGHT_CLASS =
+  "box-decoration-clone rounded-[2px] bg-red-700/70 text-red-50";
 
 type StageState = {
   isFullyStaged: boolean;
@@ -30,6 +38,7 @@ type DiffRowsCommonProps = {
   filePath: string;
   hunkIdx: number;
   canRenderGutters: boolean;
+  inlineHighlightRanges: InlineDiffHighlightRangesByLine;
   stagedSet: ReadonlySet<number>;
   wholeFileStaged: boolean;
   renderLineAccessory?: DiffLineRenderer;
@@ -49,6 +58,7 @@ export const SplitDiffRows: React.FC<
   filePath,
   hunkIdx,
   canRenderGutters,
+  inlineHighlightRanges,
   stagedSet,
   wholeFileStaged,
   renderLineAccessory,
@@ -80,6 +90,7 @@ export const SplitDiffRows: React.FC<
           filePath={filePath}
           hunkIdx={hunkIdx}
           canStage={canRenderGutters}
+          inlineHighlightRanges={inlineHighlightRanges}
           isBlockFullyStaged={blockStageState.isFullyStaged}
           isBlockPartiallyStaged={blockStageState.isPartiallyStaged}
           isRowChecked={rowStageState.isFullyStaged}
@@ -169,6 +180,7 @@ export const UnifiedDiffRows: React.FC<
   filePath,
   hunkIdx,
   canRenderGutters,
+  inlineHighlightRanges,
   stagedSet,
   wholeFileStaged,
   blockByLineIdx,
@@ -204,6 +216,7 @@ export const UnifiedDiffRows: React.FC<
         <UnifiedLineRow
           key={lineIdx}
           line={line}
+          inlineHighlightRange={inlineHighlightRanges.get(lineIdx)}
           anchor={anchor}
           lineAccessory={renderLineAccessory?.(anchor)}
           lineBelow={lineBelow}
@@ -416,6 +429,7 @@ function getBlockStageState(
 
 const UnifiedLineRow: React.FC<{
   line: DiffLine;
+  inlineHighlightRange?: InlineDiffHighlightRange;
   anchor?: DiffLineAnchor;
   lineAccessory?: React.ReactNode;
   lineBelow?: React.ReactNode;
@@ -431,6 +445,7 @@ const UnifiedLineRow: React.FC<{
   onMouseEnter?: () => void;
 }> = ({
   line,
+  inlineHighlightRange,
   lineAccessory,
   lineBelow,
   lineBelowFullWidth,
@@ -496,7 +511,7 @@ const UnifiedLineRow: React.FC<{
             className={`${SOURCE_WRAP_CLASS} flex-1 pt-1`}
             style={SOURCE_WRAP_STYLE}
           >
-            {line.content}
+            {renderDiffLineContent(line, inlineHighlightRange)}
           </span>
         </div>
       </div>
@@ -519,6 +534,7 @@ const SplitDiffRow: React.FC<{
   filePath: string;
   hunkIdx: number;
   canStage: boolean;
+  inlineHighlightRanges: InlineDiffHighlightRangesByLine;
   isBlockFullyStaged: boolean;
   isBlockPartiallyStaged: boolean;
   isRowChecked: boolean;
@@ -537,6 +553,7 @@ const SplitDiffRow: React.FC<{
   filePath,
   hunkIdx,
   canStage,
+  inlineHighlightRanges,
   isBlockFullyStaged,
   isBlockPartiallyStaged,
   isRowChecked,
@@ -594,6 +611,9 @@ const SplitDiffRow: React.FC<{
         <SplitSideCell
           cell={row.left}
           tone={leftTone}
+          inlineHighlightRange={
+            row.left ? inlineHighlightRanges.get(row.left.lineIdx) : undefined
+          }
           lineAccessory={
             leftAnchor ? renderLineAccessory?.(leftAnchor) : undefined
           }
@@ -627,6 +647,9 @@ const SplitDiffRow: React.FC<{
         <SplitSideCell
           cell={row.right}
           tone={rightTone}
+          inlineHighlightRange={
+            row.right ? inlineHighlightRanges.get(row.right.lineIdx) : undefined
+          }
           lineAccessory={
             rightAnchor ? renderLineAccessory?.(rightAnchor) : undefined
           }
@@ -682,11 +705,20 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
 const SplitSideCell: React.FC<{
   cell?: SplitCell;
   tone: string;
+  inlineHighlightRange?: InlineDiffHighlightRange;
   lineAccessory?: React.ReactNode;
   lineBelow?: React.ReactNode;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
-}> = ({ cell, tone, lineAccessory, lineBelow, onMouseDown, onMouseEnter }) => (
+}> = ({
+  cell,
+  tone,
+  inlineHighlightRange,
+  lineAccessory,
+  lineBelow,
+  onMouseDown,
+  onMouseEnter,
+}) => (
   <div
     className={`min-w-0 px-4 pt-1 ${tone} ${
       cell && onMouseDown ? "cursor-pointer" : ""
@@ -704,7 +736,7 @@ const SplitSideCell: React.FC<{
         className={`${SOURCE_WRAP_CLASS} flex-1`}
         style={SOURCE_WRAP_STYLE}
       >
-        {cell?.line.content ?? ""}
+        {cell ? renderDiffLineContent(cell.line, inlineHighlightRange) : ""}
       </span>
     </div>
     {lineBelow ? (
@@ -840,4 +872,39 @@ function getLineContentTone(line: DiffLine) {
   if (line.kind === "Add") return "bg-green-900/20";
   if (line.kind === "Del") return "bg-red-900/20";
   return "bg-transparent";
+}
+
+function renderDiffLineContent(
+  line: DiffLine,
+  inlineHighlightRange?: InlineDiffHighlightRange,
+) {
+  if (!inlineHighlightRange) return line.content;
+
+  const start = Math.max(
+    0,
+    Math.min(inlineHighlightRange.start, line.content.length),
+  );
+  const end = Math.max(
+    start,
+    Math.min(inlineHighlightRange.end, line.content.length),
+  );
+
+  if (start === end) return line.content;
+
+  const highlightClass = getInlineHighlightTone(line);
+  if (!highlightClass) return line.content;
+
+  return (
+    <>
+      {line.content.slice(0, start)}
+      <span className={highlightClass}>{line.content.slice(start, end)}</span>
+      {line.content.slice(end)}
+    </>
+  );
+}
+
+function getInlineHighlightTone(line: DiffLine) {
+  if (line.kind === "Add") return ADDED_INLINE_HIGHLIGHT_CLASS;
+  if (line.kind === "Del") return DELETED_INLINE_HIGHLIGHT_CLASS;
+  return null;
 }

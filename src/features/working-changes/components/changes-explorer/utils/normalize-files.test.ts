@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import { normalizeFiles } from "./normalize-files";
 
 describe("normalizeFiles", () => {
@@ -18,6 +19,26 @@ describe("normalizeFiles", () => {
         status: "modified",
         insertions: 1,
         deletions: 2,
+      },
+    ]);
+  });
+
+  it("preserves conflicted file status", () => {
+    expect(
+      normalizeFiles([
+        {
+          path: "src/conflicted.ts",
+          status: ChangeType.Conflicted,
+          insertions: 0,
+          deletions: 0,
+        },
+      ]),
+    ).toEqual([
+      {
+        path: "src/conflicted.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
       },
     ]);
   });

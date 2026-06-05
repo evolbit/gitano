@@ -1,3 +1,8 @@
+import type {
+  GitConflictAiCandidate,
+  GitConflictAiCandidateScope,
+} from "@/shared/types/git-conflicts";
+
 export const LOCAL_AI_PROGRESS_EVENT = "local-ai-progress";
 export const LOCAL_AI_RUN_PROGRESS_EVENT = "local-ai-run-progress";
 export const EXTERNAL_AI_AGENT_PROGRESS_EVENT = "external-ai-agent-progress";
@@ -365,6 +370,7 @@ export type LocalAiRunRequest = {
   baseRef?: string | null;
   headRef?: string | null;
   comparisonMode?: string | null;
+  conflictScope?: GitConflictAiCandidateScope | null;
   externalAgentOptionOverrides?: Record<string, string>;
 };
 
@@ -440,11 +446,19 @@ export type LocalAiConflictSuggestionsResult = {
   files: LocalAiConflictFileSuggestion[];
 };
 
+export type LocalAiConflictCandidateResult = {
+  filePath: string;
+  scope: GitConflictAiCandidateScope;
+  summary: string;
+  candidate: GitConflictAiCandidate;
+};
+
 export type LocalAiStructuredResult =
   | { kind: "commitMessage"; data: LocalAiCommitMessageResult }
   | { kind: "analysis"; data: LocalAiAnalysisResult }
   | { kind: "branchReview"; data: LocalAiBranchReviewResult }
-  | { kind: "conflictSuggestions"; data: LocalAiConflictSuggestionsResult };
+  | { kind: "conflictSuggestions"; data: LocalAiConflictSuggestionsResult }
+  | { kind: "conflictCandidate"; data: LocalAiConflictCandidateResult };
 
 export type LocalAiRunMetadata = {
   omittedFiles: string[];

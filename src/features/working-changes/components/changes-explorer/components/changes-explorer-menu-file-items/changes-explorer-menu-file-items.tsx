@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
-import { ChangesExplorerCheckboxState } from "../../utils";
+import { ChangesExplorerCheckboxState, isConflictedFile } from "../../utils";
 import { ChangesExplorerMenuButton } from "../changes-explorer-menu-button/changes-explorer-menu-button";
 import { getShowInFileManagerLabel } from "../../utils";
 
@@ -25,6 +25,19 @@ export const ChangesExplorerFileMenuItems = memo(function ChangesExplorerFileMen
   const isUntracked = file.status === "added" && "hunks" in file;
   const stageLabel = checkboxState === "checked" ? "Unstage File" : "Stage File";
   const showInFileManagerLabel = getShowInFileManagerLabel();
+
+  if (isConflictedFile(file)) {
+    return (
+      <>
+        <ChangesExplorerMenuButton disabled>
+          Resolve Conflict
+        </ChangesExplorerMenuButton>
+        <ChangesExplorerMenuButton disabled>
+          {showInFileManagerLabel}
+        </ChangesExplorerMenuButton>
+      </>
+    );
+  }
 
   return (
     <>

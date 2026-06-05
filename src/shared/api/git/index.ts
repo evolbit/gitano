@@ -1,5 +1,6 @@
 export * from "./branches";
 export * from "./commits";
+export * from "./conflicts";
 export * from "./diffs";
 export * from "./realtime";
 export {

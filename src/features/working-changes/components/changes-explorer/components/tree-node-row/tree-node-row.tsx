@@ -10,7 +10,12 @@ import { memo } from "react";
 import { ChangesExplorerStatusIcon } from "../changes-explorer-status-icon/changes-explorer-status-icon";
 import { ChangesExplorerTreeNodes } from "../changes-explorer-tree-nodes/changes-explorer-tree-nodes";
 import { FileSelectionCheckbox } from "../file-selection-checkbox/file-selection-checkbox";
-import { ChangesExplorerCheckboxState, isUntrackedFile } from "../../utils";
+import {
+  ChangesExplorerCheckboxState,
+  getConflictLabel,
+  isConflictedFile,
+  isUntrackedFile,
+} from "../../utils";
 import { getFolderExpansionKey } from "../../utils/folder-expansion-key";
 
 const TREE_INDENT_STEP = 18;
@@ -80,6 +85,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
     const isOpen = search ? true : (expanded[expansionKey] ?? true);
     const folderFiles = node.files;
     const folderCheckboxState = getFolderCheckboxState(folderFiles);
+    const hasStageableFiles = folderFiles.some((file) => !isConflictedFile(file));
     const sectionIsUntracked =
       folderFiles.length > 0 &&
       folderFiles.every((file) => isUntrackedFile(file));
@@ -119,7 +125,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
             />
           </span>
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
-          {showFileCheckboxes && folderFiles.length > 0 ? (
+          {showFileCheckboxes && folderFiles.length > 0 && hasStageableFiles ? (
             <FileSelectionCheckbox
               checkboxState={folderCheckboxState}
               onToggle={() => onToggleFolderSelection(node.path, folderFiles)}
@@ -156,6 +162,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
   const checkboxState = getFileCheckboxState(node.file);
   const isSelected = selectedPath === node.file.path;
   const commentCount = fileCommentCounts?.[node.file.path] ?? 0;
+  const conflictLabel = getConflictLabel(node.file);
 
   return (
     <button
@@ -180,7 +187,15 @@ export const TreeNodeRow = memo(function TreeNodeRow({
     >
       <ChangesExplorerStatusIcon file={node.file} />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
-      {!isUntrackedFile(node.file) ? (
+      {conflictLabel ? (
+        <div
+          className={`ml-2 flex flex-shrink-0 justify-end text-xs text-amber-300 ${
+            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+          }`}
+        >
+          <span className="truncate text-right">{conflictLabel}</span>
+        </div>
+      ) : !isUntrackedFile(node.file) ? (
         <div
           className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
             commentCount > 0
@@ -209,7 +224,7 @@ export const TreeNodeRow = memo(function TreeNodeRow({
           </span>
         </div>
       ) : null}
-      {showFileCheckboxes ? (
+      {showFileCheckboxes && !conflictLabel ? (
         <FileSelectionCheckbox
           checkboxState={checkboxState}
           onToggle={() => onToggleFileSelection(node.file)}

@@ -222,7 +222,7 @@ fn transcript_contains_json_object(transcript: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::types::LocalAiActionKind;
+    use super::super::super::types::{LocalAiActionKind, LocalAiConflictScope};
     use super::*;
 
     fn branch_request(action_kind: LocalAiActionKind) -> LocalAiRunRequest {
@@ -236,6 +236,25 @@ mod tests {
             base_ref: Some("main".to_string()),
             head_ref: Some("feature".to_string()),
             comparison_mode: None,
+            conflict_scope: None,
+            external_agent_option_overrides: HashMap::new(),
+        }
+    }
+
+    fn scoped_conflict_request() -> LocalAiRunRequest {
+        LocalAiRunRequest {
+            repo_path: "/repo".to_string(),
+            action_kind: LocalAiActionKind::MergeConflictSuggestions,
+            run_id: Some("run-1".to_string()),
+            model_id: None,
+            force_refresh: false,
+            commit_sha: None,
+            base_ref: None,
+            head_ref: None,
+            comparison_mode: None,
+            conflict_scope: Some(LocalAiConflictScope::File {
+                file_path: "src/conflict.ts".to_string(),
+            }),
             external_agent_option_overrides: HashMap::new(),
         }
     }
@@ -279,6 +298,25 @@ mod tests {
     }
 
     #[test]
+    fn selected_external_agent_id_supports_scoped_conflict_requests() {
+        let mut preferences = super::super::super::models::default_preferences();
+        preferences.action_engines.insert(
+            LocalAiActionKind::MergeConflictSuggestions
+                .as_key()
+                .to_string(),
+            AnalysisEngine::ExternalAgent {
+                agent_id: "codex-acp".to_string(),
+            },
+        );
+        let request = scoped_conflict_request();
+
+        assert_eq!(
+            selected_external_agent_id(&request, &preferences),
+            Some("codex-acp")
+        );
+    }
+
+    #[test]
     fn external_agent_structured_output_error_includes_debug_payload() {
         let request = LocalAiRunRequest {
             repo_path: "/repo".to_string(),
@@ -290,6 +328,7 @@ mod tests {
             base_ref: Some("main".to_string()),
             head_ref: Some("feature".to_string()),
             comparison_mode: Some("direct".to_string()),
+            conflict_scope: None,
             external_agent_option_overrides: HashMap::new(),
         };
         let mut options = HashMap::new();
@@ -324,6 +363,7 @@ mod tests {
             base_ref: None,
             head_ref: None,
             comparison_mode: None,
+            conflict_scope: None,
             external_agent_option_overrides: HashMap::new(),
         };
 
@@ -356,6 +396,7 @@ mod tests {
             base_ref: None,
             head_ref: None,
             comparison_mode: None,
+            conflict_scope: None,
             external_agent_option_overrides: HashMap::new(),
         };
 

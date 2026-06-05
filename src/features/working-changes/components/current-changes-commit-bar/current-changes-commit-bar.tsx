@@ -1,5 +1,5 @@
 import { IconChevronDown, IconSparkles } from "@/shared/components/icons/icons";
-import { LocalAiResultModal, LocalAiSetupModal } from "@/features/local-ai";
+import { LocalAiSetupModal } from "@/features/local-ai";
 import { useGitActionsStore } from "@/features/repository-workspace";
 import { useRepoStore } from "@/features/repository-workspace";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
@@ -12,7 +12,6 @@ import {
   type AnalysisEngine,
   type LocalAiActionKind,
   type LocalAiPreferences,
-  type LocalAiRunResult,
 } from "@/shared/api/local-ai";
 import { getRepositoryState } from "@/shared/api/repositories";
 import { APP_EVENTS } from "@/shared/config/events";
@@ -84,11 +83,6 @@ export default function CurrentChangesCommitBar({
   const [stashLoading, setStashLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showAiSetup, setShowAiSetup] = useState(false);
-  const [conflictAiResult, setConflictAiResult] =
-    useState<LocalAiRunResult | null>(null);
-  const [conflictAiLoading, setConflictAiLoading] = useState(false);
-  const [conflictAiError, setConflictAiError] = useState<string | null>(null);
-  const [showConflictAiSetup, setShowConflictAiSetup] = useState(false);
   const [requiresInitialCommit, setRequiresInitialCommit] = useState(false);
   const { commitStagedChanges, loading, error } = useStageAndCommit();
   const clearAllStagedLines = useStagedLinesStore((s) => s.clearAllStagedLines);
@@ -113,7 +107,7 @@ export default function CurrentChangesCommitBar({
   const selectedBranch = useRepoStore(
     (s) => s.tabs.find((t) => t.id === activeTabId)?.selectedBranch ?? null,
   );
-  const isBusy = loading || stashLoading || aiLoading || conflictAiLoading;
+  const isBusy = loading || stashLoading || aiLoading;
   const commitSubject = message.split(/\r?\n/, 1)[0] ?? "";
   const subjectIsTooLong =
     commitSubject.length > COMMIT_SUBJECT_RECOMMENDED_MAX_LENGTH;
@@ -380,31 +374,6 @@ export default function CurrentChangesCommitBar({
     }
   };
 
-  const handleSuggestConflictResolution = async (forceRefresh = false) => {
-    if (isBusy) return;
-    if (!(await ensureActionModelReady("mergeConflictSuggestions"))) return;
-
-    setConflictAiLoading(true);
-    setConflictAiError(null);
-    try {
-      const result = await runLocalAiAction({
-        repoPath,
-        actionKind: "mergeConflictSuggestions",
-        forceRefresh,
-      });
-      setConflictAiResult(result);
-    } catch (suggestionError) {
-      if (shouldOpenAiSetup(suggestionError)) {
-        setShowConflictAiSetup(true);
-      } else {
-        notifyAiError("AI conflict suggestion failed", suggestionError);
-        setConflictAiResult(null);
-      }
-    } finally {
-      setConflictAiLoading(false);
-    }
-  };
-
   return (
     <div className="border-t border-border bg-background-emphasis px-2 pb-2 pt-1.5">
       <div className="flex flex-col gap-1.5">
@@ -556,17 +525,6 @@ export default function CurrentChangesCommitBar({
                   >
                     Stash
                   </button>
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-2 text-left hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
-                    onClick={() => {
-                      setShowCommitMenu(false);
-                      void handleSuggestConflictResolution();
-                    }}
-                    disabled={isBusy || requiresInitialCommit}
-                  >
-                    Suggest conflicts
-                  </button>
                 </div>
               ) : null}
             </div>
@@ -581,33 +539,6 @@ export default function CurrentChangesCommitBar({
         onReady={() => {
           setShowAiSetup(false);
           void handleGenerateCommitMessage();
-        }}
-      />
-      <LocalAiResultModal
-        open={
-          Boolean(conflictAiResult) ||
-          conflictAiLoading ||
-          Boolean(conflictAiError)
-        }
-        title="Suggest conflict resolution"
-        result={conflictAiResult}
-        loading={conflictAiLoading}
-        error={conflictAiError}
-        onRefresh={() => {
-          void handleSuggestConflictResolution(true);
-        }}
-        onClose={() => {
-          setConflictAiResult(null);
-          setConflictAiError(null);
-        }}
-      />
-      <LocalAiSetupModal
-        open={showConflictAiSetup}
-        actionKind="mergeConflictSuggestions"
-        onClose={() => setShowConflictAiSetup(false)}
-        onReady={() => {
-          setShowConflictAiSetup(false);
-          void handleSuggestConflictResolution();
         }}
       />
     </div>

@@ -1,7 +1,9 @@
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
+import { ChangeType } from "@/shared/types/git";
 import {
   IconCopy,
   IconExchange,
+  IconGitMerge,
   IconMinus,
   IconPencil,
   IconPlus,
@@ -36,37 +38,43 @@ export function ChangesExplorerStatusIcon({ file }: { file: ChangesExplorerFile 
   }
 
   switch (file.status) {
-    case "added":
+    case ChangeType.Conflicted:
+      return (
+        <StatusSquare colorClass="border-amber-400 text-amber-400">
+          <IconGitMerge size={10} />
+        </StatusSquare>
+      );
+    case ChangeType.Added:
       return (
         <StatusSquare colorClass="border-lime-400 text-lime-400">
           <IconPlus size={10} />
         </StatusSquare>
       );
-    case "deleted":
+    case ChangeType.Deleted:
       return (
         <StatusSquare colorClass="border-red-500 text-red-500">
           <IconMinus size={10} />
         </StatusSquare>
       );
-    case "modified":
+    case ChangeType.Modified:
       return (
         <StatusSquare colorClass="border-yellow-500 text-yellow-500">
           <IconPoint size={10} />
         </StatusSquare>
       );
-    case "renamed":
+    case ChangeType.Renamed:
       return (
         <StatusSquare colorClass="border-blue-500 text-blue-500">
           <IconPencil size={10} />
         </StatusSquare>
       );
-    case "copied":
+    case ChangeType.Copied:
       return (
         <StatusSquare colorClass="border-purple-500 text-purple-500">
           <IconCopy size={10} />
         </StatusSquare>
       );
-    case "typeChanged":
+    case ChangeType.TypeChanged:
       return (
         <StatusSquare colorClass="border-orange-500 text-orange-500">
           <IconExchange size={10} />

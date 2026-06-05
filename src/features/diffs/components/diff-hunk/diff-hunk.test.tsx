@@ -176,6 +176,83 @@ describe("DiffHunk", () => {
     screen.getAllByText(longLine).forEach(expectWrappedSource);
   });
 
+  it("renders darker inline highlights for comparable unified changes", () => {
+    render(
+      <DiffHunk
+        hunk={createDiffHunk({
+          lines: [
+            createDiffLine({
+              kind: "Del",
+              content: '"@mantine/hooks": "^8.0.2",',
+              old_lineno: 16,
+              new_lineno: null,
+            }),
+            createDiffLine({
+              kind: "Add",
+              content: '"@mantine/hooks": "^8.3.10",',
+              old_lineno: null,
+              new_lineno: 16,
+            }),
+          ],
+        })}
+        filePath="package.json"
+        hunkIdx={0}
+        isHovered={false}
+        setHoveredHunkIdx={vi.fn()}
+        displayMode="unified"
+      />,
+    );
+
+    expect(screen.getByText("0.2")).toHaveClass(
+      "bg-red-700/70",
+      "text-red-50",
+    );
+    expect(screen.getByText("3.10")).toHaveClass(
+      "bg-green-700/70",
+      "text-green-50",
+    );
+    expect(screen.getByText("0.2").parentElement).toHaveClass(
+      "whitespace-pre-wrap",
+    );
+  });
+
+  it("renders darker inline highlights for comparable split changes", () => {
+    render(
+      <DiffHunk
+        hunk={createDiffHunk({
+          lines: [
+            createDiffLine({
+              kind: "Del",
+              content: '"@mantine/hooks": "^8.0.2",',
+              old_lineno: 16,
+              new_lineno: null,
+            }),
+            createDiffLine({
+              kind: "Add",
+              content: '"@mantine/hooks": "^8.3.10",',
+              old_lineno: null,
+              new_lineno: 16,
+            }),
+          ],
+        })}
+        filePath="package.json"
+        hunkIdx={0}
+        isHovered={false}
+        setHoveredHunkIdx={vi.fn()}
+        displayMode="split"
+      />,
+    );
+
+    expect(screen.getByText("0.2")).toHaveClass(
+      "bg-red-700/70",
+      "text-red-50",
+    );
+    expect(screen.getByText("3.10")).toHaveClass(
+      "bg-green-700/70",
+      "text-green-50",
+    );
+  });
+
   it("renders split line content inside each side instead of full-width rows", () => {
     render(
       <DiffInteractionProvider

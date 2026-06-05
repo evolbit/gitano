@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { ChangesExplorerFileMenuItems } from "./changes-explorer-menu-file-items";
 
@@ -16,6 +17,13 @@ const untrackedFile: ChangesExplorerFile = {
   insertions: 1,
   deletions: 0,
   hunks: [],
+};
+
+const conflictedFile: ChangesExplorerFile = {
+  path: "src/conflict.ts",
+  status: ChangeType.Conflicted,
+  insertions: 0,
+  deletions: 0,
 };
 
 describe("ChangesExplorerFileMenuItems", () => {
@@ -65,5 +73,22 @@ describe("ChangesExplorerFileMenuItems", () => {
 
     expect(onTrashUntrackedFile).toHaveBeenCalledWith(untrackedFile);
     expect(screen.queryByRole("button", { name: "View File Blame" })).not.toBeInTheDocument();
+  });
+
+  it("does not expose normal file actions for conflicted files", () => {
+    render(
+      <ChangesExplorerFileMenuItems
+        file={conflictedFile}
+        onCloseContextMenu={vi.fn()}
+        onToggleFileSelection={vi.fn()}
+        onDiscardTrackedFile={vi.fn()}
+        onTrashUntrackedFile={vi.fn()}
+        getCheckboxState={() => "unchecked"}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Resolve Conflict" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Stage File" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard Changes" })).not.toBeInTheDocument();
   });
 });

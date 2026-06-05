@@ -3,7 +3,7 @@ import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tre
 export type ChangesExplorerViewMode = "flat" | "tree";
 
 export type ChangesExplorerSurface = "main" | "modal";
-export type SectionName = "Tracked" | "Untracked";
+export type SectionName = "Conflicts" | "Tracked" | "Untracked";
 export type SectionMode = "tracked-untracked" | "single";
 export type ChangesExplorerSection = {
   name: SectionName;

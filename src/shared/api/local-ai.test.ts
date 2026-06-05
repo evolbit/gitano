@@ -533,6 +533,32 @@ describe("local AI API", () => {
     });
   });
 
+  it("runs scoped conflict AI actions with candidate scope", async () => {
+    invokeCommandMock.mockResolvedValueOnce({ fromCache: false });
+
+    await runLocalAiAction({
+      repoPath: "/repo",
+      actionKind: "mergeConflictSuggestions",
+      conflictScope: {
+        kind: "region",
+        filePath: "src/conflict.ts",
+        regionId: "conflict-1",
+      },
+    });
+
+    expect(invokeCommandMock).toHaveBeenCalledWith("ai_run_action", {
+      request: {
+        repoPath: "/repo",
+        actionKind: "mergeConflictSuggestions",
+        conflictScope: {
+          kind: "region",
+          filePath: "src/conflict.ts",
+          regionId: "conflict-1",
+        },
+      },
+    });
+  });
+
   it("listens to local AI run progress events", () => {
     const handler = vi.fn();
     const progress = {

@@ -9,13 +9,17 @@ import {
   getWorkingDirectorySummary,
   getWorkingFileDetail,
 } from "@/shared/api/git/staging";
+import { getMergeConflicts } from "@/shared/api/git/conflicts";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
 import type {
   StagedFileSelectionState,
-  WorkingChangeFileSummary,
   WorkingFileDetailResponse,
 } from "@/shared/types/git";
 import { buildWorkingChangesStagedSnapshotSignature } from "../utils/working-changes-snapshot";
+import {
+  mergeWorkingChangeSummaries,
+  type WorkingChangeSummaryFile,
+} from "../utils/working-conflict-summary";
 
 interface UseWorkingDirectoryChangesOptions {
   pollInterval?: number; // Polling interval in milliseconds
@@ -47,7 +51,12 @@ export type WorkingFileDetailLoadState =
 
 type WorkingFileDetailByPath = Record<string, WorkingFileDetailLoadState>;
 
-function buildSummarySnapshotSignature(files: WorkingChangeFileSummary[]) {
+type WorkingDirectorySummaryState = {
+  changes: WorkingChangeSummaryFile[];
+  staged_state_by_file: Record<string, StagedFileSelectionState>;
+};
+
+function buildSummarySnapshotSignature(files: WorkingChangeSummaryFile[]) {
   return files
     .map((file) =>
       [
@@ -63,8 +72,8 @@ function buildSummarySnapshotSignature(files: WorkingChangeFileSummary[]) {
 }
 
 function mergeSummariesPreservingIdentity(
-  previous: WorkingChangeFileSummary[],
-  next: WorkingChangeFileSummary[],
+  previous: WorkingChangeSummaryFile[],
+  next: WorkingChangeSummaryFile[],
 ) {
   if (previous.length === 0) return next;
 
@@ -130,7 +139,7 @@ export const useWorkingDirectoryChanges = (
 ) => {
   const { pollInterval = 0, enabled = true } = options;
 
-  const [changes, setChanges] = useState<WorkingChangeFileSummary[]>([]);
+  const [changes, setChanges] = useState<WorkingChangeSummaryFile[]>([]);
   const [fileDetails, setFileDetails] = useState<WorkingFileDetailByPath>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +148,7 @@ export const useWorkingDirectoryChanges = (
   const isMountedRef = useRef(true);
   const lastFileSnapshotSignatureRef = useRef<string | null>(null);
   const lastStagedSnapshotSignatureRef = useRef<string | null>(null);
-  const lastChangesRef = useRef<WorkingChangeFileSummary[]>([]);
+  const lastChangesRef = useRef<WorkingChangeSummaryFile[]>([]);
   const hasLoadedOnceRef = useRef(false);
   const summaryInFlightRef = useRef<Promise<void> | null>(null);
   const summaryRerunRequestedRef = useRef(false);
@@ -158,7 +167,7 @@ export const useWorkingDirectoryChanges = (
   }, []);
 
   // Function to apply lightweight summary results.
-  const applySummaryResponse = useCallback((response: Awaited<ReturnType<typeof getWorkingDirectorySummary>>) => {
+  const applySummaryResponse = useCallback((response: WorkingDirectorySummaryState) => {
     const { changes: result } = response;
 
     const nextFileSnapshotSignature = buildSummarySnapshotSignature(result);
@@ -242,13 +251,22 @@ export const useWorkingDirectoryChanges = (
         setError(null);
 
         try {
-          const response = await getWorkingDirectorySummary(repoPath);
+          const [workingSummary, conflicts] = await Promise.all([
+            getWorkingDirectorySummary(repoPath),
+            getMergeConflicts(repoPath),
+          ]);
 
           if (!isMountedRef.current || requestId !== summaryRequestIdRef.current) {
             continue;
           }
 
-          applySummaryResponse(response);
+          applySummaryResponse({
+            ...workingSummary,
+            changes: mergeWorkingChangeSummaries(
+              workingSummary.changes,
+              conflicts,
+            ),
+          });
         } catch (err) {
           if (isMountedRef.current && requestId === summaryRequestIdRef.current) {
             setError(String(err));

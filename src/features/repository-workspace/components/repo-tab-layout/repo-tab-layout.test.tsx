@@ -1,6 +1,14 @@
 import { MantineProvider } from "@mantine/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChangeType } from "@/shared/types/git";
+import type { DiffHunk, WorkingFileDetailResponse } from "@/shared/types/git";
 import { useRepoStore } from "@/features/repository-workspace/stores/repo-store";
 import {
   DEFAULT_REPO_WORKSPACE_STATE,
@@ -29,6 +37,39 @@ const workingChangesMockState = vi.hoisted(() => ({
   ],
   fileDetails: {},
 }));
+
+function hunkFixture(): DiffHunk {
+  return {
+    header: "@@ -1 +1 @@",
+    old_start: 1,
+    old_lines: 1,
+    new_start: 1,
+    new_lines: 1,
+    is_new_file: false,
+    lines: [
+      {
+        kind: "Add",
+        content: "next",
+        old_lineno: null,
+        new_lineno: 1,
+      },
+    ],
+  };
+}
+
+function readyDetail(path: string): WorkingFileDetailResponse {
+  return {
+    fileSignature: `${path}:modified:1:0`,
+    file: {
+      path,
+      status: "modified",
+      insertions: 1,
+      deletions: 0,
+      hunks: [hunkFixture()],
+    },
+    stagedState: null,
+  };
+}
 
 vi.mock("@/shared/platform/tauri/storage", () => ({
   tauriStorage: {
@@ -64,6 +105,25 @@ vi.mock("@/features/working-changes", () => ({
           Select {file.path}
         </button>
       ))}
+    </div>
+  ),
+  ConflictResolutionSurface: ({
+    filePath,
+    onClose,
+    onSelectConflictPath,
+  }: {
+    filePath: string;
+    onClose: () => void;
+    onSelectConflictPath: (path: string) => void;
+  }) => (
+    <div>
+      ConflictSurface:{filePath}
+      <button type="button" onClick={onClose}>
+        Close conflict
+      </button>
+      <button type="button" onClick={() => onSelectConflictPath("src/next.ts")}>
+        Next conflict
+      </button>
     </div>
   ),
   CurrentChangesCommitBar: () => <div>CommitBar</div>,
@@ -264,5 +324,259 @@ describe("RepoTabLayout", () => {
     expect(
       useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedWorkingDiffPath,
     ).toBeNull();
+  });
+
+  it("opens conflict resolution for conflicted files while preserving normal diff state", async () => {
+    loadFileDetailMock.mockResolvedValue(null);
+    workingChangesMockState.changes = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        insertions: 1,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/app.ts:modified:1:0",
+      },
+      {
+        path: "src/conflict.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/conflict.ts:conflicted",
+      },
+    ];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/app.ts"));
+    expect(await screen.findByText("InlineDiff:src/app.ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Select src/conflict.ts"));
+
+    expect(screen.getByText("ConflictSurface:src/conflict.ts")).toBeInTheDocument();
+    expect(loadFileDetailMock).toHaveBeenCalledTimes(1);
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].rightWorkspaceMode,
+    ).toBe("conflict-resolution");
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedWorkingDiffPath,
+    ).toBe("src/app.ts");
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedConflictPath,
+    ).toBe("src/conflict.ts");
+  });
+
+  it("returns from conflict resolution to normal working diff selection", async () => {
+    loadFileDetailMock.mockResolvedValue(null);
+    workingChangesMockState.changes = [
+      {
+        path: "src/conflict.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/conflict.ts:conflicted",
+      },
+      {
+        path: "src/app.ts",
+        status: "modified",
+        insertions: 1,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/app.ts:modified:1:0",
+      },
+    ];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/conflict.ts"));
+    expect(screen.getByText("ConflictSurface:src/conflict.ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Select src/app.ts"));
+
+    expect(await screen.findByText("InlineDiff:src/app.ts")).toBeInTheDocument();
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedConflictPath,
+    ).toBeNull();
+  });
+
+  it("rebinds cached working diff hunks when reselecting the same tracked file after conflict resolution", async () => {
+    workingChangesMockState.changes = [
+      {
+        path: "src/app.ts",
+        status: "modified",
+        insertions: 1,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/app.ts:modified:1:0",
+      },
+      {
+        path: "src/conflict.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/conflict.ts:conflicted",
+      },
+    ];
+    workingChangesMockState.fileDetails = {
+      "src/app.ts": {
+        status: "ready",
+        detail: readyDetail("src/app.ts"),
+      },
+    };
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [
+        {
+          id: "repo",
+          repoPath: "/repo",
+          selectedBranch: "main",
+          selectedCommit: null,
+        },
+      ],
+    });
+    useWorkspaceUiStore.setState({
+      repoStateByPath: {
+        "/repo": {
+          ...DEFAULT_REPO_WORKSPACE_STATE,
+          rightWorkspaceMode: "working-diff",
+          selectedWorkingDiffPath: "src/app.ts",
+        },
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(setFileHunksMock).toHaveBeenCalledWith(
+        "src/app.ts",
+        readyDetail("src/app.ts").file.hunks,
+      );
+    });
+    setFileHunksMock.mockClear();
+
+    fireEvent.click(screen.getByText("Select src/conflict.ts"));
+    expect(screen.getByText("ConflictSurface:src/conflict.ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Select src/app.ts"));
+
+    expect(await screen.findByText("InlineDiff:src/app.ts")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(setFileHunksMock).toHaveBeenCalledWith(
+        "src/app.ts",
+        readyDetail("src/app.ts").file.hunks,
+      );
+    });
+  });
+
+  it("closes conflict resolution and clears selected conflict path", () => {
+    workingChangesMockState.changes = [
+      {
+        path: "src/conflict.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/conflict.ts:conflicted",
+      },
+    ];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+
+    render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/conflict.ts"));
+    expect(screen.getByText("ConflictSurface:src/conflict.ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Close conflict"));
+
+    expect(screen.getByText("CommitList")).toBeInTheDocument();
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedConflictPath,
+    ).toBeNull();
+  });
+
+  it("moves to the next conflict when the selected conflict disappears", async () => {
+    workingChangesMockState.changes = [
+      {
+        path: "src/missing.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/missing.ts:conflicted",
+      },
+      {
+        path: "src/next.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/next.ts:conflicted",
+      },
+    ];
+    useRepoStore.setState({
+      activeTabId: "repo",
+      tabs: [{ id: "repo", repoPath: "/repo", selectedBranch: "main", selectedCommit: null }],
+    });
+
+    const view = render(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Select src/missing.ts"));
+    expect(screen.getByText("ConflictSurface:src/missing.ts")).toBeInTheDocument();
+
+    workingChangesMockState.changes = [
+      {
+        path: "src/next.ts",
+        status: ChangeType.Conflicted,
+        insertions: 0,
+        deletions: 0,
+        isUntracked: false,
+        fileSignature: "src/next.ts:conflicted",
+      },
+    ];
+
+    view.rerender(
+      <MantineProvider>
+        <RepoTabLayout />
+      </MantineProvider>,
+    );
+
+    expect(await screen.findByText("ConflictSurface:src/next.ts")).toBeInTheDocument();
+    expect(
+      useWorkspaceUiStore.getState().repoStateByPath["/repo"].selectedConflictPath,
+    ).toBe("src/next.ts");
   });
 });

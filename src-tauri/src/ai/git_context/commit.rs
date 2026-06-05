@@ -61,6 +61,7 @@ where
         prompt_context: content,
         input_digest: digest,
         metadata: empty_metadata(),
+        conflict_candidate_input: None,
     })
 }
 
@@ -109,6 +110,7 @@ where
         prompt_context: content,
         input_digest: digest,
         metadata: empty_metadata(),
+        conflict_candidate_input: None,
     })
 }
 

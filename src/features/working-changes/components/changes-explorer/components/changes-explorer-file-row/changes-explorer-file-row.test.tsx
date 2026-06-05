@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ChangeType } from "@/shared/types/git";
 import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { ChangesExplorerFileRow } from "./changes-explorer-file-row";
 
@@ -13,10 +14,11 @@ const file: ChangesExplorerFile = {
 function renderFileRow(
   alignCountColumnWithHeaderActions = false,
   commentCount = 0,
+  rowFile: ChangesExplorerFile = file,
 ) {
   return render(
     <ChangesExplorerFileRow
-      file={file}
+      file={rowFile}
       selectedPath={null}
       showFileCheckboxes
       checkboxState="unchecked"
@@ -73,5 +75,20 @@ describe("ChangesExplorerFileRow", () => {
 
     expect(countColumn?.textContent).toContain("+12");
     expect(countColumn?.textContent).toContain("-3");
+  });
+
+  it("shows conflict metadata without normal staging checkbox", () => {
+    renderFileRow(false, 0, {
+      ...file,
+      status: ChangeType.Conflicted,
+      insertions: 0,
+      deletions: 0,
+      conflictCount: 1,
+    });
+
+    expect(screen.getByText("1 conflict")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Toggle file selection" }),
+    ).not.toBeInTheDocument();
   });
 });

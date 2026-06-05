@@ -11,6 +11,7 @@ import {
   SplitDiffRows,
   UnifiedDiffRows,
 } from "./diff-hunk-rendering";
+import { buildInlineDiffHighlightRanges } from "./inline-diff-highlights";
 
 const DiffHunk: React.FC<DiffHunkProps> = ({
   hunk,
@@ -40,6 +41,10 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
     });
     return index;
   }, [blocks]);
+  const inlineHighlightRanges = React.useMemo(
+    () => buildInlineDiffHighlightRanges(hunk.lines, blocks),
+    [hunk.lines, blocks],
+  );
   const diffInteraction = useDiffInteraction();
   const canRenderGutters = !hunk.is_new_file && canStage;
   const splitRows = React.useMemo(
@@ -91,6 +96,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           filePath={filePath}
           hunkIdx={hunkIdx}
           canRenderGutters={canRenderGutters}
+          inlineHighlightRanges={inlineHighlightRanges}
           stagedSet={stagedSet}
           wholeFileStaged={wholeFileStaged}
           renderLineAccessory={renderLineAccessory}
@@ -106,6 +112,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           filePath={filePath}
           hunkIdx={hunkIdx}
           canRenderGutters={canRenderGutters}
+          inlineHighlightRanges={inlineHighlightRanges}
           stagedSet={stagedSet}
           wholeFileStaged={wholeFileStaged}
           blockByLineIdx={blockByLineIdx}

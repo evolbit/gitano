@@ -25,11 +25,13 @@ import { WorkspacesPanel } from "@/features/worktrees";
 import { ChangesPanel, CommitList } from "@/features/history";
 import {
   ChangesExplorer,
+  ConflictResolutionSurface,
   CurrentChangesCommitBar,
   useWorkingDirectoryChanges,
 } from "@/features/working-changes";
 import { InlineDiffSurface } from "@/features/diffs";
-import type { WorkingChangeFileSummary } from "@/shared/types/git";
+import { ChangeType } from "@/shared/types/git";
+import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tree";
 import { RepositoryPullRequestsSurface } from "../repository-pull-requests-surface/repository-pull-requests-surface";
 
 const LEFT_PANE_SECTIONS: ReadonlyArray<{
@@ -73,6 +75,9 @@ const RepoTabLayout: React.FC = () => {
   const setHistoryMiddleMode = useWorkspaceUiStore((s) => s.setHistoryMiddleMode);
   const setSelectedWorkingDiffPath = useWorkspaceUiStore(
     (s) => s.setSelectedWorkingDiffPath,
+  );
+  const setSelectedConflictPath = useWorkspaceUiStore(
+    (s) => s.setSelectedConflictPath,
   );
   const setSelectedCommitDiffPath = useWorkspaceUiStore(
     (s) => s.setSelectedCommitDiffPath,
@@ -119,6 +124,7 @@ const RepoTabLayout: React.FC = () => {
   useEffect(() => {
     if (!repoPath) return;
     setSelectedWorkingDiffPath(repoPath, null);
+    setSelectedConflictPath(repoPath, null);
     setSelectedCommitDiffPath(repoPath, null);
     setSelectedStashDiffPath(repoPath, null);
     setRightWorkspaceMode(repoPath, "history");
@@ -126,10 +132,22 @@ const RepoTabLayout: React.FC = () => {
   }, [tab?.selectedBranch]);
 
   const selectedWorkingFilePath = workspaceState.selectedWorkingDiffPath;
+  const selectedConflictPath = workspaceState.selectedConflictPath;
+  const conflictFiles = changes.filter(
+    (file) => file.status === ChangeType.Conflicted,
+  );
   const selectedWorkingFile =
     selectedWorkingFilePath === null
       ? null
       : (changes.find((f) => f.path === selectedWorkingFilePath) ?? null);
+  const selectedConflictFile =
+    selectedConflictPath === null
+      ? null
+      : (conflictFiles.find((f) => f.path === selectedConflictPath) ?? null);
+  const selectedConflictFileSignature =
+    selectedConflictFile && "fileSignature" in selectedConflictFile
+      ? selectedConflictFile.fileSignature
+      : null;
   const selectedWorkingFileDetail =
     selectedWorkingFilePath === null
       ? undefined
@@ -137,7 +155,13 @@ const RepoTabLayout: React.FC = () => {
 
   // Clear inline working diff when selected file disappears from live changes.
   useEffect(() => {
-    if (!repoPath || !selectedWorkingFilePath) return;
+    if (
+      !repoPath ||
+      !selectedWorkingFilePath ||
+      workspaceState.rightWorkspaceMode !== "working-diff"
+    ) {
+      return;
+    }
 
     const updated = changes.find((f) => f.path === selectedWorkingFilePath);
     if (!updated) {
@@ -149,13 +173,44 @@ const RepoTabLayout: React.FC = () => {
     changes,
     repoPath,
     selectedWorkingFilePath,
+    workspaceState.rightWorkspaceMode,
     setRightWorkspaceMode,
     setSelectedWorkingDiffPath,
+  ]);
+
+  useEffect(() => {
+    if (
+      !repoPath ||
+      !selectedConflictPath ||
+      workspaceState.rightWorkspaceMode !== "conflict-resolution"
+    ) {
+      return;
+    }
+
+    const updated = conflictFiles.find((file) => file.path === selectedConflictPath);
+    if (updated) return;
+
+    const nextConflict = conflictFiles[0] ?? null;
+    if (nextConflict) {
+      setSelectedConflictPath(repoPath, nextConflict.path);
+      return;
+    }
+
+    setSelectedConflictPath(repoPath, null);
+    setRightWorkspaceMode(repoPath, "history");
+  }, [
+    conflictFiles,
+    repoPath,
+    selectedConflictPath,
+    setRightWorkspaceMode,
+    setSelectedConflictPath,
+    workspaceState.rightWorkspaceMode,
   ]);
 
   // Rebind hunks to the fresh file entry whenever the selected path still
   // exists in the live working changes list.
   useEffect(() => {
+    if (workspaceState.rightWorkspaceMode !== "working-diff") return;
     if (!selectedWorkingFile) return;
     const detail = fileDetails[selectedWorkingFile.path];
     if (detail?.status === "ready") {
@@ -175,13 +230,35 @@ const RepoTabLayout: React.FC = () => {
         .getState()
         .setFileHunks(selectedWorkingFile.path, loadedDetail.file.hunks);
     });
-  }, [fileDetails, loadFileDetail, selectedWorkingFile]);
+  }, [
+    fileDetails,
+    loadFileDetail,
+    selectedWorkingFile,
+    workspaceState.rightWorkspaceMode,
+  ]);
 
   // Handler to open the diff for a working directory file
-  const handleSelectWorkingFile = (file: WorkingChangeFileSummary) => {
+  const handleSelectWorkingFile = (file: ChangesExplorerFile) => {
     if (!repoPath) return;
+
+    if (file.status === ChangeType.Conflicted) {
+      setSelectedConflictPath(repoPath, file.path);
+      setRightWorkspaceMode(repoPath, "conflict-resolution");
+      return;
+    }
+
     setSelectedWorkingDiffPath(repoPath, file.path);
+    setSelectedConflictPath(repoPath, null);
     setRightWorkspaceMode(repoPath, "working-diff");
+
+    const detail = fileDetails[file.path];
+    if (detail?.status === "ready") {
+      useFileHunksStore
+        .getState()
+        .setFileHunks(file.path, detail.detail.file.hunks);
+      return;
+    }
+
     useFileHunksStore.getState().clearFileHunks();
   };
 
@@ -192,10 +269,23 @@ const RepoTabLayout: React.FC = () => {
     useFileHunksStore.getState().clearFileHunks();
   };
 
+  const handleSelectConflictPath = (filePath: string) => {
+    if (!repoPath) return;
+    setSelectedConflictPath(repoPath, filePath);
+    setRightWorkspaceMode(repoPath, "conflict-resolution");
+  };
+
+  const handleCloseConflictResolution = () => {
+    if (!repoPath) return;
+    setRightWorkspaceMode(repoPath, "history");
+    setSelectedConflictPath(repoPath, null);
+  };
+
   const handleOpenStashDiff = (stashRef: string, filePath: string) => {
     if (!repoPath) return;
     setSelectedStashRef(repoPath, stashRef);
     setSelectedStashDiffPath(repoPath, filePath);
+    setSelectedConflictPath(repoPath, null);
     setRightWorkspaceMode(repoPath, "stash-diff");
   };
 
@@ -373,10 +463,14 @@ const RepoTabLayout: React.FC = () => {
                         className="min-w-0 border-r-0"
                         files={changes}
                         selectedPath={
-                          selectedWorkingFile?.path ?? changes[0]?.path ?? null
+                          workspaceState.rightWorkspaceMode ===
+                          "conflict-resolution"
+                            ? (selectedConflictFile?.path ??
+                              selectedConflictPath)
+                            : (selectedWorkingFile?.path ?? null)
                         }
                         onSelectFile={(file) =>
-                          handleSelectWorkingFile(file as WorkingChangeFileSummary)
+                          handleSelectWorkingFile(file)
                         }
                         viewMode={workspaceState.workingChangesViewMode}
                         onViewModeChange={(mode) => {
@@ -497,7 +591,22 @@ const RepoTabLayout: React.FC = () => {
             <Split.Resizer className="!bg-transparent hover:!bg-foreground [--split-resizer-size:1px] !-ml-[1px] !rounded-none" />
             {/* Right panel: changes based on the selection */}
             <Split.Pane grow className="!h-full !min-h-0">
-              {workspaceState.rightWorkspaceMode === "working-diff" &&
+              {workspaceState.rightWorkspaceMode === "conflict-resolution" &&
+              selectedConflictFile &&
+              repoPath ? (
+                <ConflictResolutionSurface
+                  repoPath={repoPath}
+                  filePath={selectedConflictFile.path}
+                  fileSignature={selectedConflictFileSignature}
+                  conflicts={conflictFiles}
+                  onSelectConflictPath={handleSelectConflictPath}
+                  onClose={handleCloseConflictResolution}
+                  onResolved={() => {
+                    void refreshChanges();
+                    handleCloseConflictResolution();
+                  }}
+                />
+              ) : workspaceState.rightWorkspaceMode === "working-diff" &&
               selectedWorkingFile &&
               repoPath ? (
                 <InlineDiffSurface

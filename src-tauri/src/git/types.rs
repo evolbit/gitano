@@ -203,7 +203,7 @@ pub enum CommitHistoryMode {
     FirstParent,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ChangeType {
     Added,
@@ -212,6 +212,7 @@ pub enum ChangeType {
     Renamed,
     Copied,
     TypeChanged,
+    Conflicted,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]

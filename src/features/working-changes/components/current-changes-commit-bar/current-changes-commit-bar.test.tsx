@@ -634,7 +634,7 @@ describe("CurrentChangesCommitBar", () => {
     expect(localAiMocks.runLocalAiAction).not.toHaveBeenCalled();
   });
 
-  it("runs local AI merge conflict suggestions from commit options", async () => {
+  it("does not expose repository-wide conflict suggestions from commit options", async () => {
     const user = userEvent.setup();
     getRepositoryStateMock.mockResolvedValue({
       path: "/repo",
@@ -645,25 +645,13 @@ describe("CurrentChangesCommitBar", () => {
       isUnborn: false,
       isDetached: false,
     });
-    localAiMocks.runLocalAiAction.mockResolvedValue({
-      result: {
-        kind: "conflictSuggestions",
-        data: {
-          summary: "Resolve conflicts",
-          files: [],
-        },
-      },
-    });
 
     render(<CurrentChangesCommitBar repoPath="/repo" />);
 
     await user.click(screen.getByRole("button", { name: "Commit options" }));
-    await user.click(screen.getByRole("button", { name: "Suggest conflicts" }));
 
-    expect(localAiMocks.runLocalAiAction).toHaveBeenCalledWith({
-      repoPath: "/repo",
-      actionKind: "mergeConflictSuggestions",
-      forceRefresh: false,
-    });
+    expect(
+      screen.queryByRole("button", { name: "Suggest conflicts" }),
+    ).not.toBeInTheDocument();
   });
 });

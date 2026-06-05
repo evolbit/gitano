@@ -1,11 +1,22 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useStagedLinesStore } from "@/features/working-changes/stores/staging-store";
-import type { WorkingChangeFileSummary } from "@/shared/types/git";
+import { ChangeType, type WorkingChangeFileSummary } from "@/shared/types/git";
+import {
+  GIT_CONFLICT_CONTENT_KIND,
+  GIT_CONFLICT_KIND,
+  GIT_CONFLICT_SIZE_CLASS,
+  type GitConflictSummary,
+} from "@/shared/types/git-conflicts";
 import { useWorkingDirectoryChanges } from "./use-working-directory-changes";
 
+const getMergeConflictsMock = vi.hoisted(() => vi.fn());
 const getWorkingDirectorySummaryMock = vi.hoisted(() => vi.fn());
 const getWorkingFileDetailMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/shared/api/git/conflicts", () => ({
+  getMergeConflicts: getMergeConflictsMock,
+}));
 
 vi.mock("@/shared/api/git/staging", () => ({
   getWorkingDirectorySummary: getWorkingDirectorySummaryMock,
@@ -26,8 +37,29 @@ function createSummary(
   };
 }
 
+function createConflictSummary(
+  overrides: Partial<GitConflictSummary> = {},
+): GitConflictSummary {
+  return {
+    path: "src/conflict.ts",
+    status: ChangeType.Conflicted,
+    conflictCount: 1,
+    conflictKinds: [GIT_CONFLICT_KIND.BothModified],
+    contentKind: GIT_CONFLICT_CONTENT_KIND.Text,
+    size: {
+      byteSize: 100,
+      lineCount: 10,
+      sizeClass: GIT_CONFLICT_SIZE_CLASS.Normal,
+    },
+    fileSignature: "src/conflict.ts:conflicted",
+    ...overrides,
+  };
+}
+
 describe("useWorkingDirectoryChanges", () => {
   beforeEach(() => {
+    getMergeConflictsMock.mockReset();
+    getMergeConflictsMock.mockResolvedValue([]);
     getWorkingDirectorySummaryMock.mockReset();
     getWorkingFileDetailMock.mockReset();
     useStagedLinesStore.getState().clearAllStagedLines();
@@ -58,10 +90,37 @@ describe("useWorkingDirectoryChanges", () => {
     });
 
     expect(getWorkingDirectorySummaryMock).toHaveBeenCalledWith("/repo");
+    expect(getMergeConflictsMock).toHaveBeenCalledWith("/repo");
     expect(result.current.changes).toEqual(changes);
     const stagedFile =
       useStagedLinesStore.getState().stagedLines["src/file.ts"];
     expect(stagedFile.isWholeFileStaged).toBe(true);
+  });
+
+  it("combines conflict summaries before normal working changes", async () => {
+    getMergeConflictsMock.mockResolvedValueOnce([createConflictSummary()]);
+    getWorkingDirectorySummaryMock.mockResolvedValueOnce({
+      changes: [createSummary({ path: "src/normal.ts" })],
+      staged_state_by_file: {},
+    });
+
+    const { result } = renderHook(() => useWorkingDirectoryChanges("/repo"));
+
+    await waitFor(() => {
+      expect(result.current.hasLoadedOnce).toBe(true);
+    });
+
+    expect(result.current.changes.map((change) => change.path)).toEqual([
+      "src/conflict.ts",
+      "src/normal.ts",
+    ]);
+    expect(result.current.changes[0]).toMatchObject({
+      status: ChangeType.Conflicted,
+      insertions: 0,
+      deletions: 0,
+      conflictCount: 1,
+    });
+    expect(getWorkingFileDetailMock).not.toHaveBeenCalled();
   });
 
   it("clears state and avoids fetching when disabled", async () => {

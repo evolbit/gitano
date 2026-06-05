@@ -2,19 +2,21 @@ import { getFileName, getParentPath } from "@/shared/lib/path";
 import {
   IconCopy,
   IconExchange,
+  IconGitMerge,
   IconMinus,
   IconPencil,
   IconPlus,
   IconPoint,
   IconQuestionMark,
 } from "../icons/icons";
+import { ChangeType } from "@/shared/types/git";
 import { FileListItemProps } from "./types";
 
 const FileListItem = ({ file }: FileListItemProps) => {
   const getStatusIcon = () => {
     // If this is a new file (added with 0 insertions/deletions), show a question mark
     if (
-      file.status.toLowerCase() === "added" &&
+      file.status === ChangeType.Added &&
       file.insertions === 0 &&
       file.deletions === 0
     ) {
@@ -26,43 +28,50 @@ const FileListItem = ({ file }: FileListItemProps) => {
       );
     }
 
-    switch (file.status.toLowerCase()) {
-      case "added":
+    switch (file.status) {
+      case ChangeType.Conflicted:
+        return (
+          <IconGitMerge
+            size={14}
+            className="h-3.5 w-3.5 flex-shrink-0 text-amber-400"
+          />
+        );
+      case ChangeType.Added:
         return (
           <IconPlus
             size={14}
             className="h-3.5 w-3.5 flex-shrink-0 text-lime-400"
           />
         );
-      case "deleted":
+      case ChangeType.Deleted:
         return (
           <IconMinus
             size={14}
             className="h-3.5 w-3.5 flex-shrink-0 text-red-500"
           />
         );
-      case "modified":
+      case ChangeType.Modified:
         return (
           <IconPoint
             size={14}
             className="h-3.5 w-3.5 flex-shrink-0 text-yellow-500"
           />
         );
-      case "renamed":
+      case ChangeType.Renamed:
         return (
           <IconPencil
             size={14}
             className="h-3.5 w-3.5 flex-shrink-0 text-blue-500"
           />
         );
-      case "copied":
+      case ChangeType.Copied:
         return (
           <IconCopy
             size={14}
             className="h-3.5 w-3.5 flex-shrink-0 text-purple-500"
           />
         );
-      case "typeChanged":
+      case ChangeType.TypeChanged:
         return (
           <IconExchange
             size={14}
@@ -101,7 +110,7 @@ const FileListItem = ({ file }: FileListItemProps) => {
       </span>
       {/* Show numbers only if this is not a new file */}
       {!(
-        file.status.toLowerCase() === "added" &&
+        file.status === ChangeType.Added &&
         file.insertions === 0 &&
         file.deletions === 0
       ) && (

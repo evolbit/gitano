@@ -18,6 +18,7 @@ import {
   cloneStagedLinesState,
   getCheckboxStateForFile,
   getFolderCheckboxState as computeFolderCheckboxState,
+  isConflictedFile,
   isUntrackedFile,
   serializeLineSelection,
 } from "../utils";
@@ -71,23 +72,30 @@ export function useChangesExplorerStaging({
   const setWholeFileStaged = useStagedLinesStore((s) => s.setWholeFileStaged);
   const isWholeFileStaged = useStagedLinesStore((s) => s.isWholeFileStaged);
   const isPartiallyStaged = useStagedLinesStore((s) => s.isPartiallyStaged);
+  const stageableFiles = normalizedFiles.filter(
+    (file) => !isConflictedFile(file),
+  );
+  const hasConflictedFiles = stageableFiles.length !== normalizedFiles.length;
+  const hasStageableFiles = stageableFiles.length > 0;
 
   const getCheckboxState = useCallback(
     (file: ChangesExplorerFile) =>
-      getCheckboxStateForFile(
-        file,
-        stagedLines,
-        isStagedNewFile,
-        isWholeFileStaged,
-        isPartiallyStaged,
-      ),
+      isConflictedFile(file)
+        ? "unchecked"
+        : getCheckboxStateForFile(
+            file,
+            stagedLines,
+            isStagedNewFile,
+            isWholeFileStaged,
+            isPartiallyStaged,
+          ),
     [stagedLines, isStagedNewFile, isWholeFileStaged, isPartiallyStaged],
   );
 
   const areAllFilesFullySelected =
     showFileCheckboxes &&
-    normalizedFiles.length > 0 &&
-    normalizedFiles.every((file) => getCheckboxState(file) === "checked");
+    hasStageableFiles &&
+    stageableFiles.every((file) => getCheckboxState(file) === "checked");
 
   const runStagedLinesMutation = useCallback(
     async (mutation: () => Promise<void>) => {
@@ -157,34 +165,45 @@ export function useChangesExplorerStaging({
   );
 
   const toggleAllFilesSelection = useCallback(async () => {
-    if (!repoPath || !showFileCheckboxes || normalizedFiles.length === 0)
+    if (!repoPath || !showFileCheckboxes || !hasStageableFiles)
       return;
+    const stageableFilePaths = stageableFiles.map((file) => file.path);
 
     await runStagedLinesMutation(async () => {
       if (areAllFilesFullySelected) {
-        normalizedFiles.forEach((file) =>
+        stageableFiles.forEach((file) =>
           applyFileSelectionOptimistic(file, false),
         );
-        await unstageAll(repoPath);
+        if (hasConflictedFiles) {
+          await unstageFiles(repoPath, stageableFilePaths);
+        } else {
+          await unstageAll(repoPath);
+        }
       } else {
-        normalizedFiles.forEach((file) =>
+        stageableFiles.forEach((file) =>
           applyFileSelectionOptimistic(file, true),
         );
-        await stageAll(repoPath);
+        if (hasConflictedFiles) {
+          await stageFiles(repoPath, stageableFilePaths);
+        } else {
+          await stageAll(repoPath);
+        }
       }
     });
   }, [
     areAllFilesFullySelected,
     applyFileSelectionOptimistic,
-    normalizedFiles,
+    hasConflictedFiles,
+    hasStageableFiles,
     repoPath,
     runStagedLinesMutation,
+    stageableFiles,
     showFileCheckboxes,
   ]);
 
   const toggleFileSelection = useCallback(
     async (file: ChangesExplorerFile) => {
-      if (!repoPath) return;
+      if (!repoPath || isConflictedFile(file)) return;
 
       await runStagedLinesMutation(async () => {
         const checkboxState = getCheckboxState(file);
@@ -228,14 +247,20 @@ export function useChangesExplorerStaging({
 
   const getFolderCheckboxState = useCallback(
     (filesInFolder: ChangesExplorerFile[]) =>
-      computeFolderCheckboxState(filesInFolder, getCheckboxState),
+      computeFolderCheckboxState(
+        filesInFolder.filter((file) => !isConflictedFile(file)),
+        getCheckboxState,
+      ),
     [getCheckboxState],
   );
 
   const toggleFolderSelection = useCallback(
     async (_folderPath: string, filesInFolder: ChangesExplorerFile[]) => {
       if (!repoPath || filesInFolder.length === 0) return;
-      const uniqueFilesInFolder = uniqueFilesByPath(filesInFolder);
+      const uniqueFilesInFolder = uniqueFilesByPath(filesInFolder).filter(
+        (file) => !isConflictedFile(file),
+      );
+      if (uniqueFilesInFolder.length === 0) return;
 
       await runStagedLinesMutation(async () => {
         if (getFolderCheckboxState(uniqueFilesInFolder) === "checked") {
@@ -295,6 +320,7 @@ export function useChangesExplorerStaging({
 
   return {
     areAllFilesFullySelected,
+    hasStageableFiles,
     getCheckboxState,
     getFolderCheckboxState,
     handleDiscardTrackedFile,

@@ -3,7 +3,11 @@ import type { ChangesExplorerFile } from "@/shared/lib/tree/changes-explorer-tre
 import { memo } from "react";
 import { ChangesExplorerStatusIcon } from "../changes-explorer-status-icon/changes-explorer-status-icon";
 import { FileSelectionCheckbox } from "../file-selection-checkbox/file-selection-checkbox";
-import { ChangesExplorerCheckboxState, isUntrackedFile } from "../../utils";
+import {
+  ChangesExplorerCheckboxState,
+  getConflictLabel,
+  isUntrackedFile,
+} from "../../utils";
 import { IconMessageCircle } from "@/shared/components/icons/icons";
 
 type FileRowProps = {
@@ -36,6 +40,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
   const isSelected = selectedPath === file.path;
   const fileName = getFileName(file.path);
   const parentPath = getParentPath(file.path);
+  const conflictLabel = getConflictLabel(file);
 
   return (
     <button
@@ -65,7 +70,15 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
           ) : null}
         </div>
       </div>
-      {!isUntrackedFile(file) ? (
+      {conflictLabel ? (
+        <div
+          className={`ml-2 flex flex-shrink-0 justify-end text-xs text-amber-300 ${
+            alignCountColumnWithHeaderActions ? "w-[4.5rem] pr-2" : "w-14"
+          }`}
+        >
+          <span className="truncate text-right">{conflictLabel}</span>
+        </div>
+      ) : !isUntrackedFile(file) ? (
         <div
           className={`ml-2 flex flex-shrink-0 items-center justify-end gap-1.5 text-xs ${
             commentCount > 0
@@ -94,7 +107,7 @@ export const ChangesExplorerFileRow = memo(function ChangesExplorerFileRow({
           </span>
         </div>
       ) : null}
-      {showFileCheckboxes ? (
+      {showFileCheckboxes && !conflictLabel ? (
         <FileSelectionCheckbox
           checkboxState={checkboxState}
           onToggle={() => onToggleFileSelection(file)}

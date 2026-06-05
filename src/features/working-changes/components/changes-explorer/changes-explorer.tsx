@@ -173,6 +173,7 @@ function ChangesExplorer({
 
   const {
     areAllFilesFullySelected,
+    hasStageableFiles,
     getCheckboxState,
     getFolderCheckboxState,
     handleDiscardTrackedFile,
@@ -391,14 +392,14 @@ function ChangesExplorer({
               <button
                 type="button"
                 className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                  repoPath && normalizedFiles.length > 0
+                  repoPath && hasStageableFiles
                     ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
                     : "bg-zinc-800 text-zinc-400"
                 }`}
                 onClick={() => {
                   void toggleAllFilesSelection();
                 }}
-                disabled={!repoPath || normalizedFiles.length === 0}
+                disabled={!repoPath || !hasStageableFiles}
               >
                 {areAllFilesFullySelected ? "Unstage All" : "Stage All"}
               </button>

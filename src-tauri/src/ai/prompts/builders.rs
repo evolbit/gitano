@@ -1,5 +1,7 @@
 use super::super::git_context::LocalAiGitContext;
-use super::super::types::{LocalAiActionKind, LocalAiPreferences};
+use super::super::types::{
+    LocalAiActionKind, LocalAiConflictScope, LocalAiPreferences,
+};
 use std::borrow::Cow;
 
 pub fn default_prompt_instruction(action_kind: LocalAiActionKind) -> &'static str {
@@ -78,6 +80,20 @@ fn output_shape_for_action(action_kind: LocalAiActionKind) -> &'static str {
     }
 }
 
+fn output_shape_for_context(context: &LocalAiGitContext) -> &'static str {
+    match &context.conflict_candidate_input {
+        Some(input) => match &input.scope {
+            LocalAiConflictScope::Region { .. } => {
+                "{\"summary\":\"...\",\"candidateKind\":\"regionReplacement\",\"replacement\":\"resolved content for the selected region\"}"
+            }
+            LocalAiConflictScope::File { .. } => {
+                "{\"summary\":\"...\",\"candidateKind\":\"fullFileResult\",\"content\":\"full resolved file content\"}"
+            }
+        },
+        None => output_shape_for_action(context.action_kind),
+    }
+}
+
 fn json_output_contract(output_shape: &str) -> String {
     format!(
         "Return only valid JSON with this shape: {output_shape}\n\
@@ -89,7 +105,7 @@ pub fn build_external_agent_prompt_with_instruction(
     context: &LocalAiGitContext,
     instruction: &str,
 ) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
 
     format!(
         "You are Gitano's selected external ACP coding agent. The user explicitly selected this agent for repository analysis.\n\
@@ -103,7 +119,7 @@ pub fn build_external_agent_prompt_with_instruction(
 }
 
 fn build_commit_message_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
 
     format!(
         "You are Gitano's local coding assistant.\n\
@@ -115,7 +131,7 @@ fn build_commit_message_prompt(context: &LocalAiGitContext, instruction: &str) -
 }
 
 fn build_analysis_prompt(instruction: &str, context: &LocalAiGitContext) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
 
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
@@ -128,7 +144,7 @@ fn build_analysis_prompt(instruction: &str, context: &LocalAiGitContext) -> Stri
 }
 
 fn build_branch_analysis_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
 
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
@@ -140,7 +156,7 @@ fn build_branch_analysis_prompt(context: &LocalAiGitContext, instruction: &str) 
 }
 
 fn build_branch_review_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
 
     format!(
         "You are Gitano's local coding assistant. You run entirely locally and only analyze the Git context below.\n\
@@ -152,22 +168,28 @@ fn build_branch_review_prompt(context: &LocalAiGitContext, instruction: &str) ->
 }
 
 fn build_conflict_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
-    let output_contract = json_output_contract(output_shape_for_action(context.action_kind));
+    let output_contract = json_output_contract(output_shape_for_context(context));
+    let scoped_instruction = if context.conflict_candidate_input.is_some() {
+        "Return exactly one reviewable candidate for the target scope. Do not mark the file resolved and do not claim that files were changed."
+    } else {
+        "Do not provide an auto-applied patch."
+    };
 
     format!(
         "You are Gitano's local coding assistant.\n\
          {}\n\
          {}\n\
-         Do not provide an auto-applied patch.\n\n\
+         {}\n\n\
          Git context:\n{}",
-        instruction, output_contract, context.prompt_context
+        instruction, output_contract, scoped_instruction, context.prompt_context
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::types::LocalAiRunMetadata;
+    use crate::ai::types::{LocalAiConflictCandidateInput, LocalAiRunMetadata};
+    use crate::git::conflicts::types::GitConflictSignatures;
 
     fn test_context(action_kind: LocalAiActionKind) -> LocalAiGitContext {
         LocalAiGitContext {
@@ -179,7 +201,23 @@ mod tests {
                 omitted_files: Vec::new(),
                 omitted_sections: Vec::new(),
             },
+            conflict_candidate_input: None,
         }
+    }
+
+    fn scoped_region_context() -> LocalAiGitContext {
+        let mut context = test_context(LocalAiActionKind::MergeConflictSuggestions);
+        context.conflict_candidate_input = Some(LocalAiConflictCandidateInput {
+            scope: LocalAiConflictScope::Region {
+                file_path: "src/conflict.ts".to_string(),
+                region_id: "conflict-1".to_string(),
+            },
+            signatures: GitConflictSignatures {
+                index_signature: "index".to_string(),
+                result_signature: "result".to_string(),
+            },
+        });
+        context
     }
 
     #[test]
@@ -233,5 +271,29 @@ mod tests {
             assert!(external_prompt.contains("Return only valid JSON with this shape"));
             assert!(external_prompt.contains("Do not include markdown fences"));
         }
+    }
+
+    #[test]
+    fn scoped_conflict_prompt_requests_single_candidate_shape() {
+        let prompt = build_prompt_with_instruction(
+            &scoped_region_context(),
+            "Fix the selected conflict.",
+        );
+
+        assert!(prompt.contains("\"candidateKind\":\"regionReplacement\""));
+        assert!(prompt.contains("Return exactly one reviewable candidate"));
+        assert!(prompt.contains("Do not mark the file resolved"));
+    }
+
+    #[test]
+    fn scoped_external_conflict_prompt_preserves_read_only_candidate_shape() {
+        let prompt = build_external_agent_prompt_with_instruction(
+            &scoped_region_context(),
+            "Fix the selected conflict.",
+        );
+
+        assert!(prompt.contains("\"candidateKind\":\"regionReplacement\""));
+        assert!(prompt.contains("Do not modify files"));
+        assert!(prompt.contains("Git descriptor:"));
     }
 }
