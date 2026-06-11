@@ -59,6 +59,13 @@
 - [x] 7.4 Add conflict count and previous/next unresolved conflict indicators in the surface toolbar.
 - [x] 7.5 Review whether the existing repository-wide `Suggest conflicts` commit-menu action should remain, move, or be removed after scoped AI is available.
 - [x] 7.6 Add VS Code-style result base projection, pending-region tracking, and display-only alignment padding rows.
+- [x] 7.7 Add a result reset action that restores the initially loaded conflict projection and preserves current write signatures.
+- [x] 7.8 Constrain conflict surface content so pane/editor overflow stays inside the merge workspace.
+- [x] 7.9 Add inline accepted-region remove actions and keep opposite-side replacement actions available.
+- [x] 7.10 Avoid showing `1 conflict` in conflict rows when the count only means the path is conflicted.
+- [x] 7.11 Move file-level accept actions into the matching incoming/current pane headers and widen conflict action spacing.
+- [x] 7.12 Show region actions for all unresolved side-pane conflict blocks and remove per-line highlight borders.
+- [x] 7.13 Add a shared Monaco theme registry with Ayu Dark as the default editor theme.
 
 ## 8. Verification
 

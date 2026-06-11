@@ -9,7 +9,7 @@ export function getConflictLabel(file: ChangesExplorerFile) {
       ? file.conflictCount
       : null;
 
-  if (!conflictCount) return "Conflict";
+  if (!conflictCount || conflictCount === 1) return "Conflict";
 
-  return `${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`;
+  return `${conflictCount} conflicts`;
 }

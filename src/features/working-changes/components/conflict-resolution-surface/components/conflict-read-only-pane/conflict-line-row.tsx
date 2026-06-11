@@ -20,7 +20,7 @@ export function ConflictLineRow({
 }: ConflictLineRowProps) {
   const highlightClass =
     highlight === CONFLICT_LINE_HIGHLIGHT.Strong
-      ? "bg-amber-500/20 text-amber-100"
+      ? "bg-amber-500/10 text-zinc-200"
       : highlight === CONFLICT_LINE_HIGHLIGHT.Weak
         ? "bg-amber-500/10 text-zinc-200"
         : "text-zinc-300";

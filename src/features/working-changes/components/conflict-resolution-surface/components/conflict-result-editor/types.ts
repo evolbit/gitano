@@ -1,5 +1,10 @@
 import type { ConflictResolutionRegion } from "../../utils/conflict-result-projection";
 
+export type AcceptedResultRegion = {
+  label: string;
+  regionId: string;
+};
+
 export type ConflictResultEditorProps = {
   filePath: string;
   content: string;
@@ -7,17 +12,12 @@ export type ConflictResultEditorProps = {
   resultRegions: ConflictResolutionRegion[];
   dirty: boolean;
   unsupportedReason: string | null;
-  acceptedRegionLabel: string | null;
+  acceptedRegions: AcceptedResultRegion[];
   onChange: (content: string) => void;
   onSave: () => void;
-  onAcceptCurrentRegion: () => void;
-  onAcceptIncomingRegion: () => void;
-  onRemoveAcceptedRegionSide: () => void;
-  onAcceptCurrentFile: () => void;
-  onAcceptIncomingFile: () => void;
+  onRemoveAcceptedRegionSide: (regionId: string) => void;
+  onResetResult: () => void;
   onMarkResolved: () => void;
-  canAcceptRegion: boolean;
-  canAcceptFile: boolean;
   markResolvedBlockedReason: string | null;
   actionInFlight: boolean;
   syncedScrollTop: number | null;

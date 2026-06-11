@@ -115,20 +115,51 @@ body {
 }
 
 .gitano-conflict-side-line {
-  background: rgba(120, 83, 18, 0.22);
+  background: rgba(120, 83, 18, 0.3);
 }
 
 .gitano-conflict-side-line-active {
-  background: rgba(146, 94, 14, 0.42);
-  outline: 1px solid rgba(245, 158, 11, 0.7);
+  background: rgba(120, 83, 18, 0.3);
 }
 
 .gitano-conflict-action-widget {
   display: inline-flex;
   align-items: center;
+  gap: 16px;
+  height: 20px;
+  border: 0;
+  background: rgba(31, 31, 31, 0.88);
+  color: rgb(161, 161, 170);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 20px;
+  padding: 0 12px;
+  pointer-events: auto;
+  transform: translateY(2px);
+  white-space: nowrap;
+}
+
+.gitano-conflict-action-widget button {
+  color: rgb(212, 212, 216);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+
+.gitano-conflict-action-widget button:hover {
+  color: rgb(250, 250, 250);
+}
+
+.gitano-conflict-result-line-accepted {
+  background: rgba(74, 113, 35, 0.38);
+}
+
+.gitano-conflict-result-action-widget {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
   height: 24px;
-  border: 1px solid rgba(245, 158, 11, 0.9);
+  border: 1px solid rgba(161, 161, 170, 0.7);
   background: rgb(31, 31, 31);
   color: rgb(161, 161, 170);
   font-family: var(--font-sans);
@@ -139,14 +170,14 @@ body {
   white-space: nowrap;
 }
 
-.gitano-conflict-action-widget button {
-  color: rgb(212, 212, 216);
+.gitano-conflict-result-action-widget button {
+  color: rgb(96, 165, 250);
   cursor: pointer;
   font: inherit;
 }
 
-.gitano-conflict-action-widget button:hover {
-  color: rgb(250, 250, 250);
+.gitano-conflict-result-action-widget button:hover {
+  color: rgb(147, 197, 253);
 }
 
 .gitano-conflict-result-padding-zone {

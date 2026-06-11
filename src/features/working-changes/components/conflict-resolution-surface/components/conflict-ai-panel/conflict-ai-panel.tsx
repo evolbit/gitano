@@ -32,8 +32,8 @@ export function ConflictAiPanel({
   const fileDisabled = loading || !canRunFile;
 
   return (
-    <section className="border-t border-border bg-zinc-950/50 px-3 py-2">
-      <div className="flex items-center gap-2">
+    <section className="min-w-0 overflow-hidden border-t border-border bg-zinc-950/50 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
             <IconSparkles size={14} />

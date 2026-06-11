@@ -23,7 +23,7 @@ export default defineConfig(async () => ({
     css: true,
   },
   optimizeDeps: {
-    include: ["@monaco-editor/react", "monaco-editor"],
+    exclude: ["@monaco-editor/react", "monaco-editor"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

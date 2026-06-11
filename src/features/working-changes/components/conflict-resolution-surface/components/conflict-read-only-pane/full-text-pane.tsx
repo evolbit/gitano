@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
+import {
+  DEFAULT_MONACO_THEME,
+  MONACO_EDITOR_FONT_FAMILY,
+  MONACO_EDITOR_FONT_SIZE,
+  MONACO_EDITOR_LINE_HEIGHT,
+} from "@/shared/lib/monaco";
 import { ConflictMonacoEditor } from "../conflict-monaco-editor";
+import { ConflictPaneHeader } from "./conflict-pane-header";
 import type { ConflictTextPaneProps } from "./types";
 
 const CONFLICT_DECORATION_CLASS = "gitano-conflict-side-line";
@@ -26,6 +33,7 @@ function createConflictActionWidget({
   onAcceptCombination,
   onAcceptRegion,
   onIgnoreRegion,
+  regionId,
 }: {
   actionLabel: string;
   combinationActionLabel: string;
@@ -34,6 +42,7 @@ function createConflictActionWidget({
   onAcceptCombination: () => void;
   onAcceptRegion: () => void;
   onIgnoreRegion: () => void;
+  regionId: string;
 }): Monaco.editor.IContentWidget {
   const node = document.createElement("div");
   node.className = "gitano-conflict-action-widget";
@@ -47,7 +56,7 @@ function createConflictActionWidget({
   });
 
   const separator = document.createElement("span");
-  separator.textContent = "|";
+  separator.textContent = " | ";
 
   const combinationButton = document.createElement("button");
   combinationButton.type = "button";
@@ -58,7 +67,7 @@ function createConflictActionWidget({
   });
 
   const secondSeparator = document.createElement("span");
-  secondSeparator.textContent = "|";
+  secondSeparator.textContent = " | ";
 
   const ignoreButton = document.createElement("button");
   ignoreButton.type = "button";
@@ -77,7 +86,7 @@ function createConflictActionWidget({
   );
 
   return {
-    getId: () => CONFLICT_ACTION_WIDGET_ID,
+    getId: () => `${CONFLICT_ACTION_WIDGET_ID}:${regionId}`,
     getDomNode: () => node,
     getPosition: () => ({
       position: { lineNumber, column: 1 },
@@ -88,15 +97,20 @@ function createConflictActionWidget({
 
 export function FullTextPane({
   title,
+  side,
   text,
   language,
   regions,
   activeRegion,
-  acceptedRegionLabel,
+  acceptedRegionSidesById,
   actionLabel,
   combinationActionLabel,
+  fileActionLabel,
+  fileActionTitle,
+  fileActionDisabled,
   onAcceptRegion,
   onAcceptCombination,
+  onAcceptFile,
   onIgnoreRegion,
   syncedScrollTop,
   onScrollTopChange,
@@ -105,6 +119,7 @@ export function FullTextPane({
   const decorationIdsRef = useRef<string[]>([]);
   const scrollListenerRef = useRef<Monaco.IDisposable | null>(null);
   const syncingScrollRef = useRef(false);
+  const revealedRegionKeyRef = useRef<string | null>(null);
   const actionHandlersRef = useRef({
     onAcceptCombination,
     onAcceptRegion,
@@ -122,6 +137,7 @@ export function FullTextPane({
   const handleMount = useCallback(
     (editor: ConflictEditor, monaco: MonacoApi) => {
       scrollListenerRef.current?.dispose();
+      revealedRegionKeyRef.current = null;
       scrollListenerRef.current = editor.onDidScrollChange((event) => {
         if (!syncingScrollRef.current) {
           onScrollTopChange(event.scrollTop);
@@ -152,10 +168,17 @@ export function FullTextPane({
   }, [editorSession, syncedScrollTop]);
 
   useEffect(() => {
-    if (!editorSession || !activeRegion) return;
+    if (!editorSession || !activeRegion) {
+      revealedRegionKeyRef.current = null;
+      return;
+    }
 
+    const regionKey = `${activeRegion.id}:${activeRegion.resultStartLine}`;
+    if (revealedRegionKeyRef.current === regionKey) return;
+
+    revealedRegionKeyRef.current = regionKey;
     editorSession.editor.revealLineInCenter(activeRegion.resultStartLine);
-  }, [activeRegion, editorSession]);
+  }, [activeRegion?.id, activeRegion?.resultStartLine, editorSession]);
 
   useEffect(() => {
     if (!editorSession) return;
@@ -201,59 +224,73 @@ export function FullTextPane({
   }, [activeRegion, editorSession, regions]);
 
   useEffect(() => {
-    if (!editorSession || !activeRegion || acceptedRegionLabel) return;
+    if (!editorSession) return;
 
     const { editor, monaco } = editorSession;
     const maxLine = editor.getModel()?.getLineCount() ?? 1;
-    const lineNumber = clampLineNumber(activeRegion.resultStartLine, maxLine);
-    const widget = createConflictActionWidget({
-      actionLabel,
-      combinationActionLabel,
-      lineNumber,
-      monaco,
-      onAcceptCombination: () =>
-        actionHandlersRef.current.onAcceptCombination(),
-      onAcceptRegion: () => actionHandlersRef.current.onAcceptRegion(),
-      onIgnoreRegion: () => actionHandlersRef.current.onIgnoreRegion(),
-    });
+    const widgets = regions
+      .filter(
+        (region) =>
+          acceptedRegionSidesById[region.id] !== side,
+      )
+      .map((region) =>
+        createConflictActionWidget({
+          actionLabel,
+          combinationActionLabel,
+          lineNumber: clampLineNumber(region.resultStartLine, maxLine),
+          monaco,
+          regionId: region.id,
+          onAcceptCombination: () =>
+            actionHandlersRef.current.onAcceptCombination(region.id),
+          onAcceptRegion: () =>
+            actionHandlersRef.current.onAcceptRegion(region.id),
+          onIgnoreRegion: () =>
+            actionHandlersRef.current.onIgnoreRegion(region.id),
+        }),
+      );
 
-    editor.addContentWidget(widget);
+    widgets.forEach((widget) => editor.addContentWidget(widget));
 
     return () => {
-      editor.removeContentWidget(widget);
+      widgets.forEach((widget) => editor.removeContentWidget(widget));
     };
   }, [
-    acceptedRegionLabel,
+    acceptedRegionSidesById,
     actionLabel,
     combinationActionLabel,
-    activeRegion,
     editorSession,
+    regions,
+    side,
   ]);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-r border-border last:border-r-0">
-      <div className="border-b border-border bg-background-emphasis px-3 py-1.5 text-xs font-semibold">
-        {title}
-      </div>
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0">
+      <ConflictPaneHeader
+        title={title}
+        fileActionLabel={fileActionLabel}
+        fileActionTitle={fileActionTitle}
+        fileActionDisabled={fileActionDisabled}
+        onAcceptFile={onAcceptFile}
+      />
       <ConflictMonacoEditor
         ariaLabel={`${title} conflict editor`}
-        className="min-h-0 flex-1"
+        className="min-h-0 min-w-0 flex-1 overflow-hidden"
         resetKey={`${title}:${language}`}
         fallbackMessage="Conflict editor failed to load. Restart the dev server or use the result editor."
         height="100%"
         language={language}
-        theme="vs-dark"
+        theme={DEFAULT_MONACO_THEME}
         value={text}
         onMount={handleMount}
         options={{
           automaticLayout: true,
           domReadOnly: true,
           folding: false,
-          fontFamily: "IBM Plex Mono",
-          fontSize: 12,
+          fontFamily: MONACO_EDITOR_FONT_FAMILY,
+          fontSize: MONACO_EDITOR_FONT_SIZE,
           glyphMargin: false,
           lineDecorationsWidth: 8,
-          lineHeight: 20,
+          lineHeight: MONACO_EDITOR_LINE_HEIGHT,
           lineNumbersMinChars: 4,
           minimap: { enabled: false },
           overviewRulerBorder: false,

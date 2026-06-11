@@ -62,6 +62,8 @@ The result projection is still written back through the normal result-save path 
 
 Display-only alignment rows may be inserted through editor view zones when the projected result region has fewer visible lines than a side's conflict content. Those rows are visual padding only and must never become saved file content.
 
+The result panel should also provide a file-level reset action that restores the initially loaded result projection, clears local accepted-region state, and marks projected unresolved regions as pending again. If the user already accepted a whole-file side or saved edits, reset should preserve the newest result signature so the next save validates against the current worktree state.
+
 Alternative considered: Make all panes editable. That mirrors some IDE internals but makes it unclear which content is persisted and increases the risk of writing to the wrong side.
 
 ### Decision: Lazy-load Monaco for supported merge-editor panes
@@ -69,6 +71,12 @@ Alternative considered: Make all panes editable. That mirrors some IDE internals
 Use `@monaco-editor/react` inside the conflict resolution surface for supported text conflicts so incoming/current panes and the result panel share syntax coloring, scroll behavior, decorations, and editor view-zone support. Load it lazily when a conflict resolution surface opens. Unsupported content such as binary files, symlinks, submodules, and very large files that exceed editing limits should show fallback metadata and external-editor guidance.
 
 Alternative considered: Introduce Monaco for all Current Changes. That adds bundle, worker, lifecycle, and UX complexity to normal diff/staging workflows that do not need a full editor.
+
+### Decision: Monaco themes are registered in shared app infrastructure
+
+Monaco theme definitions and editor typography constants should live under `src/shared/lib/monaco` so every future Monaco panel can use the same defaults. The conflict wrapper registers all known app Monaco themes during lazy load, and individual side/result panes should reference a named default theme instead of hard-coding Monaco built-in names. Ayu Dark is the initial default so syntax colors, editor background, gutters, selection, and widgets match the merge editor surface while keeping a clear place to add more themes later.
+
+Alternative considered: Define the theme inside each pane. That would duplicate setup and make future theme changes require touching every editor consumer.
 
 ### Decision: Size classes are explicit constants
 

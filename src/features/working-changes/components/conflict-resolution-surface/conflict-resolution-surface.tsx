@@ -7,9 +7,10 @@ import {
 import { LocalAiSetupModal } from "@/features/local-ai";
 import {
   GIT_CONFLICT_CONTENT_KIND,
+  GIT_CONFLICT_SIDE,
   GIT_CONFLICT_SIZE_CLASS,
 } from "@/shared/types/git-conflicts";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useConflictAiFix } from "../../hooks/use-conflict-ai-fix";
 import { useConflictFileDetail } from "../../hooks/use-conflict-file-detail";
 import { useConflictNavigation } from "../../hooks/use-conflict-navigation";
@@ -20,6 +21,7 @@ import { ConflictReadOnlyPane } from "./components/conflict-read-only-pane";
 import { ConflictResultEditor } from "./components/conflict-result-editor";
 import type { ConflictResolutionSurfaceProps } from "./types";
 import { inferConflictEditorLanguage } from "./utils/conflict-language";
+import { buildSidePaneRegions } from "./utils/conflict-side-region-projection";
 
 function toolbarButtonClass(disabled = false) {
   return `inline-flex h-8 w-8 items-center justify-center rounded border border-border transition-colors ${
@@ -28,6 +30,16 @@ function toolbarButtonClass(disabled = false) {
       : "text-zinc-300 hover:bg-background-emphasis hover:text-zinc-100"
   }`;
 }
+
+const CONFLICT_FILE_ACTION_TITLE = {
+  AcceptCurrentFile: "Replace the entire result file with the current side.",
+  AcceptIncomingFile: "Replace the entire result file with the incoming side.",
+} as const;
+
+const CONFLICT_FILE_ACTION_LABEL = {
+  AcceptCurrentFile: "Accept Current File",
+  AcceptIncomingFile: "Accept Incoming File",
+} as const;
 
 export function ConflictResolutionSurface({
   repoPath,
@@ -66,17 +78,54 @@ export function ConflictResolutionSurface({
     setConflictScrollTop(null);
   }, [detail?.path, detailSignature]);
 
-  const activeRegion = detail?.regions[activeRegionIndex] ?? null;
+  const resultRegions = resultState.resultRegions;
+  const activeRegion = resultRegions[activeRegionIndex] ?? null;
+  const selectRegionById = (regionId: string) => {
+    const regionIndex =
+      resultRegions.findIndex((region) => region.id === regionId) ?? -1;
+
+    if (regionIndex >= 0) {
+      setActiveRegionIndex(regionIndex);
+    }
+  };
   const goPreviousRegion = () => {
     setActiveRegionIndex((current) => Math.max(0, current - 1));
   };
   const goNextRegion = () => {
     setActiveRegionIndex((current) => {
-      const regionCount = detail?.regions.length ?? 0;
+      const regionCount = resultRegions.length;
       if (regionCount === 0) return 0;
 
       return Math.min(regionCount - 1, current + 1);
     });
+  };
+  const ignoreRegion = (regionId: string) => {
+    const regionCount = resultRegions.length;
+    const regionIndex =
+      resultRegions.findIndex((region) => region.id === regionId);
+
+    if (regionCount === 0 || regionIndex < 0) {
+      goNextRegion();
+      return;
+    }
+
+    setActiveRegionIndex(Math.min(regionCount - 1, regionIndex + 1));
+  };
+  const acceptIncomingRegion = (regionId: string) => {
+    selectRegionById(regionId);
+    resultState.acceptIncomingRegion(regionId);
+  };
+  const acceptCurrentRegion = (regionId: string) => {
+    selectRegionById(regionId);
+    resultState.acceptCurrentRegion(regionId);
+  };
+  const acceptIncomingFirstCombination = (regionId: string) => {
+    selectRegionById(regionId);
+    resultState.acceptIncomingFirstCombination(regionId);
+  };
+  const acceptCurrentFirstCombination = (regionId: string) => {
+    selectRegionById(regionId);
+    resultState.acceptCurrentFirstCombination(regionId);
   };
   const conflictAi = useConflictAiFix({
     repoPath,
@@ -96,10 +145,64 @@ export function ConflictResolutionSurface({
           ? "Result content is not available."
           : null;
   const editorLanguage = inferConflictEditorLanguage(filePath);
+  const fileActionDisabled =
+    resultState.actionInFlight || !resultState.canAcceptFile;
+  const incomingPaneRegions = useMemo(
+    () =>
+      detail
+        ? buildSidePaneRegions({
+            regions: resultRegions,
+            side: GIT_CONFLICT_SIDE.Incoming,
+            sideText: detail.incoming?.text ?? null,
+          })
+        : [],
+    [detail, resultRegions],
+  );
+  const currentPaneRegions = useMemo(
+    () =>
+      detail
+        ? buildSidePaneRegions({
+            regions: resultRegions,
+            side: GIT_CONFLICT_SIDE.Current,
+            sideText: detail.current?.text ?? null,
+          })
+        : [],
+    [detail, resultRegions],
+  );
+  const readOnlyPaneConfigs = detail
+    ? [
+        {
+          key: GIT_CONFLICT_SIDE.Incoming,
+          title: "Incoming",
+          version: detail.incoming,
+          regions: incomingPaneRegions,
+          fileActionLabel: CONFLICT_FILE_ACTION_LABEL.AcceptIncomingFile,
+          fileActionTitle: CONFLICT_FILE_ACTION_TITLE.AcceptIncomingFile,
+          onAcceptRegion: acceptIncomingRegion,
+          onAcceptCombination: acceptIncomingFirstCombination,
+          onAcceptFile: () => {
+            void resultState.acceptIncomingFile();
+          },
+        },
+        {
+          key: GIT_CONFLICT_SIDE.Current,
+          title: "Current",
+          version: detail.current,
+          regions: currentPaneRegions,
+          fileActionLabel: CONFLICT_FILE_ACTION_LABEL.AcceptCurrentFile,
+          fileActionTitle: CONFLICT_FILE_ACTION_TITLE.AcceptCurrentFile,
+          onAcceptRegion: acceptCurrentRegion,
+          onAcceptCombination: acceptCurrentFirstCombination,
+          onAcceptFile: () => {
+            void resultState.acceptCurrentFile();
+          },
+        },
+      ]
+    : [];
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <header className="flex min-h-12 items-center gap-3 border-b border-border bg-background-emphasis px-3">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex min-h-12 min-w-0 items-center gap-3 border-b border-border bg-background-emphasis px-3">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-medium uppercase text-amber-300">
             Conflict {activePosition} of {navigation.totalCount}
@@ -150,7 +253,7 @@ export function ConflictResolutionSurface({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {detailState.isLoading ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             Loading conflict
@@ -160,47 +263,39 @@ export function ConflictResolutionSurface({
             {detailState.error}
           </div>
         ) : detail ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <ConflictMetadataBar
               detail={detail}
               activeRegionIndex={activeRegionIndex}
               onPreviousRegion={goPreviousRegion}
               onNextRegion={goNextRegion}
             />
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(220px,42%)]">
-              <div className="grid min-h-0 grid-cols-2">
-                <ConflictReadOnlyPane
-                  repoPath={repoPath}
-                  filePath={filePath}
-                  title="Incoming"
-                  version={detail.incoming}
-                  language={editorLanguage}
-                  regions={detail.regions}
-                  activeRegion={activeRegion}
-                  acceptedRegionLabel={resultState.acceptedRegionLabel}
-                  onAcceptRegion={resultState.acceptIncomingRegion}
-                  onAcceptCombination={
-                    resultState.acceptIncomingFirstCombination
-                  }
-                  onIgnoreRegion={goNextRegion}
-                  syncedScrollTop={conflictScrollTop}
-                  onScrollTopChange={setConflictScrollTop}
-                />
-                <ConflictReadOnlyPane
-                  repoPath={repoPath}
-                  filePath={filePath}
-                  title="Current"
-                  version={detail.current}
-                  language={editorLanguage}
-                  regions={detail.regions}
-                  activeRegion={activeRegion}
-                  acceptedRegionLabel={resultState.acceptedRegionLabel}
-                  onAcceptRegion={resultState.acceptCurrentRegion}
-                  onAcceptCombination={resultState.acceptCurrentFirstCombination}
-                  onIgnoreRegion={goNextRegion}
-                  syncedScrollTop={conflictScrollTop}
-                  onScrollTopChange={setConflictScrollTop}
-                />
+            <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(220px,42%)] overflow-hidden">
+              <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden">
+                {readOnlyPaneConfigs.map((pane) => (
+                  <ConflictReadOnlyPane
+                    key={pane.key}
+                    repoPath={repoPath}
+                    filePath={filePath}
+                    title={pane.title}
+                    version={pane.version}
+                    language={editorLanguage}
+                    regions={pane.regions}
+                    activeRegion={pane.regions[activeRegionIndex] ?? null}
+                    acceptedRegionSidesById={
+                      resultState.acceptedRegionSidesById
+                    }
+                    fileActionLabel={pane.fileActionLabel}
+                    fileActionTitle={pane.fileActionTitle}
+                    fileActionDisabled={fileActionDisabled}
+                    onAcceptRegion={pane.onAcceptRegion}
+                    onAcceptCombination={pane.onAcceptCombination}
+                    onAcceptFile={pane.onAcceptFile}
+                    onIgnoreRegion={ignoreRegion}
+                    syncedScrollTop={conflictScrollTop}
+                    onScrollTopChange={setConflictScrollTop}
+                  />
+                ))}
               </div>
               <ConflictAiPanel
                 candidate={conflictAi.candidate}
@@ -231,25 +326,21 @@ export function ConflictResolutionSurface({
                 resultRegions={resultState.resultRegions}
                 dirty={resultState.dirty}
                 unsupportedReason={resultUnsupportedReason}
-                acceptedRegionLabel={resultState.acceptedRegionLabel}
+                acceptedRegions={resultState.acceptedRegions}
                 onChange={resultState.setResultContent}
                 onSave={() => {
                   void resultState.saveResult();
                 }}
-                onAcceptCurrentRegion={resultState.acceptCurrentRegion}
-                onAcceptIncomingRegion={resultState.acceptIncomingRegion}
-                onRemoveAcceptedRegionSide={resultState.removeAcceptedRegionSide}
-                onAcceptCurrentFile={() => {
-                  void resultState.acceptCurrentFile();
-                }}
-                onAcceptIncomingFile={() => {
-                  void resultState.acceptIncomingFile();
+                onRemoveAcceptedRegionSide={
+                  resultState.removeAcceptedRegionSide
+                }
+                onResetResult={() => {
+                  resultState.resetResult();
+                  conflictAi.clearCandidate();
                 }}
                 onMarkResolved={() => {
                   void resultState.markResolved();
                 }}
-                canAcceptRegion={resultState.canAcceptRegion}
-                canAcceptFile={resultState.canAcceptFile}
                 markResolvedBlockedReason={resultState.markResolvedBlockedReason}
                 actionInFlight={resultState.actionInFlight}
                 syncedScrollTop={conflictScrollTop}

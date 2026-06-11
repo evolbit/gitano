@@ -145,13 +145,13 @@ describe("useConflictResultState", () => {
 
     expect(result.current.content).toBe("incoming");
     expect(result.current.dirty).toBe(true);
-    expect(result.current.acceptedRegionLabel).toBe("Incoming");
+    expect(result.current.acceptedRegion?.label).toBe("Incoming");
 
     act(() => result.current.removeAcceptedRegionSide());
 
     expect(result.current.content).toBe(initialDetail.result.text);
     expect(result.current.dirty).toBe(false);
-    expect(result.current.acceptedRegionLabel).toBeNull();
+    expect(result.current.acceptedRegion).toBeNull();
   });
 
   it("starts supported conflicts from the base projection and blocks unresolved no-change regions", async () => {
@@ -186,6 +186,73 @@ describe("useConflictResultState", () => {
     expect(result.current.markResolvedBlockedReason).toBeNull();
   });
 
+  it("resets accepted region content back to the initial projection", () => {
+    const initialDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+    });
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    act(() => result.current.acceptIncomingRegion());
+
+    expect(result.current.content).toBe("incoming");
+    expect(result.current.acceptedRegion?.label).toBe("Incoming");
+
+    act(() => result.current.resetResult());
+
+    expect(result.current.content).toBe("base");
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.acceptedRegion).toBeNull();
+    expect(result.current.markResolvedBlockedReason).toContain(
+      "remaining conflict regions",
+    );
+  });
+
+  it("removes a replaced accepted side back to the original region state", () => {
+    const initialDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+    });
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    act(() => result.current.acceptCurrentRegion());
+
+    expect(result.current.content).toBe("current");
+    expect(result.current.acceptedRegion?.label).toBe("Current");
+    expect(result.current.acceptedRegionSide).toBe(GIT_CONFLICT_SIDE.Current);
+
+    act(() => result.current.acceptIncomingRegion());
+
+    expect(result.current.content).toBe("incoming");
+    expect(result.current.acceptedRegion?.label).toBe("Incoming");
+    expect(result.current.acceptedRegionSide).toBe(GIT_CONFLICT_SIDE.Incoming);
+
+    act(() => result.current.removeAcceptedRegionSide());
+
+    expect(result.current.content).toBe("base");
+    expect(result.current.acceptedRegion).toBeNull();
+    expect(result.current.acceptedRegionSide).toBeNull();
+    expect(result.current.markResolvedBlockedReason).toContain(
+      "remaining conflict regions",
+    );
+  });
+
   it("accepts a combination of both region sides in the requested order", () => {
     const incomingFirstDetail = detail();
     const currentFirstDetail = detail();
@@ -216,17 +283,17 @@ describe("useConflictResultState", () => {
     expect(incomingFirst.result.current.content).toBe(
       ["incoming", "current"].join("\n"),
     );
-    expect(incomingFirst.result.current.acceptedRegionLabel).toBe("Combination");
+    expect(incomingFirst.result.current.acceptedRegion?.label).toBe("Combination");
     expect(currentFirst.result.current.content).toBe(
       ["current", "incoming"].join("\n"),
     );
-    expect(currentFirst.result.current.acceptedRegionLabel).toBe("Combination");
+    expect(currentFirst.result.current.acceptedRegion?.label).toBe("Combination");
   });
 
-  it("accepts a whole file side through the backend", async () => {
-    const updated = detail({ result: version(GIT_CONFLICT_SIDE.Result, "incoming-file") });
-    const initialDetail = detail();
-    acceptConflictSideMock.mockResolvedValueOnce(updated);
+  it("accepts a whole text file side into the local result content", async () => {
+    const initialDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+    });
     const { result } = renderHook(
       () =>
         useConflictResultState({
@@ -242,14 +309,195 @@ describe("useConflictResultState", () => {
       await result.current.acceptIncomingFile();
     });
 
-    expect(acceptConflictSideMock.mock.calls[0]?.[0]).toEqual({
+    expect(acceptConflictSideMock).not.toHaveBeenCalled();
+    expect(result.current.content).toBe("incoming");
+    expect(result.current.dirty).toBe(true);
+    expect(result.current.acceptedRegions).toEqual([
+      { regionId: "conflict-1", label: "Incoming" },
+    ]);
+    expect(result.current.acceptedRegionSidesById).toEqual({
+      "conflict-1": GIT_CONFLICT_SIDE.Incoming,
+    });
+    expect(result.current.markResolvedBlockedReason).toBeNull();
+  });
+
+  it("resets whole-file text acceptance back to the initial projection", async () => {
+    const initialDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+    });
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    await act(async () => {
+      await result.current.acceptIncomingFile();
+    });
+
+    expect(result.current.content).toBe("incoming");
+    expect(result.current.dirty).toBe(true);
+
+    act(() => result.current.resetResult());
+
+    expect(result.current.content).toBe("base");
+    expect(result.current.dirty).toBe(false);
+    expect(result.current.markResolvedBlockedReason).toContain(
+      "remaining conflict regions",
+    );
+  });
+
+  it("can remove one block after accepting a whole text file side", async () => {
+    const initialDetail = detail({
+      base: version(
+        GIT_CONFLICT_SIDE.Base,
+        ["base one", "middle", "base two"].join("\n"),
+      ),
+      result: version(
+        GIT_CONFLICT_SIDE.Result,
+        [
+          "<<<<<<< HEAD",
+          "current one",
+          "=======",
+          "incoming one",
+          ">>>>>>> branch",
+          "middle",
+          "<<<<<<< HEAD",
+          "current two",
+          "=======",
+          "incoming two",
+          ">>>>>>> branch",
+        ].join("\n"),
+      ),
+      regions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 1,
+          resultSeparatorLine: 3,
+          resultEndLine: 5,
+        },
+        {
+          id: "conflict-2",
+          resultStartLine: 7,
+          resultSeparatorLine: 9,
+          resultEndLine: 11,
+        },
+      ],
+    });
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    await act(async () => {
+      await result.current.acceptIncomingFile();
+    });
+
+    expect(result.current.content).toBe(
+      ["incoming one", "middle", "incoming two"].join("\n"),
+    );
+    expect(result.current.acceptedRegions).toEqual([
+      { regionId: "conflict-1", label: "Incoming" },
+      { regionId: "conflict-2", label: "Incoming" },
+    ]);
+
+    act(() => result.current.removeAcceptedRegionSide("conflict-1"));
+
+    expect(result.current.content).toBe(
+      ["base one", "middle", "incoming two"].join("\n"),
+    );
+    expect(result.current.acceptedRegions).toEqual([
+      { regionId: "conflict-2", label: "Incoming" },
+    ]);
+    expect(result.current.markResolvedBlockedReason).toContain(
+      "remaining conflict regions",
+    );
+  });
+
+  it("saves accepted whole-file text content with the loaded signatures", async () => {
+    const initialDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+    });
+    const savedDetail = detail({
+      base: version(GIT_CONFLICT_SIDE.Base, "base"),
+      result: version(GIT_CONFLICT_SIDE.Result, "incoming-file"),
+      regions: [],
+      signatures: { indexSignature: "index", resultSignature: "result-2" },
+    });
+    writeConflictResultMock.mockResolvedValueOnce(savedDetail);
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    await act(async () => {
+      await result.current.acceptIncomingFile();
+    });
+
+    await act(async () => {
+      await result.current.saveResult();
+    });
+
+    expect(writeConflictResultMock.mock.calls[0]?.[0]).toEqual({
       repoPath: "/repo",
       filePath: "src/conflict.ts",
-      side: GIT_CONFLICT_SIDE.Incoming,
+      content: "incoming",
       expectedIndexSignature: "index",
       expectedResultSignature: "result",
     });
     expect(result.current.content).toBe("incoming-file");
+    expect(result.current.dirty).toBe(false);
+  });
+
+  it("uses the backend side acceptance for missing-side file choices", async () => {
+    const updated = detail({
+      current: null,
+      result: version(GIT_CONFLICT_SIDE.Result, ""),
+    });
+    const initialDetail = detail({
+      current: null,
+      incoming: version(GIT_CONFLICT_SIDE.Incoming, "incoming-file"),
+    });
+    acceptConflictSideMock.mockResolvedValueOnce(updated);
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    await act(async () => {
+      await result.current.acceptCurrentFile();
+    });
+
+    expect(acceptConflictSideMock.mock.calls[0]?.[0]).toEqual({
+      repoPath: "/repo",
+      filePath: "src/conflict.ts",
+      side: GIT_CONFLICT_SIDE.Current,
+      expectedIndexSignature: "index",
+      expectedResultSignature: "result",
+    });
   });
 
   it("does not mark resolved while conflict markers remain", async () => {

@@ -29,7 +29,7 @@ export function ConflictMetadataBar({
   const canGoNextRegion = regionCount > 0 && activeRegionIndex < regionCount - 1;
 
   return (
-    <div className="flex min-h-10 items-center gap-3 border-b border-border bg-zinc-950/40 px-3">
+    <div className="flex min-h-10 min-w-0 items-center gap-3 overflow-hidden border-b border-border bg-zinc-950/40 px-3">
       <div className="min-w-0 flex-1">
         <div className="truncate text-xs text-zinc-300">
           {getConflictMetadataMessage(detail)}
@@ -45,7 +45,7 @@ export function ConflictMetadataBar({
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-1 text-xs text-zinc-400">
+      <div className="flex shrink-0 items-center gap-1 text-xs text-zinc-400">
         <span className="min-w-[72px] text-right">
           Region {regionPosition} of {regionCount}
         </span>

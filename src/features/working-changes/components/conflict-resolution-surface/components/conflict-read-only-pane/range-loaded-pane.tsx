@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { getMergeConflictContentRange } from "@/shared/api/git/conflicts";
 import type { GitConflictRegion } from "@/shared/types/git-conflicts";
 import { isLineInConflictRegion } from "../../utils/conflict-text";
+import { ConflictPaneHeader } from "./conflict-pane-header";
 import {
   CONFLICT_LINE_HIGHLIGHT,
   ConflictLineRow,
@@ -75,17 +76,22 @@ export function RangeLoadedPane({
   signature,
   regions,
   activeRegion,
-  acceptedRegionLabel,
+  acceptedRegionSidesById,
   actionLabel,
   combinationActionLabel,
+  fileActionLabel,
+  fileActionTitle,
+  fileActionDisabled,
   onAcceptRegion,
   onAcceptCombination,
+  onAcceptFile,
   onIgnoreRegion,
   syncedScrollTop,
   onScrollTopChange,
 }: ConflictRangePaneProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const syncingScrollRef = useRef(false);
+  const scrolledRegionKeyRef = useRef<string | null>(null);
   const virtualizer = useVirtualizer({
     count: totalLineCount,
     getScrollElement: () => scrollRef.current,
@@ -107,13 +113,20 @@ export function RangeLoadedPane({
         );
 
   useEffect(() => {
-    if (!activeRegion) return;
+    if (!activeRegion) {
+      scrolledRegionKeyRef.current = null;
+      return;
+    }
 
+    const regionKey = `${activeRegion.id}:${activeRegion.resultStartLine}`;
+    if (scrolledRegionKeyRef.current === regionKey) return;
+
+    scrolledRegionKeyRef.current = regionKey;
     virtualizer.scrollToIndex(
       Math.max(0, activeRegion.resultStartLine - 1),
       { align: "center" },
     );
-  }, [activeRegion, virtualizer]);
+  }, [activeRegion?.id, activeRegion?.resultStartLine, virtualizer]);
 
   useEffect(() => {
     if (!scrollRef.current || syncedScrollTop === null) return;
@@ -161,18 +174,26 @@ export function RangeLoadedPane({
 
     return map;
   }, [rangeQuery.data]);
+  const actionRegion = activeRegion ?? regions[0] ?? null;
+  const hideActionRegion =
+    Boolean(actionRegion) &&
+    acceptedRegionSidesById[actionRegion?.id ?? ""] === side;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-r border-border last:border-r-0">
-      <div className="border-b border-border bg-background-emphasis px-3 py-1.5 text-xs font-semibold">
-        {title}
-      </div>
-      {activeRegion && !acceptedRegionLabel ? (
-        <div className="flex min-h-8 items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-amber-500/40 bg-background-emphasis px-3 text-[11px] text-zinc-500">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0">
+      <ConflictPaneHeader
+        title={title}
+        fileActionLabel={fileActionLabel}
+        fileActionTitle={fileActionTitle}
+        fileActionDisabled={fileActionDisabled}
+        onAcceptFile={onAcceptFile}
+      />
+      {actionRegion && !hideActionRegion ? (
+        <div className="flex min-h-8 items-center gap-4 overflow-x-auto whitespace-nowrap bg-background-emphasis px-3 text-[11px] text-zinc-500">
           <button
             type="button"
             className={actionButtonClass()}
-            onClick={onAcceptRegion}
+            onClick={() => onAcceptRegion(actionRegion.id)}
           >
             {actionLabel}
           </button>
@@ -180,7 +201,7 @@ export function RangeLoadedPane({
           <button
             type="button"
             className={actionButtonClass()}
-            onClick={onAcceptCombination}
+            onClick={() => onAcceptCombination(actionRegion.id)}
           >
             {combinationActionLabel}
           </button>
@@ -188,7 +209,7 @@ export function RangeLoadedPane({
           <button
             type="button"
             className={actionButtonClass()}
-            onClick={onIgnoreRegion}
+            onClick={() => onIgnoreRegion(actionRegion.id)}
           >
             Ignore
           </button>
@@ -196,7 +217,7 @@ export function RangeLoadedPane({
       ) : null}
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-auto"
+        className="min-h-0 min-w-0 flex-1 overflow-auto"
         onScroll={(event) => {
           if (!syncingScrollRef.current) {
             onScrollTopChange(event.currentTarget.scrollTop);
@@ -204,7 +225,7 @@ export function RangeLoadedPane({
         }}
       >
         <div
-          className="relative min-w-max"
+          className="relative min-w-0"
           style={{ height: `${virtualizer.getTotalSize()}px` }}
         >
           {renderedRows.map((virtualRow) => {

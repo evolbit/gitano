@@ -86,7 +86,7 @@ describe("ChangesExplorerFileRow", () => {
       conflictCount: 1,
     });
 
-    expect(screen.getByText("1 conflict")).toBeInTheDocument();
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Toggle file selection" }),
     ).not.toBeInTheDocument();

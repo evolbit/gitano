@@ -1,14 +1,26 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
 import {
   IconDeviceFloppy,
   IconGitMerge,
+  IconRefresh,
 } from "@/shared/components/icons/icons";
+import {
+  DEFAULT_MONACO_THEME,
+  MONACO_EDITOR_FONT_FAMILY,
+  MONACO_EDITOR_FONT_SIZE,
+  MONACO_EDITOR_LINE_HEIGHT,
+} from "@/shared/lib/monaco";
 import { ConflictMonacoEditor } from "../conflict-monaco-editor";
 import type { ConflictResultEditorProps } from "./types";
 
 type ConflictEditor = Monaco.editor.IStandaloneCodeEditor;
+type MonacoApi = typeof Monaco;
 type PaddingZoneIds = string[];
+type EditorSession = {
+  editor: ConflictEditor;
+  monaco: MonacoApi;
+};
 
 function commandButtonClass(disabled = false) {
   return `inline-flex h-9 shrink-0 items-center gap-1.5 rounded border border-border px-3 text-xs font-medium transition-colors ${
@@ -19,18 +31,65 @@ function commandButtonClass(disabled = false) {
 }
 
 const RESULT_ACTION_TITLE = {
-  AcceptCurrentFile: "Replace the entire result file with the current side.",
-  AcceptCurrentRegion: "Replace only the active conflict region with the current side.",
-  AcceptIncomingFile: "Replace the entire result file with the incoming side.",
-  AcceptIncomingRegion: "Replace only the active conflict region with the incoming side.",
   MarkResolved: "Stage this file as resolved after the result contains no conflict markers.",
+  Reset: "Reset this result to the initially loaded conflict projection.",
   Save: "Write the edited result content to disk.",
 } as const;
+
+const ACCEPTED_RESULT_WIDGET_ID = "gitano-conflict-result-accepted-widget";
+const ACCEPTED_RESULT_DECORATION_CLASS = "gitano-conflict-result-line-accepted";
+
+function clampLineNumber(lineNumber: number, maxLine: number) {
+  return Math.max(1, Math.min(lineNumber, maxLine));
+}
 
 function createPaddingZoneNode() {
   const node = document.createElement("div");
   node.className = "gitano-conflict-result-padding-zone";
   return node;
+}
+
+function createAcceptedResultWidget({
+  label,
+  lineNumber,
+  monaco,
+  onRemove,
+  regionId,
+}: {
+  label: string;
+  lineNumber: number;
+  monaco: MonacoApi;
+  onRemove: () => void;
+  regionId: string;
+}): Monaco.editor.IContentWidget {
+  const node = document.createElement("div");
+  node.className = "gitano-conflict-result-action-widget";
+
+  const labelNode = document.createElement("span");
+  labelNode.textContent = label;
+
+  const separator = document.createElement("span");
+  separator.textContent = "|";
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.textContent = `Remove ${label}`;
+  removeButton.title = `Remove ${label} from the result.`;
+  removeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    onRemove();
+  });
+
+  node.append(labelNode, separator, removeButton);
+
+  return {
+    getId: () => `${ACCEPTED_RESULT_WIDGET_ID}:${regionId}`,
+    getDomNode: () => node,
+    getPosition: () => ({
+      position: { lineNumber, column: 1 },
+      preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+    }),
+  };
 }
 
 function updatePaddingZones({
@@ -67,35 +126,29 @@ export function ConflictResultEditor({
   resultRegions,
   dirty,
   unsupportedReason,
-  acceptedRegionLabel,
+  acceptedRegions,
   onChange,
   onSave,
-  onAcceptCurrentRegion,
-  onAcceptIncomingRegion,
   onRemoveAcceptedRegionSide,
-  onAcceptCurrentFile,
-  onAcceptIncomingFile,
+  onResetResult,
   onMarkResolved,
-  canAcceptRegion,
-  canAcceptFile,
   markResolvedBlockedReason,
   actionInFlight,
   syncedScrollTop,
   onScrollTopChange,
 }: ConflictResultEditorProps) {
   const saveDisabled = actionInFlight || !dirty;
-  const regionDisabled = actionInFlight || !canAcceptRegion;
-  const fileDisabled = actionInFlight || !canAcceptFile;
   const markResolvedDisabled = actionInFlight || Boolean(markResolvedBlockedReason);
-  const editorRef = useRef<ConflictEditor | null>(null);
+  const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
   const paddingZoneIdsRef = useRef<PaddingZoneIds>([]);
+  const acceptedDecorationIdsRef = useRef<string[]>([]);
   const scrollListenerRef = useRef<Monaco.IDisposable | null>(null);
   const syncingScrollRef = useRef(false);
 
   const handleMount = useCallback(
-    (editor: ConflictEditor) => {
+    (editor: ConflictEditor, monaco: MonacoApi) => {
       scrollListenerRef.current?.dispose();
-      editorRef.current = editor;
+      setEditorSession({ editor, monaco });
       updatePaddingZones({
         editor,
         regions: resultRegions,
@@ -113,30 +166,117 @@ export function ConflictResultEditor({
   useEffect(() => {
     return () => {
       scrollListenerRef.current?.dispose();
-      const editor = editorRef.current;
+      const editor = editorSession?.editor;
 
       if (editor) {
         editor.changeViewZones((accessor) => {
           paddingZoneIdsRef.current.forEach((id) => accessor.removeZone(id));
           paddingZoneIdsRef.current = [];
         });
+        acceptedDecorationIdsRef.current = editor.deltaDecorations(
+          acceptedDecorationIdsRef.current,
+          [],
+        );
       }
     };
-  }, []);
+  }, [editorSession]);
 
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
+    if (!editorSession) return;
 
     updatePaddingZones({
-      editor,
+      editor: editorSession.editor,
       regions: resultRegions,
       zoneIds: paddingZoneIdsRef,
     });
-  }, [content, resultRegions]);
+  }, [content, editorSession, resultRegions]);
 
   useEffect(() => {
-    const editor = editorRef.current;
+    if (!editorSession) return;
+
+    const { editor, monaco } = editorSession;
+    const maxLine = editor.getModel()?.getLineCount() ?? 1;
+    const decorations = acceptedRegions.flatMap((acceptedRegion) => {
+      const acceptedResultRegion = resultRegions.find(
+        (region) => region.id === acceptedRegion.regionId,
+      );
+
+      if (!acceptedResultRegion) return [];
+
+      return [
+        {
+          range: new monaco.Range(
+            clampLineNumber(acceptedResultRegion.resultStartLine, maxLine),
+            1,
+            clampLineNumber(acceptedResultRegion.resultEndLine, maxLine),
+            1,
+          ),
+          options: {
+            className: ACCEPTED_RESULT_DECORATION_CLASS,
+            isWholeLine: true,
+          },
+        },
+      ];
+    });
+
+    if (decorations.length === 0) {
+      acceptedDecorationIdsRef.current = editor.deltaDecorations(
+        acceptedDecorationIdsRef.current,
+        [],
+      );
+      return;
+    }
+
+    acceptedDecorationIdsRef.current = editor.deltaDecorations(
+      acceptedDecorationIdsRef.current,
+      decorations,
+    );
+  }, [acceptedRegions, editorSession, resultRegions]);
+
+  useEffect(() => {
+    if (!editorSession || acceptedRegions.length === 0) return;
+
+    const widgets = acceptedRegions.flatMap((acceptedRegion) => {
+      const acceptedResultRegion = resultRegions.find(
+        (region) => region.id === acceptedRegion.regionId,
+      );
+
+      if (!acceptedResultRegion) return [];
+
+      const { monaco } = editorSession;
+      const maxLine = editorSession.editor.getModel()?.getLineCount() ?? 1;
+
+      return [
+        createAcceptedResultWidget({
+          label: acceptedRegion.label,
+          lineNumber: clampLineNumber(
+            acceptedResultRegion.resultStartLine,
+            maxLine,
+          ),
+          monaco,
+          regionId: acceptedRegion.regionId,
+          onRemove: () =>
+            onRemoveAcceptedRegionSide(acceptedRegion.regionId),
+        }),
+      ];
+    });
+
+    widgets.forEach((widget) => editorSession.editor.addContentWidget(widget));
+
+    return () => {
+      widgets.forEach((widget) =>
+        editorSession.editor.removeContentWidget(widget),
+      );
+    };
+  }, [
+    acceptedRegions,
+    editorSession,
+    onRemoveAcceptedRegionSide,
+    resultRegions,
+  ]);
+
+  useEffect(() => {
+    const editor = editorSession?.editor;
     if (!editor || syncedScrollTop === null) return;
     if (Math.abs(editor.getScrollTop() - syncedScrollTop) < 1) return;
 
@@ -145,65 +285,15 @@ export function ConflictResultEditor({
     window.requestAnimationFrame(() => {
       syncingScrollRef.current = false;
     });
-  }, [syncedScrollTop]);
+  }, [editorSession, syncedScrollTop]);
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-border bg-background">
-      <div className="flex min-h-12 items-center gap-3 overflow-x-auto border-b border-border bg-background-emphasis px-3">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-t border-border bg-background">
+      <div className="flex min-h-12 min-w-0 items-center gap-3 overflow-x-auto border-b border-border bg-background-emphasis px-3">
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold">Result</div>
           <div className="truncate text-[11px] text-zinc-500">{filePath}</div>
         </div>
-        {acceptedRegionLabel ? (
-          <button
-            type="button"
-            className={commandButtonClass(actionInFlight)}
-            disabled={actionInFlight}
-            onClick={onRemoveAcceptedRegionSide}
-            title={`Undo the accepted ${acceptedRegionLabel.toLowerCase()} for this region.`}
-          >
-            Remove {acceptedRegionLabel}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={commandButtonClass(regionDisabled)}
-              disabled={regionDisabled}
-              onClick={onAcceptCurrentRegion}
-              title={RESULT_ACTION_TITLE.AcceptCurrentRegion}
-            >
-              Accept Current Region
-            </button>
-            <button
-              type="button"
-              className={commandButtonClass(regionDisabled)}
-              disabled={regionDisabled}
-              onClick={onAcceptIncomingRegion}
-              title={RESULT_ACTION_TITLE.AcceptIncomingRegion}
-            >
-              Accept Incoming Region
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          className={commandButtonClass(fileDisabled)}
-          disabled={fileDisabled}
-          onClick={onAcceptCurrentFile}
-          title={RESULT_ACTION_TITLE.AcceptCurrentFile}
-        >
-          Accept Current File
-        </button>
-        <button
-          type="button"
-          className={commandButtonClass(fileDisabled)}
-          disabled={fileDisabled}
-          onClick={onAcceptIncomingFile}
-          title={RESULT_ACTION_TITLE.AcceptIncomingFile}
-        >
-          Accept Incoming File
-        </button>
         <button
           type="button"
           className={commandButtonClass(saveDisabled)}
@@ -213,6 +303,16 @@ export function ConflictResultEditor({
         >
           <IconDeviceFloppy size={14} />
           Save
+        </button>
+        <button
+          type="button"
+          className={commandButtonClass(actionInFlight)}
+          disabled={actionInFlight}
+          onClick={onResetResult}
+          title={RESULT_ACTION_TITLE.Reset}
+        >
+          <IconRefresh size={14} />
+          Reset Conflict
         </button>
         <button
           type="button"
@@ -230,7 +330,7 @@ export function ConflictResultEditor({
           {markResolvedBlockedReason}
         </div>
       ) : null}
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {unsupportedReason ? (
           <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
             {unsupportedReason}
@@ -238,23 +338,23 @@ export function ConflictResultEditor({
         ) : (
           <ConflictMonacoEditor
             ariaLabel="Result editor"
-            className="h-full"
+            className="h-full min-w-0 overflow-hidden"
             resetKey={`${filePath}:${language}`}
             fallbackMessage={
               "Result editor failed to load. Restart the dev server or resolve this file in an external editor."
             }
             height="100%"
             language={language}
-            theme="vs-dark"
+            theme={DEFAULT_MONACO_THEME}
             value={content}
             onChange={(value) => onChange(value ?? "")}
             onMount={handleMount}
             options={{
               automaticLayout: true,
-              fontFamily: "IBM Plex Mono",
-              fontSize: 12,
+              fontFamily: MONACO_EDITOR_FONT_FAMILY,
+              fontSize: MONACO_EDITOR_FONT_SIZE,
               lineDecorationsWidth: 8,
-              lineHeight: 20,
+              lineHeight: MONACO_EDITOR_LINE_HEIGHT,
               lineNumbersMinChars: 4,
               minimap: { enabled: false },
               scrollbar: {

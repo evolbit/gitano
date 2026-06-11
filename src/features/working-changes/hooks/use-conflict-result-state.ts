@@ -12,14 +12,12 @@ import type {
   GitConflictFileDetail,
   GitConflictSide,
 } from "@/shared/types/git-conflicts";
-import {
-  type ConflictResolutionRegion,
-  replaceProjectedResultRegionWithContent,
-} from "../components/conflict-resolution-surface/utils/conflict-result-projection";
+import { replaceProjectedResultRegionWithContent } from "../components/conflict-resolution-surface/utils/conflict-result-projection";
 import { hasUnresolvedConflictMarkers } from "../components/conflict-resolution-surface/utils/conflict-text";
 import {
   ACCEPTED_REGION_LABEL,
   combineRegionTexts,
+  fileSideText,
   MARK_RESOLVED_BLOCKED_REASON,
   pendingIdsForRegions,
   PENDING_REGIONS_BLOCKED_REASON,
@@ -38,9 +36,7 @@ type UseConflictResultStateOptions = {
 type AcceptedRegionUndo = {
   regionId: string;
   label: string;
-  previousContent: string;
-  previousPendingRegionIds: Set<string>;
-  previousRegions: ConflictResolutionRegion[];
+  side: GitConflictSide | null;
 };
 
 export function useConflictResultState({
@@ -52,6 +48,8 @@ export function useConflictResultState({
 }: UseConflictResultStateOptions) {
   const [workingDetail, setWorkingDetail] =
     useState<GitConflictFileDetail | null>(detail);
+  const [resetDetail, setResetDetail] =
+    useState<GitConflictFileDetail | null>(detail);
   const [content, setContent] = useState(
     () => resultProjectionFromDetail(detail).content,
   );
@@ -62,25 +60,45 @@ export function useConflictResultState({
     pendingIdsForRegions(resultProjectionFromDetail(detail).regions),
   );
   const [dirty, setDirty] = useState(false);
-  const [acceptedRegionUndo, setAcceptedRegionUndo] =
-    useState<AcceptedRegionUndo | null>(null);
+  const [acceptedRegionUndoById, setAcceptedRegionUndoById] = useState<
+    Record<string, AcceptedRegionUndo>
+  >({});
 
   useEffect(() => {
     const projection = resultProjectionFromDetail(detail);
 
     setWorkingDetail(detail);
+    setResetDetail(detail);
     setContent(projection.content);
     setResultRegions(projection.regions);
     setPendingRegionIds(pendingIdsForRegions(projection.regions));
     setDirty(false);
-    setAcceptedRegionUndo(null);
+    setAcceptedRegionUndoById({});
   }, [detail]);
 
   const activeRegion = resultRegions[activeRegionIndex] ?? null;
-  const acceptedRegionLabel =
-    activeRegion && acceptedRegionUndo?.regionId === activeRegion.id
-      ? acceptedRegionUndo.label
-      : null;
+  const activeAcceptedRegion = activeRegion
+    ? acceptedRegionUndoById[activeRegion.id]
+    : null;
+  const acceptedRegion = activeAcceptedRegion
+    ? {
+        regionId: activeAcceptedRegion.regionId,
+        label: activeAcceptedRegion.label,
+      }
+    : null;
+  const acceptedRegionSide = activeAcceptedRegion?.side ?? null;
+  const acceptedRegions = Object.values(acceptedRegionUndoById).map(
+    (region) => ({
+      regionId: region.regionId,
+      label: region.label,
+    }),
+  );
+  const acceptedRegionSidesById = Object.fromEntries(
+    Object.values(acceptedRegionUndoById).map((region) => [
+      region.regionId,
+      region.side,
+    ]),
+  );
   const canAcceptRegion = Boolean(activeRegion && workingDetail?.result.text);
   const canAcceptFile =
     sideHasText(workingDetail, GIT_CONFLICT_SIDE.Current) ||
@@ -109,7 +127,7 @@ export function useConflictResultState({
     setResultRegions(projection.regions);
     setPendingRegionIds(pendingIdsForRegions(projection.regions));
     setDirty(false);
-    setAcceptedRegionUndo(null);
+    setAcceptedRegionUndoById({});
     return updated;
   }, []);
 
@@ -117,7 +135,7 @@ export function useConflictResultState({
     (nextContent: string) => {
       setContent(nextContent);
       setDirty(true);
-      setAcceptedRegionUndo(null);
+      setAcceptedRegionUndoById({});
       setPendingRegionIds((current) => {
         if (!activeRegion || !current.has(activeRegion.id)) return current;
 
@@ -147,6 +165,59 @@ export function useConflictResultState({
     async (side: GitConflictSide) => {
       if (!workingDetail) return null;
 
+      const acceptedText = fileSideText(workingDetail, side);
+      if (acceptedText !== null) {
+        if (resultRegions.length === 0) {
+          setContent(acceptedText);
+          setResultRegions([]);
+          setPendingRegionIds(new Set<string>());
+          setDirty(true);
+          setAcceptedRegionUndoById({});
+          return workingDetail;
+        }
+
+        let nextContent = content;
+        let nextRegions = resultRegions;
+        const nextPendingRegionIds = new Set(pendingRegionIds);
+        const acceptedLabel =
+          side === GIT_CONFLICT_SIDE.Incoming
+            ? ACCEPTED_REGION_LABEL.Incoming
+            : ACCEPTED_REGION_LABEL.Current;
+        const nextAcceptedRegions: Record<string, AcceptedRegionUndo> = {};
+
+        resultRegions.forEach((region) => {
+          const targetRegion = nextRegions.find((item) => item.id === region.id);
+          if (!targetRegion) return;
+
+          const replacementText =
+            side === GIT_CONFLICT_SIDE.Incoming
+              ? targetRegion.incomingText
+              : targetRegion.currentText;
+          const nextProjection = replaceProjectedResultRegionWithContent({
+            region: targetRegion,
+            regions: nextRegions,
+            replacementText,
+            resultText: nextContent,
+          });
+
+          nextContent = nextProjection.content;
+          nextRegions = nextProjection.regions;
+          nextPendingRegionIds.delete(region.id);
+          nextAcceptedRegions[region.id] = {
+            regionId: region.id,
+            label: acceptedLabel,
+            side,
+          };
+        });
+
+        setContent(nextContent);
+        setResultRegions(nextRegions);
+        setPendingRegionIds(nextPendingRegionIds);
+        setDirty(true);
+        setAcceptedRegionUndoById(nextAcceptedRegions);
+        return workingDetail;
+      }
+
       const updated = await acceptSideMutation.mutateAsync({
         repoPath,
         filePath,
@@ -160,8 +231,11 @@ export function useConflictResultState({
     [
       acceptSideMutation,
       applyUpdatedDetail,
+      content,
       filePath,
+      pendingRegionIds,
       repoPath,
+      resultRegions,
       workingDetail,
     ],
   );
@@ -171,6 +245,7 @@ export function useConflictResultState({
       regionId: string,
       replacementText: string,
       acceptedLabel?: string,
+      acceptedSide: GitConflictSide | null = null,
     ) => {
       const region = resultRegions.find((item) => item.id === regionId);
       if (!region) return;
@@ -181,7 +256,6 @@ export function useConflictResultState({
         replacementText,
         resultText: content,
       });
-      const previousPendingRegionIds = new Set(pendingRegionIds);
       const nextPendingRegionIds = new Set(pendingRegionIds);
       nextPendingRegionIds.delete(region.id);
 
@@ -189,94 +263,144 @@ export function useConflictResultState({
       setResultRegions(nextProjection.regions);
       setPendingRegionIds(nextPendingRegionIds);
       setDirty(true);
-      setAcceptedRegionUndo(
-        acceptedLabel
-          ? {
-              regionId: region.id,
-              label: acceptedLabel,
-              previousContent: content,
-              previousPendingRegionIds,
-              previousRegions: resultRegions,
-            }
-          : null,
-      );
+      setAcceptedRegionUndoById((current) => {
+        const next = { ...current };
+
+        if (acceptedLabel) {
+          next[region.id] = {
+            regionId: region.id,
+            label: acceptedLabel,
+            side: acceptedSide,
+          };
+        } else {
+          delete next[region.id];
+        }
+
+        return next;
+      });
     },
     [content, pendingRegionIds, resultRegions],
   );
 
   const acceptRegionSide = useCallback(
-    (side: GitConflictSide) => {
-      if (!activeRegion) return;
+    (side: GitConflictSide, regionId?: string) => {
+      const targetRegion = regionId
+        ? resultRegions.find((region) => region.id === regionId)
+        : activeRegion;
+      if (!targetRegion) return;
 
       const incoming = side === GIT_CONFLICT_SIDE.Incoming;
 
       applyRegionReplacement(
-        activeRegion.id,
-        incoming ? activeRegion.incomingText : activeRegion.currentText,
+        targetRegion.id,
+        incoming ? targetRegion.incomingText : targetRegion.currentText,
         incoming
           ? ACCEPTED_REGION_LABEL.Incoming
           : ACCEPTED_REGION_LABEL.Current,
+        side,
       );
     },
-    [activeRegion, applyRegionReplacement],
+    [activeRegion, applyRegionReplacement, resultRegions],
   );
 
   const acceptCombination = useCallback(
-    (firstSide: GitConflictSide) => {
-      if (!activeRegion) return;
+    (firstSide: GitConflictSide, regionId?: string) => {
+      const targetRegion = regionId
+        ? resultRegions.find((region) => region.id === regionId)
+        : activeRegion;
+      if (!targetRegion) return;
 
       const replacementText =
         firstSide === GIT_CONFLICT_SIDE.Current
           ? combineRegionTexts(
-              activeRegion.currentText,
-              activeRegion.incomingText,
+              targetRegion.currentText,
+              targetRegion.incomingText,
               content,
             )
           : combineRegionTexts(
-              activeRegion.incomingText,
-              activeRegion.currentText,
+              targetRegion.incomingText,
+              targetRegion.currentText,
               content,
             );
 
       applyRegionReplacement(
-        activeRegion.id,
+        targetRegion.id,
         replacementText,
         ACCEPTED_REGION_LABEL.Combination,
+        null,
       );
     },
-    [activeRegion, applyRegionReplacement, content],
+    [activeRegion, applyRegionReplacement, content, resultRegions],
   );
 
-  const removeAcceptedRegionSide = useCallback(() => {
-    if (!acceptedRegionUndo) return;
+  const removeAcceptedRegionSide = useCallback(
+    (regionId?: string) => {
+      const targetRegionId = regionId ?? acceptedRegion?.regionId;
+      const region = resultRegions.find((item) => item.id === targetRegionId);
+      if (!region) return;
 
-    setContent(acceptedRegionUndo.previousContent);
-    setResultRegions(acceptedRegionUndo.previousRegions);
-    setPendingRegionIds(acceptedRegionUndo.previousPendingRegionIds);
-    setDirty(
-      acceptedRegionUndo.previousContent !==
-        resultProjectionFromDetail(workingDetail).content,
-    );
-    setAcceptedRegionUndo(null);
-  }, [acceptedRegionUndo, workingDetail]);
+      const nextProjection = replaceProjectedResultRegionWithContent({
+        region,
+        regions: resultRegions,
+        replacementText: region.unresolvedText,
+        resultText: content,
+      });
+      const nextPendingRegionIds = new Set(pendingRegionIds);
+      nextPendingRegionIds.add(region.id);
+
+      setContent(nextProjection.content);
+      setResultRegions(nextProjection.regions);
+      setPendingRegionIds(nextPendingRegionIds);
+      setDirty(
+        nextProjection.content !== resultProjectionFromDetail(workingDetail).content,
+      );
+      setAcceptedRegionUndoById((current) => {
+        const next = { ...current };
+        delete next[region.id];
+        return next;
+      });
+    },
+    [acceptedRegion, content, pendingRegionIds, resultRegions, workingDetail],
+  );
+
+  const resetResult = useCallback(() => {
+    if (!resetDetail) return;
+
+    const projection = resultProjectionFromDetail(resetDetail);
+    const currentProjection = resultProjectionFromDetail(workingDetail);
+    const latestSignatures =
+      workingDetail?.signatures ?? resetDetail.signatures;
+
+    setWorkingDetail({
+      ...resetDetail,
+      signatures: latestSignatures,
+    });
+    setContent(projection.content);
+    setResultRegions(projection.regions);
+    setPendingRegionIds(pendingIdsForRegions(projection.regions));
+    setDirty(projection.content !== currentProjection.content);
+    setAcceptedRegionUndoById({});
+  }, [resetDetail, workingDetail]);
 
   const acceptCurrentRegion = useCallback(
-    () => acceptRegionSide(GIT_CONFLICT_SIDE.Current),
+    (regionId?: string) => acceptRegionSide(GIT_CONFLICT_SIDE.Current, regionId),
     [acceptRegionSide],
   );
 
   const acceptIncomingRegion = useCallback(
-    () => acceptRegionSide(GIT_CONFLICT_SIDE.Incoming),
+    (regionId?: string) => acceptRegionSide(GIT_CONFLICT_SIDE.Incoming, regionId),
     [acceptRegionSide],
   );
 
   const acceptCurrentFirstCombination = useCallback(
-    () => acceptCombination(GIT_CONFLICT_SIDE.Current),
+    (regionId?: string) =>
+      acceptCombination(GIT_CONFLICT_SIDE.Current, regionId),
     [acceptCombination],
   );
 
   const acceptIncomingFirstCombination = useCallback(
-    () => acceptCombination(GIT_CONFLICT_SIDE.Incoming),
+    (regionId?: string) =>
+      acceptCombination(GIT_CONFLICT_SIDE.Incoming, regionId),
     [acceptCombination],
   );
 
@@ -329,7 +453,10 @@ export function useConflictResultState({
     content,
     resultRegions,
     dirty,
-    acceptedRegionLabel,
+    acceptedRegion,
+    acceptedRegionSide,
+    acceptedRegions,
+    acceptedRegionSidesById,
     canAcceptRegion,
     canAcceptFile,
     markResolvedBlockedReason,
@@ -342,6 +469,7 @@ export function useConflictResultState({
     acceptIncomingFirstCombination,
     applyRegionReplacement,
     removeAcceptedRegionSide,
+    resetResult,
     acceptCurrentFile: () => acceptFileSide(GIT_CONFLICT_SIDE.Current),
     acceptIncomingFile: () => acceptFileSide(GIT_CONFLICT_SIDE.Incoming),
     markResolved,

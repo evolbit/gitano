@@ -152,7 +152,7 @@ describe("ChangesExplorer", () => {
       trackedHeader.compareDocumentPosition(untrackedHeader) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(screen.getByText("1 conflict")).toBeInTheDocument();
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: "Toggle file selection" }),
     ).toHaveLength(2);
@@ -200,7 +200,7 @@ describe("ChangesExplorer", () => {
 
     expect(screen.getByText("Conflicts")).toBeInTheDocument();
     expect(screen.getByText("conflict.ts")).toBeInTheDocument();
-    expect(screen.getByText("1 conflict")).toBeInTheDocument();
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("conflict.ts"));
 

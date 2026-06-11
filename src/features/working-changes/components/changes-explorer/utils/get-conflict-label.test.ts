@@ -17,6 +17,18 @@ describe("getConflictLabel", () => {
     expect(getConflictLabel(conflictedFile)).toBe("2 conflicts");
   });
 
+  it("omits the count for a single conflicted path", () => {
+    const conflictedFile: ChangesExplorerConflictFile = {
+      path: "src/conflict.ts",
+      status: ChangeType.Conflicted,
+      insertions: 0,
+      deletions: 0,
+      conflictCount: 1,
+    };
+
+    expect(getConflictLabel(conflictedFile)).toBe("Conflict");
+  });
+
   it("returns a fallback conflict label without count metadata", () => {
     expect(
       getConflictLabel(createFileChange({ status: ChangeType.Conflicted })),

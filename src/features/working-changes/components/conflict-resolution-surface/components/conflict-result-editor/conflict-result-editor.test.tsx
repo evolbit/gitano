@@ -1,20 +1,27 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_MONACO_THEME } from "@/shared/lib/monaco";
 import { ConflictResultEditor } from "./conflict-result-editor";
 
 const editorMock = vi.hoisted(() => {
   let scrollListener: ((event: { scrollTop: number }) => void) | null = null;
   const addedZones: Array<{ afterLineNumber: number; heightInLines: number }> =
     [];
+  const widgets: HTMLElement[] = [];
+  const decorations: unknown[] = [];
 
   return {
     addedZones,
+    decorations,
     emitScroll(scrollTop: number) {
       scrollListener?.({ scrollTop });
     },
     getScrollTop: vi.fn(() => 0),
     reset() {
       addedZones.length = 0;
+      decorations.length = 0;
+      widgets.forEach((widget) => widget.remove());
+      widgets.length = 0;
       scrollListener = null;
       this.getScrollTop.mockReturnValue(0);
       this.setScrollTop.mockClear();
@@ -42,6 +49,19 @@ const editorMock = vi.hoisted(() => {
           removeZone: vi.fn(),
         });
       },
+      addContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
+        const node = widget.getDomNode();
+        widgets.push(node);
+        document.body.appendChild(node);
+      },
+      deltaDecorations: (_oldDecorations: string[], nextDecorations: unknown[]) => {
+        decorations.length = 0;
+        decorations.push(...nextDecorations);
+        return nextDecorations.map((_, index) => `decoration-${index}`);
+      },
+      getModel: () => ({
+        getLineCount: () => 20,
+      }),
       getScrollTop: () => editorMock.getScrollTop(),
       onDidScrollChange: (
         listener: (event: { scrollTop: number }) => void,
@@ -53,12 +73,32 @@ const editorMock = vi.hoisted(() => {
       setScrollTop: (scrollTop: number) => {
         editorMock.setScrollTop(scrollTop);
       },
+      removeContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
+        widget.getDomNode().remove();
+      },
     },
   };
 });
 
+const monacoMock = vi.hoisted(() => ({
+  Range: class Range {
+    constructor(
+      public startLineNumber: number,
+      public startColumn: number,
+      public endLineNumber: number,
+      public endColumn: number,
+    ) {}
+  },
+  editor: {
+    ContentWidgetPositionPreference: {
+      ABOVE: 1,
+    },
+    defineTheme: vi.fn(),
+  },
+}));
+
 vi.mock("monaco-editor", () => ({
-  editor: {},
+  ...monacoMock,
 }));
 
 vi.mock("@monaco-editor/react", async () => {
@@ -72,18 +112,21 @@ vi.mock("@monaco-editor/react", async () => {
       value,
       onChange,
       onMount,
+      theme,
     }: {
       value: string;
       onChange: (value: string) => void;
-      onMount?: (editor: unknown) => void;
+      onMount?: (editor: unknown, monaco: unknown) => void;
+      theme?: string;
     }) => {
       React.useEffect(() => {
-        onMount?.(editorMock.value);
+        onMount?.(editorMock.value, monacoMock);
       }, [onMount]);
 
       return (
         <textarea
           aria-label="Result editor"
+          data-theme={theme}
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
         />
@@ -100,17 +143,12 @@ function renderEditor(overrides = {}) {
     resultRegions: [],
     dirty: true,
     unsupportedReason: null,
-    acceptedRegionLabel: null,
+    acceptedRegions: [],
     onChange: vi.fn(),
     onSave: vi.fn(),
-    onAcceptCurrentRegion: vi.fn(),
-    onAcceptIncomingRegion: vi.fn(),
     onRemoveAcceptedRegionSide: vi.fn(),
-    onAcceptCurrentFile: vi.fn(),
-    onAcceptIncomingFile: vi.fn(),
+    onResetResult: vi.fn(),
     onMarkResolved: vi.fn(),
-    canAcceptRegion: true,
-    canAcceptFile: true,
     markResolvedBlockedReason: null,
     actionInFlight: false,
     syncedScrollTop: null,
@@ -135,15 +173,17 @@ describe("ConflictResultEditor", () => {
     const editor = await screen.findByLabelText("Result editor");
     fireEvent.change(editor, { target: { value: "next" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Accept Current Region" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Reset Conflict" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark Resolved" }));
 
     expect(props.onChange).toHaveBeenCalledWith("next");
     expect(props.onSave).toHaveBeenCalled();
-    expect(props.onAcceptCurrentRegion).toHaveBeenCalled();
+    expect(props.onResetResult).toHaveBeenCalled();
     expect(props.onMarkResolved).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Accept Current File" }),
+    ).not.toBeInTheDocument();
+    expect(editor).toHaveAttribute("data-theme", DEFAULT_MONACO_THEME);
   });
 
   it("disables mark resolved while conflict markers remain", () => {
@@ -197,27 +237,98 @@ describe("ConflictResultEditor", () => {
     });
   });
 
-  it("shows a remove action for an accepted region side", () => {
+  it("shows an inline remove action for an accepted region side", async () => {
     const props = renderEditor({
-      acceptedRegionLabel: "Current",
+      acceptedRegions: [{ regionId: "conflict-1", label: "Current" }],
+      resultRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 2,
+          resultSeparatorLine: null,
+          resultEndLine: 4,
+          baseText: "base",
+          currentText: "current",
+          incomingText: "incoming",
+          paddingLineCount: 0,
+          unresolvedText: "base",
+        },
+      ],
     });
 
+    await screen.findByLabelText("Result editor");
     fireEvent.click(screen.getByRole("button", { name: "Remove Current" }));
 
-    expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalled();
-    expect(
-      screen.queryByRole("button", { name: "Accept Current Region" }),
-    ).not.toBeInTheDocument();
+    expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalledWith("conflict-1");
+    expect(editorMock.decorations).toHaveLength(1);
   });
 
-  it("shows a remove action for an accepted combination", () => {
+  it("shows an inline remove action for an accepted combination", async () => {
     const props = renderEditor({
-      acceptedRegionLabel: "Combination",
+      acceptedRegions: [{ regionId: "conflict-1", label: "Combination" }],
+      resultRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 1,
+          resultSeparatorLine: null,
+          resultEndLine: 2,
+          baseText: "base",
+          currentText: "current",
+          incomingText: "incoming",
+          paddingLineCount: 0,
+          unresolvedText: "base",
+        },
+      ],
     });
 
+    await screen.findByLabelText("Result editor");
     fireEvent.click(screen.getByRole("button", { name: "Remove Combination" }));
 
-    expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalled();
+    expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalledWith("conflict-1");
+  });
+
+  it("shows inline remove actions for multiple accepted regions", async () => {
+    const props = renderEditor({
+      acceptedRegions: [
+        { regionId: "conflict-1", label: "Incoming" },
+        { regionId: "conflict-2", label: "Incoming" },
+      ],
+      resultRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 1,
+          resultSeparatorLine: null,
+          resultEndLine: 1,
+          baseText: "base",
+          currentText: "current",
+          incomingText: "incoming",
+          paddingLineCount: 0,
+          unresolvedText: "base",
+        },
+        {
+          id: "conflict-2",
+          resultStartLine: 4,
+          resultSeparatorLine: null,
+          resultEndLine: 4,
+          baseText: "base 2",
+          currentText: "current 2",
+          incomingText: "incoming 2",
+          paddingLineCount: 0,
+          unresolvedText: "base 2",
+        },
+      ],
+    });
+
+    await screen.findByLabelText("Result editor");
+    const removeButtons = screen.getAllByRole("button", {
+      name: "Remove Incoming",
+    });
+
+    expect(removeButtons).toHaveLength(2);
+
+    fireEvent.click(removeButtons[1]);
+
+    expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalledWith("conflict-2");
+    expect(editorMock.decorations).toHaveLength(2);
   });
 
   it("shows unsupported guidance instead of mounting Monaco", () => {

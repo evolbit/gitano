@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import type { EditorProps } from "@monaco-editor/react";
+import { registerMonacoThemes } from "@/shared/lib/monaco";
 
 const MonacoEditor = lazy(async () => {
   const [monaco, editorModule] = await Promise.all([
@@ -8,6 +9,7 @@ const MonacoEditor = lazy(async () => {
     import("@monaco-editor/react"),
   ]);
 
+  registerMonacoThemes(monaco);
   editorModule.loader.config({ monaco });
 
   return { default: editorModule.default };
@@ -81,7 +83,7 @@ export function ConflictMonacoEditor({
   value,
 }: ConflictMonacoEditorProps) {
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className ?? ""}`}>
       <EditorErrorBoundary
         resetKey={resetKey}
         fallback={

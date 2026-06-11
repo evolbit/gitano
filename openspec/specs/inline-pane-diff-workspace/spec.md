@@ -12,6 +12,25 @@ The system SHALL replace the entire repository right workspace with an inline di
 - **THEN** the current changes pane MUST remain visible as the file navigator
 - **THEN** the previously selected commit MUST remain preserved as repository state even though the history workspace is no longer rendered
 
+### Requirement: Conflict-file selection replaces the right workspace with conflict resolution
+The system SHALL replace the repository right workspace with a conflict resolution surface when the user opens a conflicted file from Current Changes.
+
+#### Scenario: User opens a conflicted working-tree file
+- **WHEN** the user opens a conflicted file from the Current Changes pane
+- **THEN** the system MUST replace the full right workspace with a conflict resolution surface for that file
+- **AND** the Current Changes pane MUST remain visible as the file navigator
+- **AND** the previously selected commit MUST remain preserved as repository state even though the history workspace is no longer rendered
+
+#### Scenario: User closes conflict resolution
+- **WHEN** the user closes the conflict resolution surface
+- **THEN** the system MUST restore the normal history workspace layout on the right side
+- **AND** the selected conflicted path MUST be cleared unless another unresolved conflict is automatically selected
+
+#### Scenario: User opens a normal working-tree file after conflict resolution
+- **WHEN** the user selects a non-conflicted changed file from Current Changes
+- **THEN** the system MUST open the normal working-tree inline diff viewer
+- **AND** any conflict-specific editor state MUST NOT leak into the normal diff viewer
+
 ### Requirement: Commit-file selection replaces only the middle history pane
 The system SHALL replace only the middle history pane with an inline diff viewer when the user opens a file from the commit changes pane.
 
@@ -62,4 +81,3 @@ The system SHALL replace the repository right workspace with an inline diff view
 - **WHEN** the user closes an inline stash-file diff viewer
 - **THEN** the system MUST restore the normal history workspace layout on the right side
 - **THEN** the selected stash entry and its file selection MUST remain preserved
-

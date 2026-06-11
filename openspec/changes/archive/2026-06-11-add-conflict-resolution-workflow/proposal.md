@@ -7,7 +7,7 @@ Merge conflicts currently surface as ordinary working-tree changes or AI-only su
 - Add first-class conflict file discovery to Current Changes, including a dedicated `Conflicts` section and a `conflicted` file state that is not normalized to `modified`.
 - Add a conflict resolution surface in the repository right workspace when a conflicted file is selected.
 - Render read-only `Incoming` and `Current` full-file context panes above an editable `Result` panel.
-- Use lazy-loaded `@monaco-editor/react` only for the editable result panel for supported text conflicts.
+- Use lazy-loaded `@monaco-editor/react` only inside the conflict resolution surface for supported text panes and the editable result panel.
 - Virtualize full-file conflict context panes for large text files, and use range-loaded virtualization for very large text files.
 - Add conflict-specific backend APIs for listing conflicts, loading staged base/current/incoming content, reading/writing result content, accepting sides, and marking a file resolved.
 - Add per-conflict and per-file AI fix actions that return reviewable candidate content or replacements without auto-writing files.
@@ -35,4 +35,4 @@ Merge conflicts currently surface as ordinary working-tree changes or AI-only su
 - Diff/editor UI: read-only virtualized conflict panes and lazy-loaded Monaco result editor for supported text files.
 - Local AI frontend/backend contracts: scoped conflict AI request/result types and stale candidate handling.
 - Rust/Tauri Git backend: conflict list/detail/resolve commands, command registration, index-stage reads, worktree writes, signature validation, and Rust tests under `src-tauri/src/git`.
-- New dependency: `@monaco-editor/react`, loaded only when the conflict result editor is needed.
+- New dependency: `@monaco-editor/react`, loaded only when the conflict resolution surface needs supported text editors.

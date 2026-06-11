@@ -56,6 +56,13 @@ export function sideHasText(
   detail: GitConflictFileDetail | null,
   side: GitConflictSide,
 ) {
+  return fileSideText(detail, side) !== null;
+}
+
+export function fileSideText(
+  detail: GitConflictFileDetail | null,
+  side: GitConflictSide,
+) {
   const version =
     side === GIT_CONFLICT_SIDE.Current
       ? detail?.current
@@ -63,8 +70,12 @@ export function sideHasText(
         ? detail?.incoming
         : null;
 
-  return (
+  if (
     version?.contentKind === GIT_CONFLICT_CONTENT_KIND.Text &&
     version.text !== null
-  );
+  ) {
+    return version.text;
+  }
+
+  return null;
 }

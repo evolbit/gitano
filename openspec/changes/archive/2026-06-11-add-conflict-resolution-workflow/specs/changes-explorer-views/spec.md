@@ -16,6 +16,7 @@ The system SHALL provide a shared changes explorer that can render changed files
 - **THEN** the explorer MUST render conflicted files in a `Conflicts` section before tracked and untracked sections
 - **AND** conflicted rows MUST remain selectable as file rows
 - **AND** conflicted rows MUST NOT expose normal staging checkboxes or normal line-staging controls
+- **AND** conflicted rows MUST use a generic `Conflict` label when only a single conflicted-path count is known
 
 #### Scenario: User views changed files in tree mode without conflicts
 - **WHEN** the changes explorer is set to `Tree View`
@@ -30,3 +31,4 @@ The system SHALL provide a shared changes explorer that can render changed files
 - **THEN** the explorer MUST render conflicted files as a filesystem tree in a `Conflicts` section before tracked and untracked sections
 - **AND** conflict folder rows MUST reflect the nested path structure of conflicted files
 - **AND** conflict file rows MUST remain selectable inside the rendered tree
+- **AND** conflicted file rows MUST NOT display `1 conflict` when the count represents only the conflicted path state
