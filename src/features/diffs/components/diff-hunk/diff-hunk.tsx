@@ -83,6 +83,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
           </ExpandContextButton>
           <ContextRows
             displayMode={displayMode}
+            filePath={filePath}
             lines={extraContext?.above ?? []}
             keyPrefix="above"
             canRenderGutters={canRenderGutters}
@@ -129,6 +130,7 @@ const DiffHunk: React.FC<DiffHunkProps> = ({
         <>
           <ContextRows
             displayMode={displayMode}
+            filePath={filePath}
             lines={extraContext?.below ?? []}
             keyPrefix="below"
             canRenderGutters={canRenderGutters}

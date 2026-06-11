@@ -1,6 +1,11 @@
 import React from "react";
 import { IconCheck } from "@/shared/components/icons/icons";
 import {
+  inferMonacoLanguage,
+  loadConfiguredMonaco,
+  MONACO_PLAINTEXT_LANGUAGE,
+} from "@/shared/lib/monaco";
+import {
   createDiffLineAnchor,
   type DiffLineAnchor,
 } from "../diff-interaction-context/diff-interaction-context";
@@ -215,6 +220,7 @@ export const UnifiedDiffRows: React.FC<
       return (
         <UnifiedLineRow
           key={lineIdx}
+          filePath={filePath}
           line={line}
           inlineHighlightRange={inlineHighlightRanges.get(lineIdx)}
           anchor={anchor}
@@ -282,17 +288,23 @@ export const ExpandContextButton: React.FC<{
 
 export const ContextRows: React.FC<{
   displayMode: DiffDisplayMode;
+  filePath: string;
   lines: DiffLine[];
   keyPrefix: string;
   canRenderGutters?: boolean;
-}> = ({ displayMode, lines, keyPrefix, canRenderGutters = false }) => (
+}> = ({ displayMode, filePath, lines, keyPrefix, canRenderGutters = false }) => (
   <>
     {lines.map((line, index) =>
       displayMode === "split" ? (
-        <SplitContextRow key={`${keyPrefix}-${index}`} line={line} />
+        <SplitContextRow
+          key={`${keyPrefix}-${index}`}
+          filePath={filePath}
+          line={line}
+        />
       ) : (
         <UnifiedLineRow
           key={`${keyPrefix}-${index}`}
+          filePath={filePath}
           line={line}
           showHunkGutter={canRenderGutters}
           showLineGutter={false}
@@ -428,6 +440,7 @@ function getBlockStageState(
 }
 
 const UnifiedLineRow: React.FC<{
+  filePath: string;
   line: DiffLine;
   inlineHighlightRange?: InlineDiffHighlightRange;
   anchor?: DiffLineAnchor;
@@ -444,6 +457,7 @@ const UnifiedLineRow: React.FC<{
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
 }> = ({
+  filePath,
   line,
   inlineHighlightRange,
   lineAccessory,
@@ -511,7 +525,11 @@ const UnifiedLineRow: React.FC<{
             className={`${SOURCE_WRAP_CLASS} flex-1 pt-1`}
             style={SOURCE_WRAP_STYLE}
           >
-            {renderDiffLineContent(line, inlineHighlightRange)}
+            <MonacoDiffLineContent
+              filePath={filePath}
+              line={line}
+              inlineHighlightRange={inlineHighlightRange}
+            />
           </span>
         </div>
       </div>
@@ -610,6 +628,7 @@ const SplitDiffRow: React.FC<{
       >
         <SplitSideCell
           cell={row.left}
+          filePath={filePath}
           tone={leftTone}
           inlineHighlightRange={
             row.left ? inlineHighlightRanges.get(row.left.lineIdx) : undefined
@@ -646,6 +665,7 @@ const SplitDiffRow: React.FC<{
         </span>
         <SplitSideCell
           cell={row.right}
+          filePath={filePath}
           tone={rightTone}
           inlineHighlightRange={
             row.right ? inlineHighlightRanges.get(row.right.lineIdx) : undefined
@@ -669,7 +689,10 @@ const SplitDiffRow: React.FC<{
   );
 };
 
-const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
+const SplitContextRow: React.FC<{ filePath: string; line: DiffLine }> = ({
+  filePath,
+  line,
+}) => (
   <div
     className="grid items-stretch font-mono text-zinc-200"
     style={{
@@ -683,7 +706,7 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
       className={`${SOURCE_WRAP_CLASS} px-4 pt-1`}
       style={SOURCE_WRAP_STYLE}
     >
-      {line.content}
+      <MonacoDiffLineContent filePath={filePath} line={line} />
     </span>
     <span className="flex items-start justify-end pr-2 pt-1">
       {line.old_lineno ?? ""}
@@ -697,13 +720,14 @@ const SplitContextRow: React.FC<{ line: DiffLine }> = ({ line }) => (
       className={`${SOURCE_WRAP_CLASS} px-4 pt-1`}
       style={SOURCE_WRAP_STYLE}
     >
-      {line.content}
+      <MonacoDiffLineContent filePath={filePath} line={line} />
     </span>
   </div>
 );
 
 const SplitSideCell: React.FC<{
   cell?: SplitCell;
+  filePath: string;
   tone: string;
   inlineHighlightRange?: InlineDiffHighlightRange;
   lineAccessory?: React.ReactNode;
@@ -712,6 +736,7 @@ const SplitSideCell: React.FC<{
   onMouseEnter?: () => void;
 }> = ({
   cell,
+  filePath,
   tone,
   inlineHighlightRange,
   lineAccessory,
@@ -736,7 +761,15 @@ const SplitSideCell: React.FC<{
         className={`${SOURCE_WRAP_CLASS} flex-1`}
         style={SOURCE_WRAP_STYLE}
       >
-        {cell ? renderDiffLineContent(cell.line, inlineHighlightRange) : ""}
+        {cell ? (
+          <MonacoDiffLineContent
+            filePath={filePath}
+            line={cell.line}
+            inlineHighlightRange={inlineHighlightRange}
+          />
+        ) : (
+          ""
+        )}
       </span>
     </div>
     {lineBelow ? (
@@ -874,11 +907,111 @@ function getLineContentTone(line: DiffLine) {
   return "bg-transparent";
 }
 
-function renderDiffLineContent(
+type HighlightSegment = {
+  key: string;
+  text: string;
+  highlightClass: string | null;
+};
+
+const MONACO_HIGHLIGHT_DISABLED_IN_TEST = import.meta.env.MODE === "test";
+
+const MonacoDiffLineContent: React.FC<{
+  filePath: string;
+  line: DiffLine;
+  inlineHighlightRange?: InlineDiffHighlightRange;
+}> = ({ filePath, line, inlineHighlightRange }) => {
+  const language = React.useMemo(() => inferMonacoLanguage(filePath), [filePath]);
+  const segments = React.useMemo(
+    () => getDiffLineSegments(line, inlineHighlightRange),
+    [inlineHighlightRange, line],
+  );
+  const canUseMonacoColorizedHtml =
+    segments.length === 1 && segments[0]?.highlightClass === null;
+  const [htmlSegments, setHtmlSegments] = React.useState<string[] | null>(null);
+  const segmentKey = React.useMemo(
+    () =>
+      segments
+        .map(
+          (segment) =>
+            `${segment.key}:${segment.text}:${segment.highlightClass ?? ""}`,
+        )
+        .join("|"),
+    [segments],
+  );
+
+  React.useEffect(() => {
+    setHtmlSegments(null);
+
+    if (
+      MONACO_HIGHLIGHT_DISABLED_IN_TEST ||
+      !canUseMonacoColorizedHtml ||
+      language === MONACO_PLAINTEXT_LANGUAGE ||
+      segments.every((segment) => segment.text.length === 0)
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    void loadConfiguredMonaco()
+      .then((monaco) =>
+        Promise.all(
+          segments.map((segment) =>
+            segment.text
+              ? monaco.editor.colorize(segment.text, language, { tabSize: 2 })
+              : Promise.resolve(""),
+          ),
+        ),
+      )
+      .then((nextHtmlSegments) => {
+        if (active) {
+          setHtmlSegments(nextHtmlSegments);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHtmlSegments(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canUseMonacoColorizedHtml, language, segmentKey, segments]);
+
+  return (
+    <span data-monaco-diff-code="true" data-monaco-language={language}>
+      {segments.map((segment, index) => {
+        const className = segment.highlightClass ?? undefined;
+        const html = htmlSegments?.[index];
+
+        if (html !== undefined) {
+          return (
+            <span
+              key={segment.key}
+              className={className}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        }
+
+        return (
+          <span key={segment.key} className={className}>
+            {segment.text}
+          </span>
+        );
+      })}
+    </span>
+  );
+};
+
+function getDiffLineSegments(
   line: DiffLine,
   inlineHighlightRange?: InlineDiffHighlightRange,
-) {
-  if (!inlineHighlightRange) return line.content;
+): HighlightSegment[] {
+  if (!inlineHighlightRange) {
+    return [{ key: "content", text: line.content, highlightClass: null }];
+  }
 
   const start = Math.max(
     0,
@@ -889,18 +1022,24 @@ function renderDiffLineContent(
     Math.min(inlineHighlightRange.end, line.content.length),
   );
 
-  if (start === end) return line.content;
+  if (start === end) {
+    return [{ key: "content", text: line.content, highlightClass: null }];
+  }
 
   const highlightClass = getInlineHighlightTone(line);
-  if (!highlightClass) return line.content;
+  if (!highlightClass) {
+    return [{ key: "content", text: line.content, highlightClass: null }];
+  }
 
-  return (
-    <>
-      {line.content.slice(0, start)}
-      <span className={highlightClass}>{line.content.slice(start, end)}</span>
-      {line.content.slice(end)}
-    </>
-  );
+  return [
+    { key: "prefix", text: line.content.slice(0, start), highlightClass: null },
+    {
+      key: "highlight",
+      text: line.content.slice(start, end),
+      highlightClass,
+    },
+    { key: "suffix", text: line.content.slice(end), highlightClass: null },
+  ].filter((segment) => segment.text.length > 0);
 }
 
 function getInlineHighlightTone(line: DiffLine) {

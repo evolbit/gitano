@@ -10,10 +10,26 @@ const longToken =
   "thisIsAnIntentionallyLongUnbrokenTokenUsedToVerifyDiffWrappingDoesNotForceHorizontalOverflowAcrossTheVisiblePane";
 
 function expectWrappedSource(element: HTMLElement) {
-  expect(element).toHaveClass("whitespace-pre-wrap");
-  expect(element).toHaveClass("break-words");
-  expect(element).toHaveStyle({ overflowWrap: "anywhere" });
-  expect(element).not.toHaveClass("whitespace-pre");
+  const source = getSourceWrapper(element);
+
+  expect(source).toHaveClass("whitespace-pre-wrap");
+  expect(source).toHaveClass("break-words");
+  expect(source).toHaveStyle({ overflowWrap: "anywhere" });
+  expect(source).not.toHaveClass("whitespace-pre");
+}
+
+function getSourceWrapper(element: HTMLElement) {
+  const source = element.closest(".whitespace-pre-wrap");
+
+  expect(source).not.toBeNull();
+  return source as HTMLElement;
+}
+
+function getUnifiedRowFromText(text: string) {
+  const row = getSourceWrapper(screen.getByText(text)).closest(".group");
+
+  expect(row).not.toBeNull();
+  return row as HTMLElement;
 }
 
 function renderHunk(displayMode: "unified" | "split" = "unified") {
@@ -48,14 +64,18 @@ describe("DiffHunk", () => {
 
     expectWrappedSource(screen.getByText(longLine));
     expect(screen.getByText("5")).toHaveClass("shrink-0");
-    expect(screen.getByText(longLine).parentElement).toHaveClass("min-w-0");
+    expect(getSourceWrapper(screen.getByText(longLine))).toHaveClass("min-w-0");
+    expect(screen.getByText(longLine).closest("[data-monaco-diff-code]")).toHaveAttribute(
+      "data-monaco-language",
+      "markdown",
+    );
   });
 
   it("does not reserve staging gutter space for read-only unified diffs", () => {
     renderHunk("unified");
 
     expect(
-      screen.getByText(longLine).parentElement?.parentElement?.children,
+      getUnifiedRowFromText(longLine).children,
     ).toHaveLength(1);
   });
 
@@ -82,7 +102,7 @@ describe("DiffHunk", () => {
     );
 
     expect(
-      screen.getByText(longLine).parentElement?.parentElement?.children,
+      getUnifiedRowFromText(longLine).children,
     ).toHaveLength(3);
   });
 
@@ -108,7 +128,7 @@ describe("DiffHunk", () => {
       />,
     );
 
-    const row = screen.getByText(longLine).parentElement?.parentElement;
+    const row = getUnifiedRowFromText(longLine);
     const [blockGutter, lineGutter] = Array.from(
       row?.children ?? [],
     ) as HTMLElement[];
@@ -211,7 +231,7 @@ describe("DiffHunk", () => {
       "bg-green-700/70",
       "text-green-50",
     );
-    expect(screen.getByText("0.2").parentElement).toHaveClass(
+    expect(getSourceWrapper(screen.getByText("0.2"))).toHaveClass(
       "whitespace-pre-wrap",
     );
   });
@@ -331,7 +351,7 @@ describe("DiffHunk", () => {
     );
 
     expect(
-      screen.getByText(contextLine).parentElement?.parentElement?.children,
+      getUnifiedRowFromText(contextLine).children,
     ).toHaveLength(3);
   });
 
@@ -358,7 +378,7 @@ describe("DiffHunk", () => {
 
     expectWrappedSource(screen.getByText(longToken));
     expect(
-      screen.getByText(longToken).parentElement,
+      getSourceWrapper(screen.getByText(longToken)),
     ).toHaveClass("min-w-0");
   });
 });
