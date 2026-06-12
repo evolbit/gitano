@@ -44,9 +44,10 @@ const monacoMock = vi.hoisted(() => ({
     ) {}
   },
   editor: {
-    ContentWidgetPositionPreference: { ABOVE: 1 },
+    ContentWidgetPositionPreference: { ABOVE: 1, BELOW: 2 },
     defineTheme: vi.fn(),
     OverviewRulerLane: { Right: 1 },
+    PositionAffinity: { LeftOfInjectedText: 3 },
   },
 }));
 
@@ -73,9 +74,12 @@ vi.mock("@monaco-editor/react", async () => {
       options?: { ariaLabel?: string };
     }) => {
       const widgetHostRef = React.useRef<HTMLDivElement | null>(null);
+      const zoneHostRef = React.useRef<HTMLDivElement | null>(null);
 
       React.useEffect(() => {
         const widgets: Array<{ getDomNode: () => HTMLElement }> = [];
+        const zones = new Map<string, HTMLElement>();
+        let zoneIndex = 0;
         const editor = {
           addContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
             widgets.push(widget);
@@ -83,20 +87,37 @@ vi.mock("@monaco-editor/react", async () => {
           },
           changeViewZones: (
             callback: (accessor: {
-              addZone: () => string;
-              removeZone: () => void;
+              addZone: (zone: {
+                domNode: HTMLElement;
+              }) => string;
+              removeZone: (id: string) => void;
             }) => void,
           ) => {
             callback({
-              addZone: () => "zone",
-              removeZone: vi.fn(),
+              addZone: (zone) => {
+                zoneIndex += 1;
+                const id = `zone-${zoneIndex}`;
+                zones.set(id, zone.domNode);
+                zoneHostRef.current?.append(zone.domNode);
+                return id;
+              },
+              removeZone: (id) => {
+                zones.get(id)?.remove();
+                zones.delete(id);
+              },
             });
           },
           deltaDecorations: () => [],
           getModel: () => ({
             getLineCount: () => Math.max(1, value.split("\n").length),
           }),
+          getLayoutInfo: () => ({ contentLeft: 48, contentWidth: 720 }),
           getScrollTop: () => 0,
+          layoutContentWidget: (widget: {
+            beforeRender?: () => { height: number; width: number } | null;
+          }) => {
+            widget.beforeRender?.();
+          },
           onDidScrollChange: () => ({ dispose: vi.fn() }),
           removeContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
             widget.getDomNode().remove();
@@ -109,6 +130,7 @@ vi.mock("@monaco-editor/react", async () => {
 
         return () => {
           widgets.forEach((widget) => widget.getDomNode().remove());
+          zones.forEach((zone) => zone.remove());
         };
       }, [onMount, value]);
 
@@ -119,6 +141,7 @@ vi.mock("@monaco-editor/react", async () => {
             value={value}
             onChange={(event) => onChange?.(event.currentTarget.value)}
           />
+          <div ref={zoneHostRef} />
           <div ref={widgetHostRef} />
         </>
       );

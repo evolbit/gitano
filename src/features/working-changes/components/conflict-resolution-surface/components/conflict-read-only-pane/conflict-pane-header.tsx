@@ -22,8 +22,15 @@ export function ConflictPaneHeader({
   onAcceptFile,
 }: ConflictPaneHeaderProps) {
   return (
-    <div className="flex min-h-8 min-w-0 items-center gap-2 overflow-x-auto border-b border-border bg-background-emphasis px-3 py-1">
-      <div className="min-w-0 flex-1 truncate text-xs font-semibold">
+    <div
+      className="gitano-conflict-pane-header flex min-h-8 min-w-0 items-center gap-2 overflow-x-auto border-b border-border bg-background-emphasis px-3 py-1"
+      data-conflict-pane-header="true"
+    >
+      <span
+        className="gitano-conflict-pane-accent h-3 w-1 shrink-0 rounded-sm"
+        aria-hidden="true"
+      />
+      <div className="gitano-conflict-pane-title min-w-0 flex-1 truncate text-xs font-semibold">
         {title}
       </div>
       <button

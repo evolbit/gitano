@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { GIT_CONFLICT_SIDE } from "@/shared/types/git-conflicts";
 import type { ConflictResolutionRegion } from "./conflict-result-projection";
-import { buildSidePaneRegions } from "./conflict-side-region-projection";
+import {
+  alignSidePaneRegions,
+  buildSidePaneRegions,
+} from "./conflict-side-region-projection";
 
 function region(
   overrides: Partial<ConflictResolutionRegion> = {},
@@ -105,6 +108,36 @@ describe("conflict side region projection", () => {
       resultStartLine: 70,
       resultSeparatorLine: null,
       resultEndLine: 78,
+    });
+  });
+
+  it("adds display-only alignment counts to the shorter side regions", () => {
+    const aligned = alignSidePaneRegions({
+      incomingRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 10,
+          resultSeparatorLine: null,
+          resultEndLine: 11,
+        },
+      ],
+      currentRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 10,
+          resultSeparatorLine: null,
+          resultEndLine: 14,
+        },
+      ],
+    });
+
+    expect(aligned.incomingRegions[0]).toMatchObject({
+      id: "conflict-1",
+      alignmentLineCount: 3,
+    });
+    expect(aligned.currentRegions[0]).toMatchObject({
+      id: "conflict-1",
+      alignmentLineCount: 0,
     });
   });
 });

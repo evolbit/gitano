@@ -6,6 +6,10 @@ import type {
 import type { ConflictResolutionRegion } from "./conflict-result-projection";
 import { splitConflictTextLines } from "./conflict-text";
 
+export type ConflictSidePaneRegion = GitConflictRegion & {
+  alignmentLineCount?: number;
+};
+
 function splitSideTextLines(text: string) {
   if (text.length === 0) return [];
 
@@ -58,6 +62,10 @@ function fallbackRegion(region: ConflictResolutionRegion): GitConflictRegion {
   };
 }
 
+function conflictRegionLineCount(region: GitConflictRegion) {
+  return Math.max(1, region.resultEndLine - region.resultStartLine + 1);
+}
+
 export function buildSidePaneRegions({
   regions,
   side,
@@ -89,4 +97,49 @@ export function buildSidePaneRegions({
       resultEndLine: matchIndex + targetLines.length,
     };
   });
+}
+
+export function alignSidePaneRegions({
+  currentRegions,
+  incomingRegions,
+}: {
+  currentRegions: GitConflictRegion[];
+  incomingRegions: GitConflictRegion[];
+}): {
+  currentRegions: ConflictSidePaneRegion[];
+  incomingRegions: ConflictSidePaneRegion[];
+} {
+  const currentLineCountsById = new Map(
+    currentRegions.map((region) => [
+      region.id,
+      conflictRegionLineCount(region),
+    ]),
+  );
+  const incomingLineCountsById = new Map(
+    incomingRegions.map((region) => [
+      region.id,
+      conflictRegionLineCount(region),
+    ]),
+  );
+
+  return {
+    currentRegions: currentRegions.map((region) => {
+      const ownLineCount = conflictRegionLineCount(region);
+      const oppositeLineCount = incomingLineCountsById.get(region.id) ?? ownLineCount;
+
+      return {
+        ...region,
+        alignmentLineCount: Math.max(0, oppositeLineCount - ownLineCount),
+      };
+    }),
+    incomingRegions: incomingRegions.map((region) => {
+      const ownLineCount = conflictRegionLineCount(region);
+      const oppositeLineCount = currentLineCountsById.get(region.id) ?? ownLineCount;
+
+      return {
+        ...region,
+        alignmentLineCount: Math.max(0, oppositeLineCount - ownLineCount),
+      };
+    }),
+  };
 }

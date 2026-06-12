@@ -9,8 +9,9 @@ import {
   GIT_CONFLICT_CONTENT_KIND,
   GIT_CONFLICT_SIDE,
   GIT_CONFLICT_SIZE_CLASS,
+  type GitConflictSide,
 } from "@/shared/types/git-conflicts";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConflictAiFix } from "../../hooks/use-conflict-ai-fix";
 import { useConflictFileDetail } from "../../hooks/use-conflict-file-detail";
 import { useConflictNavigation } from "../../hooks/use-conflict-navigation";
@@ -21,7 +22,11 @@ import { ConflictReadOnlyPane } from "./components/conflict-read-only-pane";
 import { ConflictResultEditor } from "./components/conflict-result-editor";
 import type { ConflictResolutionSurfaceProps } from "./types";
 import { inferConflictEditorLanguage } from "./utils/conflict-language";
-import { buildSidePaneRegions } from "./utils/conflict-side-region-projection";
+import type { ConflictScrollHandle } from "./utils/conflict-scroll-sync";
+import {
+  alignSidePaneRegions,
+  buildSidePaneRegions,
+} from "./utils/conflict-side-region-projection";
 
 function toolbarButtonClass(disabled = false) {
   return `inline-flex h-8 w-8 items-center justify-center rounded border border-border transition-colors ${
@@ -51,7 +56,7 @@ export function ConflictResolutionSurface({
   onResolved,
 }: ConflictResolutionSurfaceProps) {
   const [activeRegionIndex, setActiveRegionIndex] = useState(0);
-  const [conflictScrollTop, setConflictScrollTop] = useState<number | null>(null);
+  const scrollHandlesRef = useRef(new Map<GitConflictSide, ConflictScrollHandle>());
   const detailState = useConflictFileDetail({
     repoPath,
     filePath,
@@ -75,8 +80,28 @@ export function ConflictResolutionSurface({
   const detailSignature = detail?.signatures.indexSignature ?? null;
   useEffect(() => {
     setActiveRegionIndex(0);
-    setConflictScrollTop(null);
   }, [detail?.path, detailSignature]);
+  const registerConflictScrollHandle = useCallback(
+    (side: GitConflictSide, handle: ConflictScrollHandle | null) => {
+      if (handle) {
+        scrollHandlesRef.current.set(side, handle);
+        return;
+      }
+
+      scrollHandlesRef.current.delete(side);
+    },
+    [],
+  );
+  const publishConflictScrollTop = useCallback(
+    (source: GitConflictSide, scrollTop: number) => {
+      scrollHandlesRef.current.forEach((handle, side) => {
+        if (side !== source) {
+          handle.setScrollTop(scrollTop);
+        }
+      });
+    },
+    [],
+  );
 
   const resultRegions = resultState.resultRegions;
   const activeRegion = resultRegions[activeRegionIndex] ?? null;
@@ -169,13 +194,21 @@ export function ConflictResolutionSurface({
         : [],
     [detail, resultRegions],
   );
+  const alignedSidePaneRegions = useMemo(
+    () =>
+      alignSidePaneRegions({
+        currentRegions: currentPaneRegions,
+        incomingRegions: incomingPaneRegions,
+      }),
+    [currentPaneRegions, incomingPaneRegions],
+  );
   const readOnlyPaneConfigs = detail
     ? [
         {
           key: GIT_CONFLICT_SIDE.Incoming,
           title: "Incoming",
           version: detail.incoming,
-          regions: incomingPaneRegions,
+          regions: alignedSidePaneRegions.incomingRegions,
           fileActionLabel: CONFLICT_FILE_ACTION_LABEL.AcceptIncomingFile,
           fileActionTitle: CONFLICT_FILE_ACTION_TITLE.AcceptIncomingFile,
           onAcceptRegion: acceptIncomingRegion,
@@ -188,7 +221,7 @@ export function ConflictResolutionSurface({
           key: GIT_CONFLICT_SIDE.Current,
           title: "Current",
           version: detail.current,
-          regions: currentPaneRegions,
+          regions: alignedSidePaneRegions.currentRegions,
           fileActionLabel: CONFLICT_FILE_ACTION_LABEL.AcceptCurrentFile,
           fileActionTitle: CONFLICT_FILE_ACTION_TITLE.AcceptCurrentFile,
           onAcceptRegion: acceptCurrentRegion,
@@ -278,6 +311,7 @@ export function ConflictResolutionSurface({
                     repoPath={repoPath}
                     filePath={filePath}
                     title={pane.title}
+                    side={pane.key}
                     version={pane.version}
                     language={editorLanguage}
                     regions={pane.regions}
@@ -292,8 +326,13 @@ export function ConflictResolutionSurface({
                     onAcceptCombination={pane.onAcceptCombination}
                     onAcceptFile={pane.onAcceptFile}
                     onIgnoreRegion={ignoreRegion}
-                    syncedScrollTop={conflictScrollTop}
-                    onScrollTopChange={setConflictScrollTop}
+                    syncedScrollTop={null}
+                    onScrollTopChange={(scrollTop) =>
+                      publishConflictScrollTop(pane.key, scrollTop)
+                    }
+                    onScrollPaneMount={(handle) =>
+                      registerConflictScrollHandle(pane.key, handle)
+                    }
                   />
                 ))}
               </div>
@@ -343,8 +382,13 @@ export function ConflictResolutionSurface({
                 }}
                 markResolvedBlockedReason={resultState.markResolvedBlockedReason}
                 actionInFlight={resultState.actionInFlight}
-                syncedScrollTop={conflictScrollTop}
-                onScrollTopChange={setConflictScrollTop}
+                syncedScrollTop={null}
+                onScrollTopChange={(scrollTop) =>
+                  publishConflictScrollTop(GIT_CONFLICT_SIDE.Result, scrollTop)
+                }
+                onScrollPaneMount={(handle) =>
+                  registerConflictScrollHandle(GIT_CONFLICT_SIDE.Result, handle)
+                }
               />
             </div>
           </div>

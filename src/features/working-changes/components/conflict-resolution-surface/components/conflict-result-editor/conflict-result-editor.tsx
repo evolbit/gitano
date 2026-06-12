@@ -5,18 +5,25 @@ import {
   IconGitMerge,
   IconRefresh,
 } from "@/shared/components/icons/icons";
+import { GIT_CONFLICT_SIDE } from "@/shared/types/git-conflicts";
 import {
   DEFAULT_MONACO_THEME,
   MONACO_EDITOR_FONT_FAMILY,
   MONACO_EDITOR_FONT_SIZE,
   MONACO_EDITOR_LINE_HEIGHT,
 } from "@/shared/lib/monaco";
+import {
+  applySyncedScrollTop,
+  shouldIgnoreSyncedScrollEvent,
+} from "../../utils/conflict-scroll-sync";
+import { getConflictPaneVisualIdentity } from "../../utils/conflict-visual-identity";
 import { ConflictMonacoEditor } from "../conflict-monaco-editor";
 import type { ConflictResultEditorProps } from "./types";
 
 type ConflictEditor = Monaco.editor.IStandaloneCodeEditor;
 type MonacoApi = typeof Monaco;
-type PaddingZoneIds = string[];
+type ResultViewZoneIds = string[];
+type AcceptedResultWidgets = Monaco.editor.IContentWidget[];
 type EditorSession = {
   editor: ConflictEditor;
   monaco: MonacoApi;
@@ -36,11 +43,17 @@ const RESULT_ACTION_TITLE = {
   Save: "Write the edited result content to disk.",
 } as const;
 
-const ACCEPTED_RESULT_WIDGET_ID = "gitano-conflict-result-accepted-widget";
 const ACCEPTED_RESULT_DECORATION_CLASS = "gitano-conflict-result-line-accepted";
+const ACCEPTED_RESULT_ACTION_ZONE_HEIGHT = 24;
+const ACCEPTED_RESULT_WIDGET_ID = "gitano-conflict-result-accepted-widget";
+const MIN_ACCEPTED_RESULT_ACTION_WIDGET_WIDTH = 240;
 
 function clampLineNumber(lineNumber: number, maxLine: number) {
   return Math.max(1, Math.min(lineNumber, maxLine));
+}
+
+function clampZoneAfterLineNumber(lineNumber: number, maxLine: number) {
+  return Math.max(0, Math.min(lineNumber, maxLine));
 }
 
 function createPaddingZoneNode() {
@@ -49,27 +62,41 @@ function createPaddingZoneNode() {
   return node;
 }
 
-function createAcceptedResultWidget({
+function createAcceptedResultActionZoneNode() {
+  const node = document.createElement("div");
+  node.className = "gitano-conflict-result-action-zone";
+  return node;
+}
+
+function createAcceptedResultActionWidget({
+  editor,
   label,
   lineNumber,
-  monaco,
   onRemove,
+  preference,
+  positionAffinity,
   regionId,
 }: {
+  editor: ConflictEditor;
   label: string;
   lineNumber: number;
-  monaco: MonacoApi;
   onRemove: () => void;
+  preference: Monaco.editor.ContentWidgetPositionPreference;
+  positionAffinity: Monaco.editor.PositionAffinity;
   regionId: string;
 }): Monaco.editor.IContentWidget {
   const node = document.createElement("div");
   node.className = "gitano-conflict-result-action-widget";
+  node.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
 
   const labelNode = document.createElement("span");
   labelNode.textContent = label;
 
   const separator = document.createElement("span");
-  separator.textContent = "|";
+  separator.textContent = " | ";
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -77,35 +104,116 @@ function createAcceptedResultWidget({
   removeButton.title = `Remove ${label} from the result.`;
   removeButton.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     onRemove();
   });
 
   node.append(labelNode, separator, removeButton);
 
   return {
+    allowEditorOverflow: false,
     getId: () => `${ACCEPTED_RESULT_WIDGET_ID}:${regionId}`,
     getDomNode: () => node,
     getPosition: () => ({
       position: { lineNumber, column: 1 },
-      preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+      preference: [preference],
+      positionAffinity,
     }),
+    beforeRender: () => {
+      const { contentWidth } = editor.getLayoutInfo();
+      const width = Math.max(
+        contentWidth,
+        node.scrollWidth,
+        MIN_ACCEPTED_RESULT_ACTION_WIDGET_WIDTH,
+      );
+
+      node.style.marginLeft = "0px";
+      node.style.width = `${width}px`;
+      node.style.height = `${ACCEPTED_RESULT_ACTION_ZONE_HEIGHT}px`;
+
+      return {
+        width,
+        height: ACCEPTED_RESULT_ACTION_ZONE_HEIGHT,
+      };
+    },
+    suppressMouseDown: true,
   };
 }
 
-function updatePaddingZones({
+function createAcceptedResultActionZoneMarginNode() {
+  const node = document.createElement("div");
+  node.className = "gitano-conflict-result-action-zone-margin";
+  return node;
+}
+
+function updateResultViewZones({
+  acceptedRegions,
   editor,
+  monaco,
+  onRemoveAcceptedRegionSide,
   regions,
+  widgets,
   zoneIds,
 }: {
+  acceptedRegions: ConflictResultEditorProps["acceptedRegions"];
   editor: ConflictEditor;
+  monaco: MonacoApi;
+  onRemoveAcceptedRegionSide: ConflictResultEditorProps["onRemoveAcceptedRegionSide"];
   regions: ConflictResultEditorProps["resultRegions"];
-  zoneIds: { current: PaddingZoneIds };
+  widgets: { current: AcceptedResultWidgets };
+  zoneIds: { current: ResultViewZoneIds };
 }) {
+  widgets.current.forEach((widget) => editor.removeContentWidget(widget));
+  widgets.current = [];
+  const nextWidgets: AcceptedResultWidgets = [];
+  const maxLine = editor.getModel()?.getLineCount() ?? 1;
+  const acceptedRegionsById = new Map(
+    acceptedRegions.map((acceptedRegion) => [
+      acceptedRegion.regionId,
+      acceptedRegion,
+    ]),
+  );
+
   editor.changeViewZones((accessor) => {
     zoneIds.current.forEach((id) => accessor.removeZone(id));
     zoneIds.current = [];
 
     regions.forEach((region) => {
+      const acceptedRegion = acceptedRegionsById.get(region.id);
+
+      if (acceptedRegion) {
+        const actionZoneAfterLineNumber = clampZoneAfterLineNumber(
+          region.resultStartLine - 1,
+          maxLine,
+        );
+
+        zoneIds.current.push(
+          accessor.addZone({
+            afterLineNumber: actionZoneAfterLineNumber,
+            domNode: createAcceptedResultActionZoneNode(),
+            heightInPx: ACCEPTED_RESULT_ACTION_ZONE_HEIGHT,
+            marginDomNode: createAcceptedResultActionZoneMarginNode(),
+          }),
+        );
+        nextWidgets.push(
+          createAcceptedResultActionWidget({
+            editor,
+            label: acceptedRegion.label,
+            lineNumber:
+              actionZoneAfterLineNumber === 0
+                ? 1
+                : clampLineNumber(actionZoneAfterLineNumber, maxLine),
+            onRemove: () => onRemoveAcceptedRegionSide(region.id),
+            preference:
+              actionZoneAfterLineNumber === 0
+                ? monaco.editor.ContentWidgetPositionPreference.ABOVE
+                : monaco.editor.ContentWidgetPositionPreference.BELOW,
+            positionAffinity: monaco.editor.PositionAffinity.LeftOfInjectedText,
+            regionId: region.id,
+          }),
+        );
+      }
+
       if (region.paddingLineCount <= 0) return;
 
       zoneIds.current.push(
@@ -117,6 +225,12 @@ function updatePaddingZones({
       );
     });
   });
+
+  nextWidgets.forEach((widget) => {
+    editor.addContentWidget(widget);
+    editor.layoutContentWidget(widget);
+  });
+  widgets.current = nextWidgets;
 }
 
 export function ConflictResultEditor({
@@ -136,31 +250,44 @@ export function ConflictResultEditor({
   actionInFlight,
   syncedScrollTop,
   onScrollTopChange,
+  onScrollPaneMount,
 }: ConflictResultEditorProps) {
   const saveDisabled = actionInFlight || !dirty;
   const markResolvedDisabled = actionInFlight || Boolean(markResolvedBlockedReason);
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
-  const paddingZoneIdsRef = useRef<PaddingZoneIds>([]);
+  const resultViewZoneIdsRef = useRef<ResultViewZoneIds>([]);
+  const acceptedResultWidgetsRef = useRef<AcceptedResultWidgets>([]);
   const acceptedDecorationIdsRef = useRef<string[]>([]);
   const scrollListenerRef = useRef<Monaco.IDisposable | null>(null);
-  const syncingScrollRef = useRef(false);
+  const pendingSyncedScrollTopRef = useRef<number | null>(null);
+  const onScrollPaneMountRef = useRef(onScrollPaneMount);
+  const onScrollTopChangeRef = useRef(onScrollTopChange);
+  const visualIdentity = getConflictPaneVisualIdentity(GIT_CONFLICT_SIDE.Result);
+
+  useEffect(() => {
+    onScrollPaneMountRef.current = onScrollPaneMount;
+  }, [onScrollPaneMount]);
+
+  useEffect(() => {
+    onScrollTopChangeRef.current = onScrollTopChange;
+  }, [onScrollTopChange]);
 
   const handleMount = useCallback(
     (editor: ConflictEditor, monaco: MonacoApi) => {
       scrollListenerRef.current?.dispose();
       setEditorSession({ editor, monaco });
-      updatePaddingZones({
-        editor,
-        regions: resultRegions,
-        zoneIds: paddingZoneIdsRef,
-      });
       scrollListenerRef.current = editor.onDidScrollChange((event) => {
-        if (!syncingScrollRef.current) {
-          onScrollTopChange(event.scrollTop);
+        if (
+          !shouldIgnoreSyncedScrollEvent(
+            pendingSyncedScrollTopRef,
+            event.scrollTop,
+          )
+        ) {
+          onScrollTopChangeRef.current(event.scrollTop);
         }
       });
     },
-    [onScrollTopChange, resultRegions],
+    [],
   );
 
   useEffect(() => {
@@ -169,9 +296,13 @@ export function ConflictResultEditor({
       const editor = editorSession?.editor;
 
       if (editor) {
+        acceptedResultWidgetsRef.current.forEach((widget) =>
+          editor.removeContentWidget(widget),
+        );
+        acceptedResultWidgetsRef.current = [];
         editor.changeViewZones((accessor) => {
-          paddingZoneIdsRef.current.forEach((id) => accessor.removeZone(id));
-          paddingZoneIdsRef.current = [];
+          resultViewZoneIdsRef.current.forEach((id) => accessor.removeZone(id));
+          resultViewZoneIdsRef.current = [];
         });
         acceptedDecorationIdsRef.current = editor.deltaDecorations(
           acceptedDecorationIdsRef.current,
@@ -184,12 +315,22 @@ export function ConflictResultEditor({
   useEffect(() => {
     if (!editorSession) return;
 
-    updatePaddingZones({
+    updateResultViewZones({
+      acceptedRegions,
       editor: editorSession.editor,
+      monaco: editorSession.monaco,
+      onRemoveAcceptedRegionSide,
       regions: resultRegions,
-      zoneIds: paddingZoneIdsRef,
+      widgets: acceptedResultWidgetsRef,
+      zoneIds: resultViewZoneIdsRef,
     });
-  }, [content, editorSession, resultRegions]);
+  }, [
+    acceptedRegions,
+    content,
+    editorSession,
+    onRemoveAcceptedRegionSide,
+    resultRegions,
+  ]);
 
   useEffect(() => {
     if (!editorSession) return;
@@ -234,64 +375,53 @@ export function ConflictResultEditor({
   }, [acceptedRegions, editorSession, resultRegions]);
 
   useEffect(() => {
-    if (!editorSession || acceptedRegions.length === 0) return;
-
-    const widgets = acceptedRegions.flatMap((acceptedRegion) => {
-      const acceptedResultRegion = resultRegions.find(
-        (region) => region.id === acceptedRegion.regionId,
-      );
-
-      if (!acceptedResultRegion) return [];
-
-      const { monaco } = editorSession;
-      const maxLine = editorSession.editor.getModel()?.getLineCount() ?? 1;
-
-      return [
-        createAcceptedResultWidget({
-          label: acceptedRegion.label,
-          lineNumber: clampLineNumber(
-            acceptedResultRegion.resultStartLine,
-            maxLine,
-          ),
-          monaco,
-          regionId: acceptedRegion.regionId,
-          onRemove: () =>
-            onRemoveAcceptedRegionSide(acceptedRegion.regionId),
-        }),
-      ];
-    });
-
-    widgets.forEach((widget) => editorSession.editor.addContentWidget(widget));
-
-    return () => {
-      widgets.forEach((widget) =>
-        editorSession.editor.removeContentWidget(widget),
-      );
-    };
-  }, [
-    acceptedRegions,
-    editorSession,
-    onRemoveAcceptedRegionSide,
-    resultRegions,
-  ]);
-
-  useEffect(() => {
     const editor = editorSession?.editor;
     if (!editor || syncedScrollTop === null) return;
-    if (Math.abs(editor.getScrollTop() - syncedScrollTop) < 1) return;
 
-    syncingScrollRef.current = true;
-    editor.setScrollTop(syncedScrollTop);
-    window.requestAnimationFrame(() => {
-      syncingScrollRef.current = false;
+    applySyncedScrollTop({
+      currentScrollTop: editor.getScrollTop(),
+      pendingSyncedScrollTopRef,
+      scrollTop: syncedScrollTop,
+      setScrollTop: (scrollTop) => editor.setScrollTop(scrollTop),
     });
   }, [editorSession, syncedScrollTop]);
 
+  useEffect(() => {
+    const editor = editorSession?.editor;
+    if (!editor || !onScrollPaneMountRef.current) return;
+
+    onScrollPaneMountRef.current({
+      setScrollTop: (scrollTop) => {
+        applySyncedScrollTop({
+          currentScrollTop: editor.getScrollTop(),
+          pendingSyncedScrollTopRef,
+          scrollTop,
+          setScrollTop: (nextScrollTop) => editor.setScrollTop(nextScrollTop),
+        });
+      },
+    });
+
+    return () => onScrollPaneMountRef.current?.(null);
+  }, [editorSession]);
+
   return (
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-t border-border bg-background">
-      <div className="flex min-h-12 min-w-0 items-center gap-3 overflow-x-auto border-b border-border bg-background-emphasis px-3">
+    <section
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden border-t border-border bg-background"
+      data-conflict-side={GIT_CONFLICT_SIDE.Result}
+      style={visualIdentity.style}
+    >
+      <div
+        className="gitano-conflict-pane-header flex min-h-12 min-w-0 items-center gap-3 overflow-x-auto border-b border-border bg-background-emphasis px-3"
+        data-conflict-pane-header="true"
+      >
+        <span
+          className="gitano-conflict-pane-accent h-3 w-1 shrink-0 rounded-sm"
+          aria-hidden="true"
+        />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold">Result</div>
+          <div className="gitano-conflict-pane-title text-xs font-semibold">
+            Result
+          </div>
           <div className="truncate text-[11px] text-zinc-500">{filePath}</div>
         </div>
         <button

@@ -1,4 +1,5 @@
 import type { ConflictResolutionRegion } from "../../utils/conflict-result-projection";
+import type { ConflictScrollHandle } from "../../utils/conflict-scroll-sync";
 
 export type AcceptedResultRegion = {
   label: string;
@@ -22,4 +23,5 @@ export type ConflictResultEditorProps = {
   actionInFlight: boolean;
   syncedScrollTop: number | null;
   onScrollTopChange: (scrollTop: number) => void;
+  onScrollPaneMount?: (handle: ConflictScrollHandle | null) => void;
 };

@@ -1,17 +1,19 @@
 import type {
-  GitConflictRegion,
   GitConflictSide,
   GitConflictVersion,
 } from "@/shared/types/git-conflicts";
+import type { ConflictScrollHandle } from "../../utils/conflict-scroll-sync";
+import type { ConflictSidePaneRegion } from "../../utils/conflict-side-region-projection";
 
 export type ConflictReadOnlyPaneProps = {
   repoPath: string;
   filePath: string;
   title: string;
+  side: GitConflictSide;
   version: GitConflictVersion | null;
   language: string;
-  regions: GitConflictRegion[];
-  activeRegion: GitConflictRegion | null;
+  regions: ConflictSidePaneRegion[];
+  activeRegion: ConflictSidePaneRegion | null;
   acceptedRegionSidesById: Record<string, GitConflictSide | null>;
   fileActionLabel: string;
   fileActionTitle: string;
@@ -22,6 +24,7 @@ export type ConflictReadOnlyPaneProps = {
   onIgnoreRegion: (regionId: string) => void;
   syncedScrollTop: number | null;
   onScrollTopChange: (scrollTop: number) => void;
+  onScrollPaneMount?: (handle: ConflictScrollHandle | null) => void;
 };
 
 export type ConflictTextPaneProps = {
@@ -29,8 +32,8 @@ export type ConflictTextPaneProps = {
   side: GitConflictSide;
   text: string;
   language: string;
-  regions: GitConflictRegion[];
-  activeRegion: GitConflictRegion | null;
+  regions: ConflictSidePaneRegion[];
+  activeRegion: ConflictSidePaneRegion | null;
   acceptedRegionSidesById: Record<string, GitConflictSide | null>;
   actionLabel: string;
   combinationActionLabel: string;
@@ -43,6 +46,7 @@ export type ConflictTextPaneProps = {
   onIgnoreRegion: (regionId: string) => void;
   syncedScrollTop: number | null;
   onScrollTopChange: (scrollTop: number) => void;
+  onScrollPaneMount?: (handle: ConflictScrollHandle | null) => void;
 };
 
 export type ConflictRangePaneProps = {
@@ -52,8 +56,8 @@ export type ConflictRangePaneProps = {
   side: GitConflictSide;
   totalLineCount: number;
   signature: string;
-  regions: GitConflictRegion[];
-  activeRegion: GitConflictRegion | null;
+  regions: ConflictSidePaneRegion[];
+  activeRegion: ConflictSidePaneRegion | null;
   acceptedRegionSidesById: Record<string, GitConflictSide | null>;
   actionLabel: string;
   combinationActionLabel: string;
@@ -66,4 +70,5 @@ export type ConflictRangePaneProps = {
   onIgnoreRegion: (regionId: string) => void;
   syncedScrollTop: number | null;
   onScrollTopChange: (scrollTop: number) => void;
+  onScrollPaneMount?: (handle: ConflictScrollHandle | null) => void;
 };

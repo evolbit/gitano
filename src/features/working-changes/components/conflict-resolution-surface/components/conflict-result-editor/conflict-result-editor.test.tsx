@@ -1,18 +1,36 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MONACO_THEME } from "@/shared/lib/monaco";
+import { GIT_CONFLICT_SIDE } from "@/shared/types/git-conflicts";
 import { ConflictResultEditor } from "./conflict-result-editor";
 
 const editorMock = vi.hoisted(() => {
   let scrollListener: ((event: { scrollTop: number }) => void) | null = null;
-  const addedZones: Array<{ afterLineNumber: number; heightInLines: number }> =
-    [];
+  const addedZones: Array<{
+    afterLineNumber: number;
+    className: string;
+    heightInLines: number | null;
+    heightInPx: number | null;
+    marginClassName: string;
+    suppressMouseDown: boolean | null;
+    textContent: string;
+  }> = [];
+  const zoneNodes: HTMLElement[] = [];
   const widgets: HTMLElement[] = [];
+  const widgetPositions: Array<{
+    column: number;
+    lineNumber: number;
+    positionAffinity: number | null;
+    preference: number[];
+  }> = [];
+  const laidOutWidgets: HTMLElement[] = [];
   const decorations: unknown[] = [];
 
   return {
     addedZones,
     decorations,
+    layoutContentLeft: 48,
+    layoutContentWidth: 720,
     emitScroll(scrollTop: number) {
       scrollListener?.({ scrollTop });
     },
@@ -20,8 +38,14 @@ const editorMock = vi.hoisted(() => {
     reset() {
       addedZones.length = 0;
       decorations.length = 0;
+      laidOutWidgets.length = 0;
+      zoneNodes.forEach((zone) => zone.remove());
+      zoneNodes.length = 0;
+      this.layoutContentLeft = 48;
+      this.layoutContentWidth = 720;
       widgets.forEach((widget) => widget.remove());
       widgets.length = 0;
+      widgetPositions.length = 0;
       scrollListener = null;
       this.getScrollTop.mockReturnValue(0);
       this.setScrollTop.mockClear();
@@ -33,7 +57,10 @@ const editorMock = vi.hoisted(() => {
           addZone: (zone: {
             afterLineNumber: number;
             domNode: HTMLElement;
-            heightInLines: number;
+            heightInLines?: number;
+            heightInPx?: number;
+            marginDomNode?: HTMLElement | null;
+            suppressMouseDown?: boolean;
           }) => string;
           removeZone: (id: string) => void;
         }) => void,
@@ -42,15 +69,40 @@ const editorMock = vi.hoisted(() => {
           addZone: (zone) => {
             addedZones.push({
               afterLineNumber: zone.afterLineNumber,
-              heightInLines: zone.heightInLines,
+              className: zone.domNode.className,
+              heightInLines: zone.heightInLines ?? null,
+              heightInPx: zone.heightInPx ?? null,
+              marginClassName: zone.marginDomNode?.className ?? "",
+              suppressMouseDown: zone.suppressMouseDown ?? null,
+              textContent: zone.domNode.textContent ?? "",
             });
+            zoneNodes.push(zone.domNode);
+            document.body.appendChild(zone.domNode);
             return `zone-${addedZones.length}`;
           },
           removeZone: vi.fn(),
         });
       },
-      addContentWidget: (widget: { getDomNode: () => HTMLElement }) => {
+      addContentWidget: (widget: {
+        getDomNode: () => HTMLElement;
+        getPosition: () => {
+          position: { column: number; lineNumber: number };
+          positionAffinity?: number;
+          preference: number[];
+        } | null;
+      }) => {
         const node = widget.getDomNode();
+        const position = widget.getPosition();
+
+        if (position) {
+          widgetPositions.push({
+            column: position.position.column,
+            lineNumber: position.position.lineNumber,
+            positionAffinity: position.positionAffinity ?? null,
+            preference: position.preference,
+          });
+        }
+
         widgets.push(node);
         document.body.appendChild(node);
       },
@@ -62,7 +114,18 @@ const editorMock = vi.hoisted(() => {
       getModel: () => ({
         getLineCount: () => 20,
       }),
+      getLayoutInfo: () => ({
+        contentLeft: editorMock.layoutContentLeft,
+        contentWidth: editorMock.layoutContentWidth,
+      }),
       getScrollTop: () => editorMock.getScrollTop(),
+      layoutContentWidget: (widget: {
+        beforeRender?: () => { height: number; width: number } | null;
+        getDomNode: () => HTMLElement;
+      }) => {
+        widget.beforeRender?.();
+        laidOutWidgets.push(widget.getDomNode());
+      },
       onDidScrollChange: (
         listener: (event: { scrollTop: number }) => void,
       ) => {
@@ -77,6 +140,8 @@ const editorMock = vi.hoisted(() => {
         widget.getDomNode().remove();
       },
     },
+    widgetPositions,
+    laidOutWidgets,
   };
 });
 
@@ -92,8 +157,10 @@ const monacoMock = vi.hoisted(() => ({
   editor: {
     ContentWidgetPositionPreference: {
       ABOVE: 1,
+      BELOW: 2,
     },
     defineTheme: vi.fn(),
+    PositionAffinity: { LeftOfInjectedText: 3 },
   },
 }));
 
@@ -183,6 +250,10 @@ describe("ConflictResultEditor", () => {
     expect(
       screen.queryByRole("button", { name: "Accept Current File" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Result").closest("section")).toHaveAttribute(
+      "data-conflict-side",
+      GIT_CONFLICT_SIDE.Result,
+    );
     expect(editor).toHaveAttribute("data-theme", DEFAULT_MONACO_THEME);
   });
 
@@ -233,7 +304,12 @@ describe("ConflictResultEditor", () => {
 
     expect(editorMock.addedZones).toContainEqual({
       afterLineNumber: 2,
+      className: "gitano-conflict-result-padding-zone",
       heightInLines: 1,
+      heightInPx: null,
+      marginClassName: "",
+      suppressMouseDown: null,
+      textContent: "",
     });
   });
 
@@ -256,10 +332,70 @@ describe("ConflictResultEditor", () => {
     });
 
     await screen.findByLabelText("Result editor");
+    expect(screen.getByRole("button", { name: "Remove Current" }).parentElement)
+      .toHaveTextContent("Current | Remove Current");
     fireEvent.click(screen.getByRole("button", { name: "Remove Current" }));
 
     expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalledWith("conflict-1");
     expect(editorMock.decorations).toHaveLength(1);
+    expect(editorMock.addedZones).toContainEqual({
+      afterLineNumber: 1,
+      className: "gitano-conflict-result-action-zone",
+      heightInLines: null,
+      heightInPx: 24,
+      marginClassName: "gitano-conflict-result-action-zone-margin",
+      suppressMouseDown: null,
+      textContent: "",
+    });
+    expect(editorMock.widgetPositions).toContainEqual({
+      column: 1,
+      lineNumber: 1,
+      positionAffinity: 3,
+      preference: [2],
+    });
+    expect(editorMock.laidOutWidgets[0]).toHaveStyle({
+      height: "24px",
+      marginLeft: "0px",
+      width: "720px",
+    });
+  });
+
+  it("keeps result action widgets readable during Monaco's initial zero-width layout", async () => {
+    editorMock.layoutContentWidth = 0;
+
+    renderEditor({
+      acceptedRegions: [{ regionId: "conflict-1", label: "Incoming" }],
+      resultRegions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 2,
+          resultSeparatorLine: null,
+          resultEndLine: 4,
+          baseText: "base",
+          currentText: "current",
+          incomingText: "incoming",
+          paddingLineCount: 0,
+          unresolvedText: "base",
+        },
+      ],
+    });
+
+    await screen.findByRole("button", { name: "Remove Incoming" });
+
+    expect(editorMock.laidOutWidgets[0]).toHaveStyle({
+      height: "24px",
+      marginLeft: "0px",
+      width: "240px",
+    });
+    expect(editorMock.addedZones).toContainEqual({
+      afterLineNumber: 1,
+      className: "gitano-conflict-result-action-zone",
+      heightInLines: null,
+      heightInPx: 24,
+      marginClassName: "gitano-conflict-result-action-zone-margin",
+      suppressMouseDown: null,
+      textContent: "",
+    });
   });
 
   it("shows an inline remove action for an accepted combination", async () => {
@@ -284,6 +420,21 @@ describe("ConflictResultEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Combination" }));
 
     expect(props.onRemoveAcceptedRegionSide).toHaveBeenCalledWith("conflict-1");
+    expect(editorMock.addedZones).toContainEqual({
+      afterLineNumber: 0,
+      className: "gitano-conflict-result-action-zone",
+      heightInLines: null,
+      heightInPx: 24,
+      marginClassName: "gitano-conflict-result-action-zone-margin",
+      suppressMouseDown: null,
+      textContent: "",
+    });
+    expect(editorMock.widgetPositions).toContainEqual({
+      column: 1,
+      lineNumber: 1,
+      positionAffinity: 3,
+      preference: [1],
+    });
   });
 
   it("shows inline remove actions for multiple accepted regions", async () => {

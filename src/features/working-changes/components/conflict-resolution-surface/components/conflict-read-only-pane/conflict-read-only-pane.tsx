@@ -3,6 +3,7 @@ import {
   GIT_CONFLICT_SIDE,
   GIT_CONFLICT_SIZE_CLASS,
 } from "@/shared/types/git-conflicts";
+import { getConflictPaneVisualIdentity } from "../../utils/conflict-visual-identity";
 import { ConflictPaneHeader } from "./conflict-pane-header";
 import { FullTextPane } from "./full-text-pane";
 import { RangeLoadedPane } from "./range-loaded-pane";
@@ -14,6 +15,7 @@ type ConflictPaneFallbackProps = Pick<
   | "fileActionLabel"
   | "fileActionTitle"
   | "onAcceptFile"
+  | "side"
   | "title"
 > & {
   message: string;
@@ -25,14 +27,21 @@ function conflictSideLabel(side: string) {
 
 function ConflictPaneFallback({
   title,
+  side,
   fileActionLabel,
   fileActionTitle,
   fileActionDisabled,
   onAcceptFile,
   message,
 }: ConflictPaneFallbackProps) {
+  const visualIdentity = getConflictPaneVisualIdentity(side);
+
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0">
+    <section
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0"
+      data-conflict-side={side}
+      style={visualIdentity.style}
+    >
       <ConflictPaneHeader
         title={title}
         fileActionLabel={fileActionLabel}
@@ -51,6 +60,7 @@ export function ConflictReadOnlyPane({
   repoPath,
   filePath,
   title,
+  side,
   version,
   language,
   regions,
@@ -65,11 +75,13 @@ export function ConflictReadOnlyPane({
   onIgnoreRegion,
   syncedScrollTop,
   onScrollTopChange,
+  onScrollPaneMount,
 }: ConflictReadOnlyPaneProps) {
   if (!version || version.contentKind === GIT_CONFLICT_CONTENT_KIND.Missing) {
     return (
       <ConflictPaneFallback
         title={title}
+        side={side}
         fileActionLabel={fileActionLabel}
         fileActionTitle={fileActionTitle}
         fileActionDisabled={fileActionDisabled}
@@ -86,6 +98,7 @@ export function ConflictReadOnlyPane({
     return (
       <ConflictPaneFallback
         title={title}
+        side={side}
         fileActionLabel={fileActionLabel}
         fileActionTitle={fileActionTitle}
         fileActionDisabled={fileActionDisabled}
@@ -95,7 +108,7 @@ export function ConflictReadOnlyPane({
     );
   }
 
-  const sideLabel = conflictSideLabel(version.side);
+  const sideLabel = conflictSideLabel(side);
   const actionLabel = `Accept ${sideLabel}`;
   const combinationActionLabel = `Accept Combination (${sideLabel} First)`;
 
@@ -105,7 +118,7 @@ export function ConflictReadOnlyPane({
         repoPath={repoPath}
         filePath={filePath}
         title={title}
-        side={version.side}
+        side={side}
         totalLineCount={version.size.lineCount}
         signature={`${version.side}:${version.size.byteSize}:${version.size.lineCount}`}
         regions={regions}
@@ -122,6 +135,7 @@ export function ConflictReadOnlyPane({
         onIgnoreRegion={onIgnoreRegion}
         syncedScrollTop={syncedScrollTop}
         onScrollTopChange={onScrollTopChange}
+        onScrollPaneMount={onScrollPaneMount}
       />
     );
   }
@@ -129,7 +143,7 @@ export function ConflictReadOnlyPane({
   return (
     <FullTextPane
       title={title}
-      side={version.side}
+      side={side}
       text={version.text}
       language={language}
       regions={regions}
@@ -146,6 +160,7 @@ export function ConflictReadOnlyPane({
       onIgnoreRegion={onIgnoreRegion}
       syncedScrollTop={syncedScrollTop}
       onScrollTopChange={onScrollTopChange}
+      onScrollPaneMount={onScrollPaneMount}
     />
   );
 }

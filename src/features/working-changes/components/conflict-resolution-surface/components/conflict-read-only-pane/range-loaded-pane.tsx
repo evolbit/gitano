@@ -3,7 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { getMergeConflictContentRange } from "@/shared/api/git/conflicts";
 import type { GitConflictRegion } from "@/shared/types/git-conflicts";
+import {
+  applySyncedScrollTop,
+  shouldIgnoreSyncedScrollEvent,
+} from "../../utils/conflict-scroll-sync";
 import { isLineInConflictRegion } from "../../utils/conflict-text";
+import { getConflictPaneVisualIdentity } from "../../utils/conflict-visual-identity";
 import { ConflictPaneHeader } from "./conflict-pane-header";
 import {
   CONFLICT_LINE_HIGHLIGHT,
@@ -17,7 +22,7 @@ const RANGE_OVERSCAN = 40;
 const INITIAL_RANGE_LINES = 80;
 
 function actionButtonClass() {
-  return "text-[11px] font-medium text-zinc-300 hover:text-zinc-100";
+  return "text-[11px] font-medium text-zinc-200 hover:text-zinc-100";
 }
 
 type RangeQueryKeyOptions = Pick<
@@ -88,10 +93,14 @@ export function RangeLoadedPane({
   onIgnoreRegion,
   syncedScrollTop,
   onScrollTopChange,
+  onScrollPaneMount,
 }: ConflictRangePaneProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const syncingScrollRef = useRef(false);
+  const pendingSyncedScrollTopRef = useRef<number | null>(null);
   const scrolledRegionKeyRef = useRef<string | null>(null);
+  const onScrollPaneMountRef = useRef(onScrollPaneMount);
+  const onScrollTopChangeRef = useRef(onScrollTopChange);
+  const visualIdentity = getConflictPaneVisualIdentity(side);
   const virtualizer = useVirtualizer({
     count: totalLineCount,
     getScrollElement: () => scrollRef.current,
@@ -113,6 +122,14 @@ export function RangeLoadedPane({
         );
 
   useEffect(() => {
+    onScrollPaneMountRef.current = onScrollPaneMount;
+  }, [onScrollPaneMount]);
+
+  useEffect(() => {
+    onScrollTopChangeRef.current = onScrollTopChange;
+  }, [onScrollTopChange]);
+
+  useEffect(() => {
     if (!activeRegion) {
       scrolledRegionKeyRef.current = null;
       return;
@@ -130,14 +147,41 @@ export function RangeLoadedPane({
 
   useEffect(() => {
     if (!scrollRef.current || syncedScrollTop === null) return;
-    if (Math.abs(scrollRef.current.scrollTop - syncedScrollTop) < 1) return;
 
-    syncingScrollRef.current = true;
-    scrollRef.current.scrollTop = syncedScrollTop;
-    window.requestAnimationFrame(() => {
-      syncingScrollRef.current = false;
+    applySyncedScrollTop({
+      currentScrollTop: scrollRef.current.scrollTop,
+      pendingSyncedScrollTopRef,
+      scrollTop: syncedScrollTop,
+      setScrollTop: (scrollTop) => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollTop;
+        }
+      },
     });
   }, [syncedScrollTop]);
+
+  useEffect(() => {
+    if (!onScrollPaneMountRef.current) return;
+
+    onScrollPaneMountRef.current({
+      setScrollTop: (scrollTop) => {
+        if (!scrollRef.current) return;
+
+        applySyncedScrollTop({
+          currentScrollTop: scrollRef.current.scrollTop,
+          pendingSyncedScrollTopRef,
+          scrollTop,
+          setScrollTop: (nextScrollTop) => {
+            if (scrollRef.current) {
+              scrollRef.current.scrollTop = nextScrollTop;
+            }
+          },
+        });
+      },
+    });
+
+    return () => onScrollPaneMountRef.current?.(null);
+  }, []);
 
   const firstLine = (renderedRows[0]?.index ?? 0) + 1;
   const lastRenderedRow = renderedRows[renderedRows.length - 1];
@@ -180,7 +224,11 @@ export function RangeLoadedPane({
     acceptedRegionSidesById[actionRegion?.id ?? ""] === side;
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0">
+    <section
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-r border-border last:border-r-0"
+      data-conflict-side={side}
+      style={visualIdentity.style}
+    >
       <ConflictPaneHeader
         title={title}
         fileActionLabel={fileActionLabel}
@@ -189,7 +237,10 @@ export function RangeLoadedPane({
         onAcceptFile={onAcceptFile}
       />
       {actionRegion && !hideActionRegion ? (
-        <div className="flex min-h-8 items-center gap-4 overflow-x-auto whitespace-nowrap bg-background-emphasis px-3 text-[11px] text-zinc-500">
+        <div
+          className="gitano-conflict-range-action-strip flex min-h-8 items-center gap-4 overflow-x-auto whitespace-nowrap px-3 text-[11px] text-zinc-400"
+          data-conflict-range-action-strip="true"
+        >
           <button
             type="button"
             className={actionButtonClass()}
@@ -219,8 +270,13 @@ export function RangeLoadedPane({
         ref={scrollRef}
         className="min-h-0 min-w-0 flex-1 overflow-auto"
         onScroll={(event) => {
-          if (!syncingScrollRef.current) {
-            onScrollTopChange(event.currentTarget.scrollTop);
+          if (
+            !shouldIgnoreSyncedScrollEvent(
+              pendingSyncedScrollTopRef,
+              event.currentTarget.scrollTop,
+            )
+          ) {
+            onScrollTopChangeRef.current(event.currentTarget.scrollTop);
           }
         }}
       >
