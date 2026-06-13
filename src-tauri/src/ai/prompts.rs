@@ -9,8 +9,8 @@ pub use builders::{
 };
 pub use parser::parse_structured_result;
 
-pub const PROMPT_VERSION: &str = "local-ai-v4";
-pub const EXTERNAL_AGENT_PROMPT_VERSION: &str = "external-acp-v2";
+pub const PROMPT_VERSION: &str = "local-ai-v5";
+pub const EXTERNAL_AGENT_PROMPT_VERSION: &str = "external-acp-v3";
 
 #[allow(dead_code)]
 pub fn default_prompt_instruction(action_kind: LocalAiActionKind) -> &'static str {

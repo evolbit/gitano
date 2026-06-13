@@ -32,7 +32,6 @@ import { useSettingsOperations } from "../../hooks/use-settings-operations";
 import {
   ACTIONS,
   AI_PANES,
-  DEFAULT_ACTION_PROMPTS,
   INTEGRATION_PANES,
   PANE_TITLES,
   WARM_MEMORY_HIGH_SHARE,
@@ -477,7 +476,8 @@ export function SettingsWindow({ open, onClose, repoPath }: SettingsWindowProps)
         ...current,
         [actionKind]:
           nextPreferences.actionPromptOverrides?.[actionKind] ??
-          DEFAULT_ACTION_PROMPTS[actionKind],
+          nextPreferences.defaultActionPrompts?.[actionKind] ??
+          "",
       }));
     } catch (preferenceError) {
       showSettingsError("Prompt preference failed", preferenceError);

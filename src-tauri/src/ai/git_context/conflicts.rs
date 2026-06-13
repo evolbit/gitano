@@ -1,6 +1,4 @@
-use super::super::types::{
-    LocalAiActionKind, LocalAiConflictCandidateInput, LocalAiConflictScope,
-};
+use super::super::types::{LocalAiActionKind, LocalAiConflictCandidateInput, LocalAiConflictScope};
 use super::{digest_parts, empty_metadata, run_git, LocalAiGitContext};
 use crate::git::conflicts::get_merge_conflict_file;
 use crate::git::conflicts::types::{
@@ -198,12 +196,13 @@ fn file_candidate_context(
     let inspection = external_read_only_instructions(repo_path, &detail.path, external);
 
     Ok(format!(
-        "Action: Generate one reviewable full-file merge conflict fix candidate\nRepository: {}\nTarget file: {}\nTarget scope: file\nInput conflict signature: {}\nInput result signature: {}\nConflict kinds: {}\n\n{}\n\n{}\n\n{}\n\n{}\n\nResult worktree content:\n{}\n\nRequirements:\n- Return the full resolved result file content.\n- Do not leave conflict marker lines unless they belong in the final resolved file.\n- Do not modify files or mark the conflict resolved.",
+        "Action: Generate one reviewable full-file merge conflict fix candidate\nRepository: {}\nTarget file: {}\nTarget scope: file\nInput conflict signature: {}\nInput result signature: {}\nConflict kinds: {}\n\nConflict regions:\n{}\n\n{}\n\n{}\n\n{}\n\n{}\n\nResult worktree content:\n{}\n\nRequirements:\n- Return the full resolved result file content.\n- Keep summary to one concise sentence for the result status message.\n- Put the complete explanation in details, including the meaningful per-region reasoning.\n- Include one decision for each conflict region id listed above.\n- Use selectedChoice current when the resolved region takes the current side, incoming when it takes the incoming side, combination when it intentionally keeps compatible parts from both sides, and custom when it rewrites or synthesizes a resolution.\n- Do not leave conflict marker lines unless they belong in the final resolved file.\n- Do not modify files or mark the conflict resolved.",
         repo_path,
         detail.path,
         detail.signatures.index_signature,
         detail.signatures.result_signature,
         conflict_kind_list(detail),
+        conflict_region_list(detail),
         inspection,
         version_section("Base", detail.base.as_ref(), FILE_SIDE_TEXT_LIMIT, metadata),
         version_section("Current", detail.current.as_ref(), FILE_SIDE_TEXT_LIMIT, metadata),
@@ -215,6 +214,30 @@ fn file_candidate_context(
             metadata,
         ),
     ))
+}
+
+fn conflict_region_list(detail: &GitConflictFileDetail) -> String {
+    if detail.regions.is_empty() {
+        return "none".to_string();
+    }
+
+    detail
+        .regions
+        .iter()
+        .map(|region| {
+            format!(
+                "- {}: result lines {}-{}{}",
+                region.id,
+                region.result_start_line,
+                region.result_end_line,
+                region
+                    .result_separator_line
+                    .map(|line| format!(", separator line {line}"))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn external_read_only_instructions(repo_path: &str, file_path: &str, external: bool) -> String {
@@ -244,7 +267,10 @@ fn version_section(
         return format!("{label} version: unavailable");
     };
 
-    format!("{label} version:\n{}", bounded_text(label, text, limit, metadata))
+    format!(
+        "{label} version:\n{}",
+        bounded_text(label, text, limit, metadata)
+    )
 }
 
 fn bounded_text(
@@ -326,7 +352,7 @@ fn conflicted_file_paths(files: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::git::conflicts::types::{
-        GitConflictLineEnding, GitConflictSignatures, GitConflictSide, GitConflictSize,
+        GitConflictLineEnding, GitConflictSide, GitConflictSignatures, GitConflictSize,
     };
     use crate::git::test_support::{commit_file, init_repo, run_git};
     use std::path::Path;
@@ -378,7 +404,9 @@ mod tests {
             .expect("candidate input should be captured");
 
         assert!(context.prompt_context.contains("Target scope: region"));
-        assert!(context.prompt_context.contains("Target region id: conflict-1"));
+        assert!(context
+            .prompt_context
+            .contains("Target region id: conflict-1"));
         assert!(context.prompt_context.contains("Input conflict signature:"));
         assert_eq!(input.scope.file_path(), "target.txt");
         assert!(input.signatures.index_signature.starts_with("sha256:"));
@@ -397,6 +425,13 @@ mod tests {
 
         assert!(context.prompt_context.contains("Do not modify files."));
         assert!(context.prompt_context.contains("Target scope: file"));
+        assert!(context.prompt_context.contains("Conflict regions:"));
+        assert!(context
+            .prompt_context
+            .contains("- conflict-1: result lines"));
+        assert!(context
+            .prompt_context
+            .contains("Include one decision for each conflict region id"));
         assert!(context.conflict_candidate_input.is_some());
     }
 

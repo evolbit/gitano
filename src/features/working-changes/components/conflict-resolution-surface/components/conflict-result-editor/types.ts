@@ -13,6 +13,9 @@ export type ConflictResultEditorProps = {
   resultRegions: ConflictResolutionRegion[];
   dirty: boolean;
   unsupportedReason: string | null;
+  aiResolutionSummary: string | null;
+  aiResolutionDetails: string | null;
+  aiResolutionStatus: "info" | "error" | null;
   acceptedRegions: AcceptedResultRegion[];
   onChange: (content: string) => void;
   onSave: () => void;

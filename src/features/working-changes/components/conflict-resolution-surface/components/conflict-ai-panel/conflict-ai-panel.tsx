@@ -1,8 +1,6 @@
 import {
-  IconCheck,
   IconRefresh,
   IconSparkles,
-  IconX,
 } from "@/shared/components/icons/icons";
 import type { ConflictAiPanelProps } from "./types";
 
@@ -15,20 +13,11 @@ function aiButtonClass(disabled = false) {
 }
 
 export function ConflictAiPanel({
-  candidate,
-  candidateSummary,
   loading,
-  error,
-  canRunRegion,
   canRunFile,
-  onRunRegion,
   onRunFile,
-  onRefreshRegion,
   onRefreshFile,
-  onApply,
-  onClear,
 }: ConflictAiPanelProps) {
-  const regionDisabled = loading || !canRunRegion;
   const fileDisabled = loading || !canRunFile;
 
   return (
@@ -39,61 +28,30 @@ export function ConflictAiPanel({
             <IconSparkles size={14} />
             AI Fix
           </div>
-          {candidateSummary ? (
-            <div className="mt-0.5 truncate text-[11px] text-zinc-400">
-              {candidateSummary}
-            </div>
-          ) : null}
         </div>
-
-        {candidate ? (
-          <>
-            <button
-              type="button"
-              className={aiButtonClass(loading)}
-              disabled={loading}
-              onClick={onApply}
-            >
-              <IconCheck size={14} />
-              Apply
-            </button>
-            <button
-              type="button"
-              className={aiButtonClass(loading)}
-              disabled={loading}
-              onClick={onClear}
-              aria-label="Dismiss AI candidate"
-              title="Dismiss AI candidate"
-            >
-              <IconX size={14} />
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={aiButtonClass(regionDisabled)}
-              disabled={regionDisabled}
-              onClick={onRunRegion}
-            >
-              Region
-            </button>
-            <button
-              type="button"
-              className={aiButtonClass(fileDisabled)}
-              disabled={fileDisabled}
-              onClick={onRunFile}
-            >
-              File
-            </button>
-          </>
-        )}
 
         <button
           type="button"
-          className={aiButtonClass(loading || (!canRunRegion && !canRunFile))}
-          disabled={loading || (!canRunRegion && !canRunFile)}
-          onClick={canRunRegion ? onRefreshRegion : onRefreshFile}
+          className={aiButtonClass(fileDisabled)}
+          disabled={fileDisabled}
+          onClick={onRunFile}
+        >
+          {loading ? (
+            <span
+              aria-hidden="true"
+              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current"
+            />
+          ) : (
+            <IconSparkles size={14} />
+          )}
+          {loading ? "Resolving" : "Resolve with AI"}
+        </button>
+
+        <button
+          type="button"
+          className={aiButtonClass(fileDisabled)}
+          disabled={fileDisabled}
+          onClick={onRefreshFile}
           aria-label="Rerun AI fix"
           title="Rerun AI fix"
         >
@@ -101,14 +59,6 @@ export function ConflictAiPanel({
         </button>
       </div>
 
-      {loading ? (
-        <div className="mt-2 text-xs text-zinc-400">Generating AI fix</div>
-      ) : null}
-      {error ? (
-        <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-100">
-          {error}
-        </div>
-      ) : null}
     </section>
   );
 }

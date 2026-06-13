@@ -13,7 +13,7 @@ import type {
   LocalAiRuntimeSetupStatus,
 } from "@/shared/api/local-ai";
 import { externalAiAgentStatusLabel } from "@/shared/utils/external-ai-agent-status";
-import { ACTIONS, DEFAULT_ACTION_PROMPTS } from "./config";
+import { ACTIONS } from "./config";
 
 export function formatContext(tokens: number) {
   return tokens >= 1024 ? `${Math.round(tokens / 1024)}K` : `${tokens}`;
@@ -338,7 +338,8 @@ export function promptDraftsFromPreferences(
     ACTIONS.map((action) => [
       action.kind,
       preferences?.actionPromptOverrides?.[action.kind] ??
-        DEFAULT_ACTION_PROMPTS[action.kind],
+        preferences?.defaultActionPrompts?.[action.kind] ??
+        "",
     ]),
   );
 }

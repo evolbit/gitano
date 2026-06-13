@@ -1,4 +1,11 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MONACO_THEME } from "@/shared/lib/monaco";
 import { GIT_CONFLICT_SIDE } from "@/shared/types/git-conflicts";
@@ -210,6 +217,9 @@ function renderEditor(overrides = {}) {
     resultRegions: [],
     dirty: true,
     unsupportedReason: null,
+    aiResolutionSummary: null,
+    aiResolutionDetails: null,
+    aiResolutionStatus: null,
     acceptedRegions: [],
     onChange: vi.fn(),
     onSave: vi.fn(),
@@ -491,5 +501,98 @@ describe("ConflictResultEditor", () => {
       screen.getByText("Open this conflict in an external editor."),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Result editor")).not.toBeInTheDocument();
+  });
+
+  it("shows the AI resolution summary with details in a modal", () => {
+    const details =
+      "inspected the merge context. conflict-1: incoming - keeps the expected behavior. conflict-2: combination - keeps compatible validation changes.";
+
+    renderEditor({
+      aiResolutionSummary: "Resolved pricing.ts by keeping conservative pricing.",
+      aiResolutionDetails: details,
+      aiResolutionStatus: "info",
+    });
+
+    expect(
+      screen.getByText("Resolved pricing.ts by keeping conservative pricing."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("conflict-1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "AI resolution details" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View details" }));
+
+    const dialog = screen.getByRole("dialog", {
+      name: "AI resolution details",
+    });
+    expect(
+      within(dialog).getByText("Inspected the merge context."),
+    ).toBeInTheDocument();
+    const firstConflictRow = within(dialog).getByText("conflict-1").closest("div");
+    const secondConflictRow = within(dialog).getByText("conflict-2").closest("div");
+    expect(firstConflictRow).not.toBe(secondConflictRow);
+    expect(firstConflictRow).toHaveClass("items-start");
+    expect(firstConflictRow?.parentElement?.parentElement).toHaveClass(
+      "overflow-y-auto",
+    );
+    expect(firstConflictRow).toHaveTextContent(
+      "Incoming - keeps the expected behavior.",
+    );
+    expect(secondConflictRow).toHaveTextContent(
+      "Combination - keeps compatible validation changes.",
+    );
+    expect(dialog.innerHTML).not.toContain("bg-purple");
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Close AI resolution details",
+      }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "AI resolution details" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View details" }));
+    expect(
+      screen.getByRole("dialog", { name: "AI resolution details" }),
+    ).toBeInTheDocument();
+  });
+
+  it("dismisses the AI resolution summary row", () => {
+    renderEditor({
+      aiResolutionSummary: "Resolved pricing.ts by keeping conservative pricing.",
+      aiResolutionDetails: "conflict-1: Incoming - keeps expected behavior.",
+      aiResolutionStatus: "info",
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Dismiss AI resolution message",
+      }),
+    );
+
+    expect(
+      screen.queryByText("Resolved pricing.ts by keeping conservative pricing."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "View details" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows AI errors in the result status message", () => {
+    renderEditor({
+      aiResolutionSummary: "AI candidate is missing conflict signatures. Rerun AI.",
+      aiResolutionDetails: "Hidden detail",
+      aiResolutionStatus: "error",
+    });
+
+    const status = screen.getByText(
+      "AI candidate is missing conflict signatures. Rerun AI.",
+    );
+
+    expect(status).toBeInTheDocument();
+    expect(status.closest(".text-red-100")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "View details" })).not.toBeInTheDocument();
   });
 });

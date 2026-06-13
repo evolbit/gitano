@@ -80,10 +80,16 @@ describe("settings window utilities", () => {
       actionPromptOverrides: {
         commitMessage: "Custom commit prompt",
       },
+      defaultActionPrompts: {
+        branchReview: "Default branch review prompt",
+      },
     } as unknown as LocalAiPreferences;
 
     expect(promptDraftsFromPreferences(preferences).commitMessage).toBe(
       "Custom commit prompt",
+    );
+    expect(promptDraftsFromPreferences(preferences).branchReview).toBe(
+      "Default branch review prompt",
     );
     expect(
       warmDisabledReason({

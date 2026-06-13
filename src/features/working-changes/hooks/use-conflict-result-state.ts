@@ -6,9 +6,11 @@ import {
   writeConflictResult,
 } from "@/shared/api/git/conflicts";
 import {
+  GIT_CONFLICT_AI_DECISION_CHOICE,
   GIT_CONFLICT_SIDE,
 } from "@/shared/types/git-conflicts";
 import type {
+  GitConflictAiDecision,
   GitConflictFileDetail,
   GitConflictSide,
 } from "@/shared/types/git-conflicts";
@@ -38,6 +40,47 @@ type AcceptedRegionUndo = {
   label: string;
   side: GitConflictSide | null;
 };
+
+function acceptedRegionFromAiDecision(
+  regionId: string,
+  decision: GitConflictAiDecision | null,
+): AcceptedRegionUndo {
+  if (!decision) {
+    return {
+      regionId,
+      label: ACCEPTED_REGION_LABEL.Ai,
+      side: null,
+    };
+  }
+
+  switch (decision.selectedChoice) {
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Current:
+      return {
+        regionId,
+        label: ACCEPTED_REGION_LABEL.Current,
+        side: GIT_CONFLICT_SIDE.Current,
+      };
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Incoming:
+      return {
+        regionId,
+        label: ACCEPTED_REGION_LABEL.Incoming,
+        side: GIT_CONFLICT_SIDE.Incoming,
+      };
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Combination:
+      return {
+        regionId,
+        label: ACCEPTED_REGION_LABEL.Combination,
+        side: null,
+      };
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Custom:
+    default:
+      return {
+        regionId,
+        label: ACCEPTED_REGION_LABEL.Ai,
+        side: null,
+      };
+  }
+}
 
 export function useConflictResultState({
   repoPath,
@@ -282,6 +325,29 @@ export function useConflictResultState({
     [content, pendingRegionIds, resultRegions],
   );
 
+  const applyAiFileResult = useCallback(
+    (nextContent: string, decisions: GitConflictAiDecision[]) => {
+      const decisionsByRegionId = new Map(
+        decisions.map((decision) => [decision.regionId, decision]),
+      );
+      const nextAcceptedRegions = Object.fromEntries(
+        resultRegions.map((region) => [
+          region.id,
+          acceptedRegionFromAiDecision(
+            region.id,
+            decisionsByRegionId.get(region.id) ?? null,
+          ),
+        ]),
+      );
+
+      setContent(nextContent);
+      setPendingRegionIds(new Set<string>());
+      setDirty(true);
+      setAcceptedRegionUndoById(nextAcceptedRegions);
+    },
+    [resultRegions],
+  );
+
   const acceptRegionSide = useCallback(
     (side: GitConflictSide, regionId?: string) => {
       const targetRegion = regionId
@@ -467,6 +533,7 @@ export function useConflictResultState({
     acceptIncomingRegion,
     acceptCurrentFirstCombination,
     acceptIncomingFirstCombination,
+    applyAiFileResult,
     applyRegionReplacement,
     removeAcceptedRegionSide,
     resetResult,

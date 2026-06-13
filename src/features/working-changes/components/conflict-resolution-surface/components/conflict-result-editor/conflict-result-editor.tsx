@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
+import ReactDOM from "react-dom";
 import {
   IconDeviceFloppy,
   IconGitMerge,
   IconRefresh,
+  IconX,
 } from "@/shared/components/icons/icons";
 import { GIT_CONFLICT_SIDE } from "@/shared/types/git-conflicts";
 import {
@@ -60,6 +62,151 @@ function createPaddingZoneNode() {
   const node = document.createElement("div");
   node.className = "gitano-conflict-result-padding-zone";
   return node;
+}
+
+function resultStatusMessageClass(
+  blocked: boolean,
+  aiResolutionStatus: ConflictResultEditorProps["aiResolutionStatus"],
+) {
+  if (blocked) {
+    return "border-b border-amber-900/40 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-200";
+  }
+
+  if (aiResolutionStatus === "error") {
+    return "border-b border-red-900/40 bg-red-950/30 px-3 py-1.5 text-xs text-red-100";
+  }
+
+  return "border-b border-purple-900/40 bg-purple-950/30 px-3 py-1.5 text-xs text-purple-100";
+}
+
+function formatAiResolutionDetails(details: string) {
+  return details
+    .trim()
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+(?=conflict-\d+\s*:)/gi, "\n");
+}
+
+function capitalizeFirstLetter(text: string) {
+  return text.replace(/^(\s*)([a-z])/, (_match, leading, letter: string) =>
+    `${leading}${letter.toUpperCase()}`,
+  );
+}
+
+function parseAiResolutionDetails(details: string) {
+  return formatAiResolutionDetails(details)
+    .split("\n")
+    .map((line) => {
+      const text = line.trim();
+      const conflictMatch = /^(conflict-\d+)\s*:\s*(.*)$/i.exec(text);
+
+      return {
+        conflictId: conflictMatch?.[1] ?? null,
+        text: capitalizeFirstLetter(conflictMatch?.[2] ?? text),
+      };
+    })
+    .filter((line) => line.text.length > 0 || line.conflictId);
+}
+
+function AiResolutionDetailsModal({
+  details,
+  onClose,
+  open,
+  summary,
+}: {
+  details: string | null;
+  onClose: () => void;
+  open: boolean;
+  summary: string | null;
+}) {
+  const titleId = useId();
+  const detailLines = details ? parseAiResolutionDetails(details) : [];
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  if (!open || detailLines.length === 0) return null;
+
+  return ReactDOM.createPortal(
+    <div
+      className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/65 px-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="flex max-h-[88vh] w-[min(720px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border bg-background-emphasis px-5 py-3">
+          <div className="min-w-0">
+            <div
+              id={titleId}
+              className="truncate text-sm font-semibold text-foreground"
+            >
+              AI resolution details
+            </div>
+            {summary ? (
+              <div className="mt-1 truncate text-xs text-muted-foreground">
+                {summary}
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-foreground"
+            aria-label="Close AI resolution details"
+            onClick={onClose}
+          >
+            <IconX size={18} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="space-y-3 text-sm text-zinc-200">
+            {detailLines.map((line, index) =>
+              line.conflictId ? (
+                <div
+                  key={`${line.conflictId}:${index}`}
+                  className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-x-3 border-t border-border pt-3 first:border-t-0 first:pt-0"
+                >
+                  <span className="pt-px font-mono text-xs leading-5 uppercase tracking-normal text-zinc-500">
+                    {line.conflictId}
+                  </span>
+                  <span className="min-w-0 break-words leading-5 text-zinc-100">
+                    {line.text}
+                  </span>
+                </div>
+              ) : (
+                <p
+                  key={`detail:${index}`}
+                  className="break-words leading-5 text-zinc-300"
+                >
+                  {line.text}
+                </p>
+              ),
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function createAcceptedResultActionZoneNode() {
@@ -240,6 +387,9 @@ export function ConflictResultEditor({
   resultRegions,
   dirty,
   unsupportedReason,
+  aiResolutionSummary,
+  aiResolutionDetails,
+  aiResolutionStatus,
   acceptedRegions,
   onChange,
   onSave,
@@ -254,6 +404,19 @@ export function ConflictResultEditor({
 }: ConflictResultEditorProps) {
   const saveDisabled = actionInFlight || !dirty;
   const markResolvedDisabled = actionInFlight || Boolean(markResolvedBlockedReason);
+  const [statusDismissed, setStatusDismissed] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const statusMessage =
+    markResolvedBlockedReason ?? (statusDismissed ? null : aiResolutionSummary);
+  const statusDetails =
+    !markResolvedBlockedReason && aiResolutionStatus === "info"
+      ? aiResolutionDetails
+      : null;
+  const statusMessageClass = resultStatusMessageClass(
+    Boolean(markResolvedBlockedReason),
+    aiResolutionStatus,
+  );
+  const statusDismissible = !markResolvedBlockedReason && Boolean(statusMessage);
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
   const resultViewZoneIdsRef = useRef<ResultViewZoneIds>([]);
   const acceptedResultWidgetsRef = useRef<AcceptedResultWidgets>([]);
@@ -263,6 +426,11 @@ export function ConflictResultEditor({
   const onScrollPaneMountRef = useRef(onScrollPaneMount);
   const onScrollTopChangeRef = useRef(onScrollTopChange);
   const visualIdentity = getConflictPaneVisualIdentity(GIT_CONFLICT_SIDE.Result);
+
+  useEffect(() => {
+    setStatusDismissed(false);
+    setDetailsModalOpen(false);
+  }, [aiResolutionStatus, aiResolutionSummary, aiResolutionDetails]);
 
   useEffect(() => {
     onScrollPaneMountRef.current = onScrollPaneMount;
@@ -455,11 +623,45 @@ export function ConflictResultEditor({
           Mark Resolved
         </button>
       </div>
-      {markResolvedBlockedReason ? (
-        <div className="border-b border-amber-900/40 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-200">
-          {markResolvedBlockedReason}
+      {statusMessage ? (
+        <div className={statusMessageClass}>
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span>{statusMessage}</span>
+                {statusDetails ? (
+                  <button
+                    type="button"
+                    className="font-semibold underline-offset-2 hover:underline"
+                    onClick={() => setDetailsModalOpen(true)}
+                  >
+                    View details
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {statusDismissible ? (
+              <button
+                type="button"
+                className="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-current/70 transition-colors hover:bg-white/10 hover:text-current"
+                aria-label="Dismiss AI resolution message"
+                onClick={() => {
+                  setStatusDismissed(true);
+                  setDetailsModalOpen(false);
+                }}
+              >
+                <IconX size={13} />
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
+      <AiResolutionDetailsModal
+        details={statusDetails}
+        onClose={() => setDetailsModalOpen(false)}
+        open={detailsModalOpen}
+        summary={statusMessage}
+      />
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {unsupportedReason ? (
           <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">

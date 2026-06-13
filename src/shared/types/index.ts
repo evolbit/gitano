@@ -19,6 +19,8 @@ export { ChangeType } from "./git";
 export type {
   GitConflictAiCandidate,
   GitConflictAiCandidateKind,
+  GitConflictAiDecision,
+  GitConflictAiDecisionChoice,
   GitConflictAiCandidateScope,
   GitConflictAiScopeKind,
   GitConflictContentKind,
@@ -37,6 +39,7 @@ export type {
 } from "./git-conflicts";
 export {
   GIT_CONFLICT_AI_CANDIDATE_KIND,
+  GIT_CONFLICT_AI_DECISION_CHOICE,
   GIT_CONFLICT_AI_SCOPE_KIND,
   GIT_CONFLICT_CONTENT_KIND,
   GIT_CONFLICT_KIND,

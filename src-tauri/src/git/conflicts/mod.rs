@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::UNIX_EPOCH;
 use types::{
     ConflictStageEntry, GitConflictContentKind, GitConflictKind, GitConflictLineEnding,
     GitConflictSide, GitConflictSize, GitConflictSizeClass, GitConflictVersion,
@@ -85,7 +84,10 @@ fn entry_for_stage(entries: &[ConflictStageEntry], stage: u8) -> Option<&Conflic
     entries.iter().find(|entry| entry.stage == stage)
 }
 
-fn conflict_kinds(entries: &[ConflictStageEntry], content_kind: GitConflictContentKind) -> Vec<GitConflictKind> {
+fn conflict_kinds(
+    entries: &[ConflictStageEntry],
+    content_kind: GitConflictContentKind,
+) -> Vec<GitConflictKind> {
     if content_kind == GitConflictContentKind::Binary {
         return vec![GitConflictKind::Binary];
     }
@@ -152,7 +154,11 @@ fn classify_size(line_count: usize, byte_size: usize) -> GitConflictSizeClass {
     }
 }
 
-fn analyze_bytes(side: GitConflictSide, bytes: Vec<u8>, forced_kind: Option<GitConflictContentKind>) -> GitConflictVersion {
+fn analyze_bytes(
+    side: GitConflictSide,
+    bytes: Vec<u8>,
+    forced_kind: Option<GitConflictContentKind>,
+) -> GitConflictVersion {
     let byte_size = bytes.len();
     let content_kind = forced_kind.unwrap_or_else(|| {
         if bytes_are_binary(&bytes) {
@@ -284,28 +290,37 @@ fn index_signature(entries: &[ConflictStageEntry]) -> String {
     digest_parts(&refs)
 }
 
+fn digest_result_bytes(file_path: &str, kind: &str, bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    for part in ["result", file_path, kind] {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    hasher.update(bytes);
+    hasher.update([0]);
+    format!("sha256:{:x}", hasher.finalize())
+}
+
 fn result_signature(repo_path: &str, file_path: &str) -> String {
     let full_path = Path::new(repo_path).join(file_path);
     let Ok(metadata) = fs::symlink_metadata(&full_path) else {
         return digest_parts(&["result", file_path, "missing"]);
     };
 
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    let len = metadata.len().to_string();
-    let kind = if metadata.file_type().is_symlink() {
-        "symlink"
-    } else if metadata.is_dir() {
-        "dir"
-    } else {
-        "file"
-    };
+    if metadata.file_type().is_symlink() {
+        let target = fs::read_link(&full_path)
+            .map(|path| path.to_string_lossy().as_bytes().to_vec())
+            .unwrap_or_default();
+        return digest_result_bytes(file_path, "symlink", &target);
+    }
 
-    digest_parts(&["result", file_path, kind, &len, &modified])
+    if metadata.is_dir() {
+        return digest_result_bytes(file_path, "dir", &[]);
+    }
+
+    fs::read(&full_path)
+        .map(|bytes| digest_result_bytes(file_path, "file", &bytes))
+        .unwrap_or_else(|_| digest_parts(&["result", file_path, "unreadable"]))
 }
 
 fn assert_current_signatures(
@@ -353,12 +368,12 @@ fn remove_worktree_file(repo_path: &str, file_path: &str) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::conflicts::types::{
+        GitConflictContentKind, GitConflictKind, GitConflictLineEnding, GitConflictSide,
+    };
     use crate::git::conflicts::{
         get_merge_conflict_file, get_merge_conflicts, git_accept_conflict_side,
         git_mark_conflict_resolved, git_write_conflict_result,
-    };
-    use crate::git::conflicts::types::{
-        GitConflictContentKind, GitConflictKind, GitConflictLineEnding, GitConflictSide,
     };
     use crate::git::test_support::{commit_file, init_repo, run_git, write_file};
     use std::process::Command;
@@ -392,6 +407,39 @@ mod tests {
     }
 
     #[test]
+    fn result_signature_hashes_file_content() {
+        let repo = tempfile::tempdir().expect("temp dir should be created");
+        let repo_path = repo.path().to_string_lossy().to_string();
+        write_file(repo.path(), "target.txt", "abc");
+        let first = result_signature(&repo_path, "target.txt");
+
+        write_file(repo.path(), "target.txt", "abd");
+        let changed = result_signature(&repo_path, "target.txt");
+
+        write_file(repo.path(), "target.txt", "abc");
+        let restored = result_signature(&repo_path, "target.txt");
+
+        assert_ne!(first, changed);
+        assert_eq!(first, restored);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_signature_hashes_symlink_target() {
+        let repo = tempfile::tempdir().expect("temp dir should be created");
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let link = repo.path().join("target-link");
+        std::os::unix::fs::symlink("first-target", &link).expect("symlink should be created");
+        let first = result_signature(&repo_path, "target-link");
+
+        fs::remove_file(&link).expect("symlink should be removed");
+        std::os::unix::fs::symlink("second-target", &link).expect("symlink should be recreated");
+        let changed = result_signature(&repo_path, "target-link");
+
+        assert_ne!(first, changed);
+    }
+
+    #[test]
     fn lists_and_loads_both_modified_text_conflict() {
         let repo = create_both_modified_conflict();
         let repo_path = repo.path().to_string_lossy().to_string();
@@ -399,8 +447,14 @@ mod tests {
         let conflicts = get_merge_conflicts(repo_path.clone()).expect("conflicts should load");
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].path, "target.txt");
-        assert_eq!(conflicts[0].status, crate::git::types::ChangeType::Conflicted);
-        assert_eq!(conflicts[0].conflict_kinds, vec![GitConflictKind::BothModified]);
+        assert_eq!(
+            conflicts[0].status,
+            crate::git::types::ChangeType::Conflicted
+        );
+        assert_eq!(
+            conflicts[0].conflict_kinds,
+            vec![GitConflictKind::BothModified]
+        );
 
         let detail = get_merge_conflict_file(repo_path, "target.txt".to_string())
             .expect("detail should load");

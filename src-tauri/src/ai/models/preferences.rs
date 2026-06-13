@@ -15,6 +15,7 @@ pub fn default_preferences() -> LocalAiPreferences {
         external_agent_option_values: HashMap::new(),
         action_external_agent_option_values: HashMap::new(),
         action_prompt_overrides: HashMap::new(),
+        default_action_prompts: super::super::types::default_action_prompts(),
         warm_model_ids: Vec::new(),
         keep_alive_minutes: DEFAULT_KEEP_ALIVE_MINUTES,
     }
@@ -70,6 +71,7 @@ pub fn save_preferences(preferences: &LocalAiPreferences) -> Result<(), String> 
         preferences.warm_model_ids.clear();
     }
     preferences.sync_legacy_model_fields();
+    preferences.default_action_prompts.clear();
     let path = preferences_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -479,9 +481,35 @@ mod tests {
         assert!(default_preferences().global_model_id.is_empty());
         assert!(default_preferences().warm_model_ids.is_empty());
         assert_eq!(
+            default_preferences()
+                .default_action_prompts
+                .get(LocalAiActionKind::MergeConflictSuggestions.as_key())
+                .map(String::as_str),
+            Some(LocalAiActionKind::MergeConflictSuggestions.default_prompt_instruction())
+        );
+        assert_eq!(
             default_preferences().keep_alive_minutes,
             DEFAULT_KEEP_ALIVE_MINUTES
         );
+    }
+
+    #[test]
+    fn saved_preferences_do_not_persist_default_prompts() {
+        with_temp_local_ai_home(|| {
+            let preferences = default_preferences();
+
+            save_preferences(&preferences).expect("save preferences");
+
+            let contents = fs::read_to_string(preferences_path()).expect("read saved preferences");
+            assert!(!contents.contains("defaultActionPrompts"));
+            assert_eq!(
+                load_preferences()
+                    .default_action_prompts
+                    .get(LocalAiActionKind::MergeConflictSuggestions.as_key())
+                    .map(String::as_str),
+                Some(LocalAiActionKind::MergeConflictSuggestions.default_prompt_instruction())
+            );
+        });
     }
 
     #[test]

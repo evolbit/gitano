@@ -142,12 +142,32 @@ pub struct LocalAiConflictSuggestionsResult {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LocalAiConflictScope {
     Region {
+        #[serde(rename = "filePath", alias = "file_path")]
         file_path: String,
+        #[serde(rename = "regionId", alias = "region_id")]
         region_id: String,
     },
     File {
+        #[serde(rename = "filePath", alias = "file_path")]
         file_path: String,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalAiConflictDecisionChoice {
+    Current,
+    Incoming,
+    Combination,
+    Custom,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAiConflictDecision {
+    pub region_id: String,
+    pub selected_choice: LocalAiConflictDecisionChoice,
+    pub reason: String,
 }
 
 impl LocalAiConflictScope {
@@ -164,13 +184,23 @@ pub enum LocalAiConflictCandidate {
     RegionReplacement {
         scope: LocalAiConflictScope,
         summary: String,
+        #[serde(default)]
+        details: Option<String>,
         replacement: String,
+        #[serde(default)]
+        decisions: Vec<LocalAiConflictDecision>,
+        #[serde(rename = "inputSignatures", alias = "input_signatures")]
         input_signatures: GitConflictSignatures,
     },
     FullFileResult {
         scope: LocalAiConflictScope,
         summary: String,
+        #[serde(default)]
+        details: Option<String>,
         content: String,
+        #[serde(default)]
+        decisions: Vec<LocalAiConflictDecision>,
+        #[serde(rename = "inputSignatures", alias = "input_signatures")]
         input_signatures: GitConflictSignatures,
     },
 }

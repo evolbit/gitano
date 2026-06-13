@@ -12,6 +12,7 @@ import {
 } from "../components/conflict-resolution-surface/utils/conflict-result-projection";
 
 export const ACCEPTED_REGION_LABEL = {
+  Ai: "AI",
   Combination: "Combination",
   Current: "Current",
   Incoming: "Incoming",

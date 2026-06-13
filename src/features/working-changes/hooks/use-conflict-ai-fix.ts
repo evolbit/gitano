@@ -2,17 +2,18 @@ import { useCallback, useMemo, useState } from "react";
 import { runLocalAiAction } from "@/shared/api/local-ai";
 import {
   GIT_CONFLICT_AI_CANDIDATE_KIND,
+  GIT_CONFLICT_AI_DECISION_CHOICE,
   GIT_CONFLICT_AI_SCOPE_KIND,
   GIT_CONFLICT_CONTENT_KIND,
   GIT_CONFLICT_SIZE_CLASS,
 } from "@/shared/types/git-conflicts";
 import { isAiSetupRequiredError } from "@/shared/utils/ai-setup-errors";
-import type { ConflictResolutionRegion } from "../components/conflict-resolution-surface/utils/conflict-result-projection";
 import type {
   GitConflictAiCandidate,
   GitConflictAiCandidateScope,
+  GitConflictAiDecision,
+  GitConflictAiDecisionChoice,
   GitConflictFileDetail,
-  GitConflictRegion,
   GitConflictSignatures,
 } from "@/shared/types/git-conflicts";
 
@@ -23,10 +24,11 @@ type UseConflictAiFixOptions = {
   repoPath: string;
   filePath: string;
   detail: GitConflictFileDetail | null;
-  activeRegion: GitConflictRegion | null;
-  resultRegions: ConflictResolutionRegion[];
-  onApplyFileContent: (content: string) => void;
-  onApplyRegionContent: (regionId: string, content: string) => void;
+  onApplyFileContent: (content: string, decisions: GitConflictAiDecision[]) => void;
+};
+
+type LegacyConflictAiCandidate = GitConflictAiCandidate & {
+  input_signatures?: GitConflictSignatures;
 };
 
 function createConflictAiRunId(scopeKind: ConflictAiScopeKind) {
@@ -45,23 +47,69 @@ function signaturesMatch(
   );
 }
 
+function candidateInputSignatures(candidate: GitConflictAiCandidate) {
+  return (
+    candidate.inputSignatures ??
+    (candidate as LegacyConflictAiCandidate).input_signatures ??
+    null
+  );
+}
+
 function candidateSummary(candidate: GitConflictAiCandidate | null) {
   if (!candidate) return null;
   return candidate.summary.trim() || "AI conflict candidate";
+}
+
+function decisionChoiceLabel(choice: GitConflictAiDecisionChoice) {
+  switch (choice) {
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Current:
+      return "Current";
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Incoming:
+      return "Incoming";
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Combination:
+      return "Combination";
+    case GIT_CONFLICT_AI_DECISION_CHOICE.Custom:
+    default:
+      return "Custom";
+  }
+}
+
+function decisionDetails(decisions: GitConflictAiDecision[]) {
+  return decisions
+    .map((decision) => {
+      const reason = decision.reason.trim();
+      return `${decision.regionId}: ${decisionChoiceLabel(decision.selectedChoice)}${
+        reason ? ` - ${reason}` : ""
+      }`;
+    })
+    .join("\n");
+}
+
+function candidateDetails(candidate: GitConflictAiCandidate | null) {
+  if (!candidate) return null;
+
+  const explicitDetails = candidate.details?.trim();
+  if (explicitDetails) return explicitDetails;
+
+  const details = decisionDetails(candidate.decisions);
+  return details || null;
+}
+
+function appliedDecisionSummary(summary: string) {
+  return summary.trim() || "AI applied a full-file resolution.";
 }
 
 export function useConflictAiFix({
   repoPath,
   filePath,
   detail,
-  activeRegion,
-  resultRegions,
   onApplyFileContent,
-  onApplyRegionContent,
 }: UseConflictAiFixOptions) {
   const [candidate, setCandidate] = useState<GitConflictAiCandidate | null>(
     null,
   );
+  const [appliedSummary, setAppliedSummary] = useState<string | null>(null);
+  const [appliedDetails, setAppliedDetails] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -69,9 +117,6 @@ export function useConflictAiFix({
   const [lastScopeKind, setLastScopeKind] =
     useState<ConflictAiScopeKind | null>(null);
 
-  const canRunRegion =
-    Boolean(activeRegion) &&
-    detail?.result.contentKind === GIT_CONFLICT_CONTENT_KIND.Text;
   const canRunFile =
     detail?.result.contentKind === GIT_CONFLICT_CONTENT_KIND.Text &&
     detail.result.size.sizeClass !== GIT_CONFLICT_SIZE_CLASS.VeryLarge;
@@ -79,25 +124,20 @@ export function useConflictAiFix({
   const runFix = useCallback(
     async (scopeKind: ConflictAiScopeKind, forceRefresh = false) => {
       if (!detail) return;
-      if (scopeKind === GIT_CONFLICT_AI_SCOPE_KIND.Region && !activeRegion) {
+      if (scopeKind !== GIT_CONFLICT_AI_SCOPE_KIND.File) {
         return;
       }
 
-      const conflictScope: GitConflictAiCandidateScope =
-        scopeKind === GIT_CONFLICT_AI_SCOPE_KIND.Region
-          ? {
-              kind: GIT_CONFLICT_AI_SCOPE_KIND.Region,
-              filePath,
-              regionId: activeRegion?.id ?? "",
-            }
-          : {
-              kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
-              filePath,
-            };
+      const conflictScope: GitConflictAiCandidateScope = {
+        kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
+        filePath,
+      };
       const runId = createConflictAiRunId(scopeKind);
       setLoading(true);
       setError(null);
       setCandidate(null);
+      setAppliedSummary(null);
+      setAppliedDetails(null);
       setLastScopeKind(scopeKind);
 
       try {
@@ -113,7 +153,21 @@ export function useConflictAiFix({
           throw new Error("AI did not return a reviewable conflict candidate.");
         }
 
-        setCandidate(result.result.data.candidate);
+        const nextCandidate = result.result.data.candidate;
+        if (nextCandidate.kind !== GIT_CONFLICT_AI_CANDIDATE_KIND.FullFileResult) {
+          throw new Error("AI did not return a full-file conflict resolution.");
+        }
+        const inputSignatures = candidateInputSignatures(nextCandidate);
+        if (!inputSignatures) {
+          throw new Error("AI candidate is missing conflict signatures. Rerun AI.");
+        }
+        if (!signaturesMatch(inputSignatures, detail.signatures)) {
+          throw new Error("AI candidate is stale. Refresh conflict detail or rerun AI.");
+        }
+
+        onApplyFileContent(nextCandidate.content, nextCandidate.decisions);
+        setAppliedSummary(appliedDecisionSummary(nextCandidate.summary));
+        setAppliedDetails(candidateDetails(nextCandidate));
       } catch (actionError) {
         if (isAiSetupRequiredError(actionError)) {
           setSetupReason(
@@ -133,41 +187,8 @@ export function useConflictAiFix({
         setLoading(false);
       }
     },
-    [activeRegion, detail, filePath, repoPath],
+    [detail, filePath, onApplyFileContent, repoPath],
   );
-
-  const applyCandidate = useCallback(() => {
-    if (!candidate || !detail) return;
-    if (!signaturesMatch(candidate.inputSignatures, detail.signatures)) {
-      setError("AI candidate is stale. Refresh conflict detail or rerun AI.");
-      return;
-    }
-
-    if (candidate.kind === GIT_CONFLICT_AI_CANDIDATE_KIND.FullFileResult) {
-      onApplyFileContent(candidate.content);
-      setCandidate(null);
-      setError(null);
-      return;
-    }
-
-    const region = resultRegions.find(
-      (item) => item.id === candidate.scope.regionId,
-    );
-    if (!region) {
-      setError("AI candidate target is no longer available. Rerun AI.");
-      return;
-    }
-
-    onApplyRegionContent(region.id, candidate.replacement);
-    setCandidate(null);
-    setError(null);
-  }, [
-    candidate,
-    detail,
-    onApplyFileContent,
-    onApplyRegionContent,
-    resultRegions,
-  ]);
 
   const closeSetup = useCallback(() => {
     setSetupOpen(false);
@@ -185,33 +206,32 @@ export function useConflictAiFix({
 
   const clearCandidate = useCallback(() => {
     setCandidate(null);
+    setAppliedSummary(null);
+    setAppliedDetails(null);
     setError(null);
   }, []);
 
   return useMemo(
     () => ({
       candidate,
-      candidateSummary: candidateSummary(candidate),
+      candidateSummary: appliedSummary ?? candidateSummary(candidate),
+      candidateDetails: appliedDetails ?? candidateDetails(candidate),
       loading,
       error,
       setupOpen,
       setupReason,
-      canRunRegion,
       canRunFile,
-      runRegionFix: (forceRefresh = false) =>
-        runFix(GIT_CONFLICT_AI_SCOPE_KIND.Region, forceRefresh),
       runFileFix: (forceRefresh = false) =>
         runFix(GIT_CONFLICT_AI_SCOPE_KIND.File, forceRefresh),
-      applyCandidate,
       clearCandidate,
       closeSetup,
       retryAfterSetup,
     }),
     [
-      applyCandidate,
+      appliedSummary,
+      appliedDetails,
       candidate,
       canRunFile,
-      canRunRegion,
       clearCandidate,
       closeSetup,
       error,

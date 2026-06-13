@@ -51,6 +51,13 @@ export const GIT_CONFLICT_AI_CANDIDATE_KIND = {
   FullFileResult: "fullFileResult",
 } as const;
 
+export const GIT_CONFLICT_AI_DECISION_CHOICE = {
+  Current: "current",
+  Incoming: "incoming",
+  Combination: "combination",
+  Custom: "custom",
+} as const;
+
 export const GIT_CONFLICT_STALE_ERROR_CODE = "staleConflict";
 export const GIT_CONFLICT_STALE_ERROR_MESSAGE =
   "Conflict state changed. Reload conflict details.";
@@ -75,6 +82,9 @@ export type GitConflictAiScopeKind =
 
 export type GitConflictAiCandidateKind =
   (typeof GIT_CONFLICT_AI_CANDIDATE_KIND)[keyof typeof GIT_CONFLICT_AI_CANDIDATE_KIND];
+
+export type GitConflictAiDecisionChoice =
+  (typeof GIT_CONFLICT_AI_DECISION_CHOICE)[keyof typeof GIT_CONFLICT_AI_DECISION_CHOICE];
 
 export type GitConflictSize = {
   byteSize: number;
@@ -146,6 +156,12 @@ export type GitConflictAiCandidateScope =
       filePath: string;
     };
 
+export type GitConflictAiDecision = {
+  regionId: string;
+  selectedChoice: GitConflictAiDecisionChoice;
+  reason: string;
+};
+
 export type GitConflictAiCandidate =
   | {
       kind: typeof GIT_CONFLICT_AI_CANDIDATE_KIND.RegionReplacement;
@@ -154,7 +170,9 @@ export type GitConflictAiCandidate =
         { kind: typeof GIT_CONFLICT_AI_SCOPE_KIND.Region }
       >;
       summary: string;
+      details?: string | null;
       replacement: string;
+      decisions: GitConflictAiDecision[];
       inputSignatures: GitConflictSignatures;
     }
   | {
@@ -164,7 +182,9 @@ export type GitConflictAiCandidate =
         { kind: typeof GIT_CONFLICT_AI_SCOPE_KIND.File }
       >;
       summary: string;
+      details?: string | null;
       content: string;
+      decisions: GitConflictAiDecision[];
       inputSignatures: GitConflictSignatures;
     };
 

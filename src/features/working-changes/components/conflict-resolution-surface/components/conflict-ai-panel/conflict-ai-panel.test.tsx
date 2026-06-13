@@ -1,80 +1,55 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import {
-  GIT_CONFLICT_AI_CANDIDATE_KIND,
-  GIT_CONFLICT_AI_SCOPE_KIND,
-} from "@/shared/types/git-conflicts";
 import { ConflictAiPanel } from "./conflict-ai-panel";
 
 describe("ConflictAiPanel", () => {
-  it("runs region and file AI actions when no candidate is present", () => {
-    const onRunRegion = vi.fn();
+  it("runs a full-file AI action from one resolve button", () => {
     const onRunFile = vi.fn();
 
     render(
       <ConflictAiPanel
-        candidate={null}
-        candidateSummary={null}
         loading={false}
-        error={null}
-        canRunRegion
         canRunFile
-        onRunRegion={onRunRegion}
         onRunFile={onRunFile}
-        onRefreshRegion={vi.fn()}
         onRefreshFile={vi.fn()}
-        onApply={vi.fn()}
-        onClear={vi.fn()}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Region" }));
-    fireEvent.click(screen.getByRole("button", { name: "File" }));
+    expect(screen.queryByRole("button", { name: "Region" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument();
 
-    expect(onRunRegion).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Resolve with AI" }));
+
     expect(onRunFile).toHaveBeenCalled();
   });
 
-  it("renders a reviewable candidate with apply and dismiss actions", () => {
-    const onApply = vi.fn();
-    const onClear = vi.fn();
-
+  it("does not render old apply controls", () => {
     render(
       <ConflictAiPanel
-        candidate={{
-          kind: GIT_CONFLICT_AI_CANDIDATE_KIND.RegionReplacement,
-          scope: {
-            kind: GIT_CONFLICT_AI_SCOPE_KIND.Region,
-            filePath: "src/conflict.ts",
-            regionId: "conflict-1",
-          },
-          summary: "Use the validated path",
-          replacement: "resolved",
-          inputSignatures: {
-            indexSignature: "index",
-            resultSignature: "result",
-          },
-        }}
-        candidateSummary="Use the validated path"
         loading={false}
-        error={null}
-        canRunRegion
         canRunFile
-        onRunRegion={vi.fn()}
         onRunFile={vi.fn()}
-        onRefreshRegion={vi.fn()}
         onRefreshFile={vi.fn()}
-        onApply={onApply}
-        onClear={onClear}
       />,
     );
 
-    expect(screen.getByText("Use the validated path")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss AI candidate" }));
+  it("shows the busy spinner inside the resolve button", () => {
+    render(
+      <ConflictAiPanel
+        loading
+        canRunFile
+        onRunFile={vi.fn()}
+        onRefreshFile={vi.fn()}
+      />,
+    );
 
-    expect(onApply).toHaveBeenCalled();
-    expect(onClear).toHaveBeenCalled();
+    const resolveButton = screen.getByRole("button", { name: "Resolving" });
+
+    expect(resolveButton).toBeDisabled();
+    expect(resolveButton.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(screen.queryByText("Generating AI fix")).not.toBeInTheDocument();
   });
 });

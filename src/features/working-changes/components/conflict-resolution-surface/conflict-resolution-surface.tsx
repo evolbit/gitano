@@ -104,7 +104,6 @@ export function ConflictResolutionSurface({
   );
 
   const resultRegions = resultState.resultRegions;
-  const activeRegion = resultRegions[activeRegionIndex] ?? null;
   const selectRegionById = (regionId: string) => {
     const regionIndex =
       resultRegions.findIndex((region) => region.id === regionId) ?? -1;
@@ -156,11 +155,14 @@ export function ConflictResolutionSurface({
     repoPath,
     filePath,
     detail,
-    activeRegion,
-    resultRegions: resultState.resultRegions,
-    onApplyFileContent: resultState.setResultContent,
-    onApplyRegionContent: resultState.applyRegionReplacement,
+    onApplyFileContent: resultState.applyAiFileResult,
   });
+  const aiResolutionMessage = conflictAi.error ?? conflictAi.candidateSummary;
+  const aiResolutionStatus = conflictAi.error
+    ? "error"
+    : conflictAi.candidateSummary
+      ? "info"
+      : null;
   const resultUnsupportedReason =
     detail?.result.contentKind !== GIT_CONFLICT_CONTENT_KIND.Text
       ? "Open this conflict in an external editor for non-text content."
@@ -337,26 +339,14 @@ export function ConflictResolutionSurface({
                 ))}
               </div>
               <ConflictAiPanel
-                candidate={conflictAi.candidate}
-                candidateSummary={conflictAi.candidateSummary}
                 loading={conflictAi.loading}
-                error={conflictAi.error}
-                canRunRegion={conflictAi.canRunRegion}
                 canRunFile={conflictAi.canRunFile}
-                onRunRegion={() => {
-                  void conflictAi.runRegionFix();
-                }}
                 onRunFile={() => {
                   void conflictAi.runFileFix();
-                }}
-                onRefreshRegion={() => {
-                  void conflictAi.runRegionFix(true);
                 }}
                 onRefreshFile={() => {
                   void conflictAi.runFileFix(true);
                 }}
-                onApply={conflictAi.applyCandidate}
-                onClear={conflictAi.clearCandidate}
               />
               <ConflictResultEditor
                 filePath={filePath}
@@ -365,6 +355,11 @@ export function ConflictResolutionSurface({
                 resultRegions={resultState.resultRegions}
                 dirty={resultState.dirty}
                 unsupportedReason={resultUnsupportedReason}
+                aiResolutionSummary={aiResolutionMessage}
+                aiResolutionDetails={
+                  conflictAi.error ? null : conflictAi.candidateDetails
+                }
+                aiResolutionStatus={aiResolutionStatus}
                 acceptedRegions={resultState.acceptedRegions}
                 onChange={resultState.setResultContent}
                 onSave={() => {

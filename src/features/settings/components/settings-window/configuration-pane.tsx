@@ -9,10 +9,7 @@ import type {
   LocalAiPreferences,
 } from "@/shared/api/local-ai";
 import { ACTION_MODEL_REQUIRED_MESSAGE } from "../../constants";
-import {
-  ACTIONS,
-  DEFAULT_ACTION_PROMPTS,
-} from "./config";
+import { ACTIONS } from "./config";
 import {
   EngineOptionGroups,
   ExternalAgentConfigControls,
@@ -227,7 +224,8 @@ export function ConfigurationPane({
       <SectionLabel>Prompts</SectionLabel>
 
       {ACTIONS.map((action) => {
-        const defaultPrompt = DEFAULT_ACTION_PROMPTS[action.kind];
+        const defaultPrompt =
+          preferences?.defaultActionPrompts?.[action.kind] ?? "";
         const persistedOverride =
           preferences?.actionPromptOverrides?.[action.kind] ?? null;
         const hasOverride = Boolean(persistedOverride?.trim());
@@ -264,13 +262,13 @@ export function ConfigurationPane({
                 action.kind,
                 promptDrafts[action.kind] ??
                   preferences?.actionPromptOverrides?.[action.kind] ??
-                  DEFAULT_ACTION_PROMPTS[action.kind],
+                  defaultPrompt,
               );
             }}
             onUseDefault={() => {
               setPromptDrafts((current) => ({
                 ...current,
-                [action.kind]: DEFAULT_ACTION_PROMPTS[action.kind],
+                [action.kind]: defaultPrompt,
               }));
               void onSetActionPromptOverride(action.kind, null);
             }}

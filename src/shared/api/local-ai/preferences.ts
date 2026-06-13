@@ -108,6 +108,7 @@ function applyPreferenceOverrides(
     actionExternalAgentOptionValues:
       preferences.actionExternalAgentOptionValues ?? {},
     actionPromptOverrides: preferences.actionPromptOverrides ?? {},
+    defaultActionPrompts: preferences.defaultActionPrompts ?? {},
     warmModelIds: preferences.warmModelIds ?? [],
     keepAliveMinutes: preferences.keepAliveMinutes ?? 30,
   };

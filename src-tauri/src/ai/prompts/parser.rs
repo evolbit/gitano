@@ -1,9 +1,10 @@
 use super::super::types::{
     LocalAiActionKind, LocalAiAnalysisResult, LocalAiBranchReviewFinding, LocalAiBranchReviewNote,
     LocalAiBranchReviewResult, LocalAiCommitMessageResult, LocalAiConflictCandidate,
-    LocalAiConflictCandidateResult, LocalAiConflictFileSuggestion, LocalAiConflictScope,
-    LocalAiConflictSuggestionsResult, LocalAiFinding, LocalAiFindingSeverity,
-    LocalAiReviewConfidence, LocalAiReviewLineSide, LocalAiStructuredResult,
+    LocalAiConflictCandidateResult, LocalAiConflictDecision, LocalAiConflictDecisionChoice,
+    LocalAiConflictFileSuggestion, LocalAiConflictScope, LocalAiConflictSuggestionsResult,
+    LocalAiFinding, LocalAiFindingSeverity, LocalAiReviewConfidence, LocalAiReviewLineSide,
+    LocalAiStructuredResult,
 };
 use crate::git::conflicts::types::GitConflictSignatures;
 use serde_json::Value;
@@ -57,9 +58,9 @@ fn parse_structured_value(
                     parse_conflict_candidate(value)?,
                 ))
             } else {
-                Ok(LocalAiStructuredResult::ConflictSuggestions(parse_conflicts(
-                    value,
-                )))
+                Ok(LocalAiStructuredResult::ConflictSuggestions(
+                    parse_conflicts(value),
+                ))
             }
         }
     }
@@ -297,11 +298,7 @@ fn looks_like_conflict_candidate(value: &Value) -> bool {
         .filter(|candidate| candidate.is_object())
         .unwrap_or(value);
 
-    string_field(
-        candidate,
-        &["candidateKind", "candidate_kind", "kind"],
-    )
-    .is_some()
+    string_field(candidate, &["candidateKind", "candidate_kind", "kind"]).is_some()
         || string_field(candidate, &["replacement", "content"]).is_some()
 }
 
@@ -315,6 +312,28 @@ fn parse_conflict_candidate(value: &Value) -> Result<LocalAiConflictCandidateRes
     let summary = string_field(value, &["summary"])
         .or_else(|| string_field(candidate_value, &["summary"]))
         .unwrap_or_else(|| "AI conflict candidate".to_string());
+    let details = string_field(
+        value,
+        &[
+            "details",
+            "detail",
+            "explanation",
+            "fullDetails",
+            "full_details",
+        ],
+    )
+    .or_else(|| {
+        string_field(
+            candidate_value,
+            &[
+                "details",
+                "detail",
+                "explanation",
+                "fullDetails",
+                "full_details",
+            ],
+        )
+    });
     let signatures = parse_conflict_signatures(value);
     let candidate_kind = string_field(
         candidate_value,
@@ -327,21 +346,26 @@ fn parse_conflict_candidate(value: &Value) -> Result<LocalAiConflictCandidateRes
             "regionReplacement".to_string()
         }
     });
+    let decisions = parse_conflict_decisions(value, candidate_value);
     let candidate = match candidate_kind.as_str() {
         "fullFileResult" | "full_file_result" | "file" => {
             LocalAiConflictCandidate::FullFileResult {
                 scope: scope.clone(),
                 summary: summary.clone(),
+                details: details.clone(),
                 content: string_field(candidate_value, &["content"])
                     .ok_or_else(|| "Local AI did not return full-file content.".to_string())?,
+                decisions,
                 input_signatures: signatures,
             }
         }
         _ => LocalAiConflictCandidate::RegionReplacement {
             scope: scope.clone(),
             summary: summary.clone(),
+            details,
             replacement: string_field(candidate_value, &["replacement", "content"])
                 .ok_or_else(|| "Local AI did not return a region replacement.".to_string())?,
+            decisions,
             input_signatures: signatures,
         },
     };
@@ -361,13 +385,19 @@ fn parse_conflict_scope(value: &Value) -> LocalAiConflictScope {
         .unwrap_or(value);
     let file_path = string_field(
         scope_value,
-        &["filePath", "file_path", "targetFilePath", "target_file_path", "file"],
+        &[
+            "filePath",
+            "file_path",
+            "targetFilePath",
+            "target_file_path",
+            "file",
+        ],
     )
     .or_else(|| string_field(value, &["filePath", "targetFilePath", "file"]))
     .unwrap_or_else(|| "unknown".to_string());
     let region_id = string_field(scope_value, &["regionId", "region_id"]);
-    let kind = string_field(scope_value, &["kind", "scopeKind", "scope_kind"])
-        .unwrap_or_else(|| {
+    let kind =
+        string_field(scope_value, &["kind", "scopeKind", "scope_kind"]).unwrap_or_else(|| {
             if region_id.is_some() {
                 "region".to_string()
             } else {
@@ -385,6 +415,60 @@ fn parse_conflict_scope(value: &Value) -> LocalAiConflictScope {
     }
 }
 
+fn parse_conflict_decisions(
+    value: &Value,
+    candidate_value: &Value,
+) -> Vec<LocalAiConflictDecision> {
+    value
+        .get("decisions")
+        .or_else(|| value.get("regionDecisions"))
+        .or_else(|| value.get("region_decisions"))
+        .or_else(|| candidate_value.get("decisions"))
+        .or_else(|| candidate_value.get("regionDecisions"))
+        .or_else(|| candidate_value.get("region_decisions"))
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(parse_conflict_decision).collect())
+        .unwrap_or_default()
+}
+
+fn parse_conflict_decision(value: &Value) -> Option<LocalAiConflictDecision> {
+    let region_id = string_field(value, &["regionId", "region_id", "id"])?;
+    let selected_choice = parse_conflict_decision_choice(
+        string_field(
+            value,
+            &[
+                "selectedChoice",
+                "selected_choice",
+                "selectedSide",
+                "selected_side",
+                "choice",
+                "side",
+            ],
+        )
+        .as_deref()
+        .unwrap_or("custom"),
+    );
+    let reason = string_field(value, &["reason", "why", "summary", "explanation"])
+        .unwrap_or_else(|| "AI selected this resolution.".to_string());
+
+    Some(LocalAiConflictDecision {
+        region_id,
+        selected_choice,
+        reason,
+    })
+}
+
+fn parse_conflict_decision_choice(value: &str) -> LocalAiConflictDecisionChoice {
+    match value.trim().to_lowercase().as_str() {
+        "current" | "ours" | "our" | "left" => LocalAiConflictDecisionChoice::Current,
+        "incoming" | "theirs" | "their" | "right" => LocalAiConflictDecisionChoice::Incoming,
+        "combination" | "combined" | "both" | "merge" | "merged" => {
+            LocalAiConflictDecisionChoice::Combination
+        }
+        _ => LocalAiConflictDecisionChoice::Custom,
+    }
+}
+
 fn parse_conflict_signatures(value: &Value) -> GitConflictSignatures {
     let signatures = value
         .get("inputSignatures")
@@ -392,16 +476,10 @@ fn parse_conflict_signatures(value: &Value) -> GitConflictSignatures {
         .unwrap_or(value);
 
     GitConflictSignatures {
-        index_signature: string_field(
-            signatures,
-            &["indexSignature", "index_signature"],
-        )
-        .unwrap_or_default(),
-        result_signature: string_field(
-            signatures,
-            &["resultSignature", "result_signature"],
-        )
-        .unwrap_or_default(),
+        index_signature: string_field(signatures, &["indexSignature", "index_signature"])
+            .unwrap_or_default(),
+        result_signature: string_field(signatures, &["resultSignature", "result_signature"])
+            .unwrap_or_default(),
     }
 }
 
@@ -785,12 +863,51 @@ mod tests {
             LocalAiStructuredResult::ConflictCandidate(candidate) => {
                 assert_eq!(candidate.summary, "Use the safer branch");
                 match candidate.candidate {
-                    LocalAiConflictCandidate::RegionReplacement {
-                        replacement, ..
-                    } => {
+                    LocalAiConflictCandidate::RegionReplacement { replacement, .. } => {
                         assert_eq!(replacement, "resolved();");
                     }
                     _ => panic!("expected region replacement candidate"),
+                }
+            }
+            _ => panic!("expected conflict candidate result"),
+        }
+    }
+
+    #[test]
+    fn parses_scoped_file_conflict_candidate_decisions() {
+        let result = parse_structured_result(
+            LocalAiActionKind::MergeConflictSuggestions,
+            r#"{"summary":"Resolved the file","details":"Full region-by-region explanation.","candidateKind":"fullFileResult","content":"resolved();","decisions":[{"regionId":"conflict-1","selectedChoice":"incoming","reason":"Incoming keeps the new validation."},{"regionId":"conflict-2","selectedChoice":"both","reason":"Both sides are independent."}]}"#,
+        )
+        .unwrap();
+
+        match result {
+            LocalAiStructuredResult::ConflictCandidate(candidate) => {
+                assert_eq!(candidate.summary, "Resolved the file");
+                match candidate.candidate {
+                    LocalAiConflictCandidate::FullFileResult {
+                        content,
+                        details,
+                        decisions,
+                        ..
+                    } => {
+                        assert_eq!(content, "resolved();");
+                        assert_eq!(
+                            details.as_deref(),
+                            Some("Full region-by-region explanation.")
+                        );
+                        assert_eq!(decisions.len(), 2);
+                        assert_eq!(decisions[0].region_id, "conflict-1");
+                        assert_eq!(
+                            decisions[0].selected_choice,
+                            LocalAiConflictDecisionChoice::Incoming
+                        );
+                        assert_eq!(
+                            decisions[1].selected_choice,
+                            LocalAiConflictDecisionChoice::Combination
+                        );
+                    }
+                    _ => panic!("expected full-file candidate"),
                 }
             }
             _ => panic!("expected conflict candidate result"),

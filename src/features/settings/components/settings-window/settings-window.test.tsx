@@ -229,6 +229,15 @@ const copilotAgent = {
 
 const externalAgents = [codexAgent, geminiAgent, copilotAgent];
 
+const defaultActionPrompts = {
+  commitMessage: "Generate a Git commit message for the staged changes only.",
+  commitAnalysis: "Analyze this commit for correctness, risk, and maintainability.",
+  branchAnalysis: "Analyze this branch or PR-style diff.",
+  branchReview: "Review this branch like PR review feedback.",
+  mergeConflictSuggestions:
+    "Resolve the merge conflicts conservatively and correctly.",
+};
+
 const codexModelConfig = {
   agentId: "codex-acp",
   options: [
@@ -325,6 +334,7 @@ describe("SettingsWindow", () => {
           modelId: "qwen2.5-coder:1.5b",
         },
       },
+      defaultActionPrompts,
       warmModelIds: [],
       keepAliveMinutes: 30,
     });
@@ -893,6 +903,7 @@ describe("SettingsWindow", () => {
         },
       },
       actionExternalAgentOptionValues: {},
+      defaultActionPrompts,
       warmModelIds: [],
       keepAliveMinutes: 30,
     });
@@ -978,6 +989,7 @@ describe("SettingsWindow", () => {
       },
       externalAgentOptionValues: {},
       actionExternalAgentOptionValues: {},
+      defaultActionPrompts,
       warmModelIds: [],
       keepAliveMinutes: 30,
     });
@@ -1061,6 +1073,9 @@ describe("SettingsWindow", () => {
     expect(
       screen.getByLabelText("Merge conflicts prompt override"),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Merge conflicts prompt override")).toHaveValue(
+      defaultActionPrompts.mergeConflictSuggestions,
+    );
     expect(screen.getAllByRole("button", { name: "Save" })[0]).toBeDisabled();
     expect(
       screen.getAllByRole("button", { name: "Use default value" })[0],
@@ -1090,6 +1105,7 @@ describe("SettingsWindow", () => {
       actionPromptOverrides: {
         branchReview: "Focus on security regressions.",
       },
+      defaultActionPrompts,
       warmModelIds: [],
       keepAliveMinutes: 30,
     });
@@ -1105,6 +1121,7 @@ describe("SettingsWindow", () => {
         actionPromptOverrides: {
           branchReview: "Focus on authorization and data loss.",
         },
+        defaultActionPrompts,
         warmModelIds: [],
         keepAliveMinutes: 30,
       })
@@ -1117,6 +1134,7 @@ describe("SettingsWindow", () => {
         },
         actionEngines: {},
         actionPromptOverrides: {},
+        defaultActionPrompts,
         warmModelIds: [],
         keepAliveMinutes: 30,
       });
@@ -1171,6 +1189,7 @@ describe("SettingsWindow", () => {
         agentId: "codex-acp",
       },
       actionEngines: {},
+      defaultActionPrompts,
       warmModelIds: [],
       keepAliveMinutes: 30,
     });

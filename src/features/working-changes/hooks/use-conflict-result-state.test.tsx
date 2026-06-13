@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChangeType } from "@/shared/types/git";
 import {
+  GIT_CONFLICT_AI_DECISION_CHOICE,
   GIT_CONFLICT_CONTENT_KIND,
   GIT_CONFLICT_KIND,
   GIT_CONFLICT_LINE_ENDING,
@@ -464,6 +465,82 @@ describe("useConflictResultState", () => {
     });
     expect(result.current.content).toBe("incoming-file");
     expect(result.current.dirty).toBe(false);
+  });
+
+  it("applies a full-file AI result with decision-derived accepted regions", () => {
+    const initialDetail = detail({
+      base: version(
+        GIT_CONFLICT_SIDE.Base,
+        ["base one", "middle", "base two"].join("\n"),
+      ),
+      result: version(
+        GIT_CONFLICT_SIDE.Result,
+        [
+          "<<<<<<< HEAD",
+          "current one",
+          "=======",
+          "incoming one",
+          ">>>>>>> branch",
+          "middle",
+          "<<<<<<< HEAD",
+          "current two",
+          "=======",
+          "incoming two",
+          ">>>>>>> branch",
+        ].join("\n"),
+      ),
+      regions: [
+        {
+          id: "conflict-1",
+          resultStartLine: 1,
+          resultSeparatorLine: 3,
+          resultEndLine: 5,
+        },
+        {
+          id: "conflict-2",
+          resultStartLine: 7,
+          resultSeparatorLine: 9,
+          resultEndLine: 11,
+        },
+      ],
+    });
+    const { result } = renderHook(
+      () =>
+        useConflictResultState({
+          repoPath: "/repo",
+          filePath: "src/conflict.ts",
+          detail: initialDetail,
+          activeRegionIndex: 0,
+        }),
+      { wrapper: wrapper() },
+    );
+
+    act(() => {
+      result.current.applyAiFileResult("resolved by ai", [
+        {
+          regionId: "conflict-1",
+          selectedChoice: GIT_CONFLICT_AI_DECISION_CHOICE.Incoming,
+          reason: "Incoming keeps the new pricing behavior.",
+        },
+        {
+          regionId: "conflict-2",
+          selectedChoice: GIT_CONFLICT_AI_DECISION_CHOICE.Combination,
+          reason: "Both sides contain independent checks.",
+        },
+      ]);
+    });
+
+    expect(result.current.content).toBe("resolved by ai");
+    expect(result.current.dirty).toBe(true);
+    expect(result.current.markResolvedBlockedReason).toBeNull();
+    expect(result.current.acceptedRegions).toEqual([
+      { regionId: "conflict-1", label: "Incoming" },
+      { regionId: "conflict-2", label: "Combination" },
+    ]);
+    expect(result.current.acceptedRegionSidesById).toEqual({
+      "conflict-1": GIT_CONFLICT_SIDE.Incoming,
+      "conflict-2": null,
+    });
   });
 
   it("uses the backend side acceptance for missing-side file choices", async () => {

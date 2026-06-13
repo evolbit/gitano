@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChangeType } from "@/shared/types/git";
 import {
   GIT_CONFLICT_AI_CANDIDATE_KIND,
+  GIT_CONFLICT_AI_DECISION_CHOICE,
   GIT_CONFLICT_AI_SCOPE_KIND,
   GIT_CONFLICT_CONTENT_KIND,
   GIT_CONFLICT_KIND,
@@ -12,7 +13,6 @@ import {
   type GitConflictFileDetail,
   type GitConflictSide,
 } from "@/shared/types/git-conflicts";
-import { buildConflictResultProjection } from "../components/conflict-resolution-surface/utils/conflict-result-projection";
 import { useConflictAiFix } from "./use-conflict-ai-fix";
 
 const runLocalAiActionMock = vi.hoisted(() => vi.fn());
@@ -80,28 +80,30 @@ describe("useConflictAiFix", () => {
     runLocalAiActionMock.mockReset();
   });
 
-  it("runs a scoped region AI request and applies the returned candidate", async () => {
+  it("runs a file AI request and applies the returned candidate immediately", async () => {
     const onApplyFileContent = vi.fn();
-    const onApplyRegionContent = vi.fn();
     const fileDetail = detail();
-    const resultProjection = buildConflictResultProjection({
-      baseText: fileDetail.base?.text ?? null,
-      regions: fileDetail.regions,
-      resultText: fileDetail.result.text ?? "",
-    });
+    const decisions = [
+      {
+        regionId: "conflict-1",
+        selectedChoice: GIT_CONFLICT_AI_DECISION_CHOICE.Incoming,
+        reason: "Incoming keeps the expected branch behavior.",
+      },
+    ];
     runLocalAiActionMock.mockResolvedValueOnce({
       result: {
         kind: "conflictCandidate",
         data: {
           candidate: {
-            kind: GIT_CONFLICT_AI_CANDIDATE_KIND.RegionReplacement,
+            kind: GIT_CONFLICT_AI_CANDIDATE_KIND.FullFileResult,
             scope: {
-              kind: GIT_CONFLICT_AI_SCOPE_KIND.Region,
+              kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
               filePath: "src/conflict.ts",
-              regionId: "conflict-1",
             },
-            summary: "Use resolved content",
-            replacement: "resolved",
+            summary: "Applied incoming pricing behavior.",
+            details: "Kept incoming because it matches the expected branch behavior.",
+            content: "resolved file",
+            decisions,
             inputSignatures: {
               indexSignature: "index",
               resultSignature: "result",
@@ -115,43 +117,34 @@ describe("useConflictAiFix", () => {
         repoPath: "/repo",
         filePath: "src/conflict.ts",
         detail: fileDetail,
-        activeRegion: fileDetail.regions[0],
-        resultRegions: resultProjection.regions,
         onApplyFileContent,
-        onApplyRegionContent,
       }),
     );
 
     await act(async () => {
-      await result.current.runRegionFix();
+      await result.current.runFileFix();
     });
 
     expect(runLocalAiActionMock.mock.calls[0]?.[0]).toMatchObject({
       repoPath: "/repo",
       actionKind: "mergeConflictSuggestions",
       conflictScope: {
-        kind: GIT_CONFLICT_AI_SCOPE_KIND.Region,
+        kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
         filePath: "src/conflict.ts",
-        regionId: "conflict-1",
       },
     });
-
-    act(() => result.current.applyCandidate());
-
-    expect(onApplyRegionContent).toHaveBeenCalledWith("conflict-1", "resolved");
-    expect(onApplyFileContent).not.toHaveBeenCalled();
-    expect(result.current.candidate).toBeNull();
+    expect(onApplyFileContent).toHaveBeenCalledWith("resolved file", decisions);
+    expect(result.current.candidateSummary).toBe(
+      "Applied incoming pricing behavior.",
+    );
+    expect(result.current.candidateDetails).toBe(
+      "Kept incoming because it matches the expected branch behavior.",
+    );
   });
 
   it("rejects stale candidates before applying content", async () => {
     const onApplyFileContent = vi.fn();
-    const onApplyRegionContent = vi.fn();
     const fileDetail = detail();
-    const resultProjection = buildConflictResultProjection({
-      baseText: fileDetail.base?.text ?? null,
-      regions: fileDetail.regions,
-      resultText: fileDetail.result.text ?? "",
-    });
     runLocalAiActionMock.mockResolvedValueOnce({
       result: {
         kind: "conflictCandidate",
@@ -164,6 +157,7 @@ describe("useConflictAiFix", () => {
             },
             summary: "Resolve file",
             content: "resolved file",
+            decisions: [],
             inputSignatures: {
               indexSignature: "old-index",
               resultSignature: "result",
@@ -177,20 +171,113 @@ describe("useConflictAiFix", () => {
         repoPath: "/repo",
         filePath: "src/conflict.ts",
         detail: fileDetail,
-        activeRegion: fileDetail.regions[0],
-        resultRegions: resultProjection.regions,
         onApplyFileContent,
-        onApplyRegionContent,
       }),
     );
 
     await act(async () => {
       await result.current.runFileFix();
     });
-    act(() => result.current.applyCandidate());
 
     expect(onApplyFileContent).not.toHaveBeenCalled();
-    expect(onApplyRegionContent).not.toHaveBeenCalled();
     expect(result.current.error).toContain("stale");
+  });
+
+  it("accepts legacy snake-case input signatures from cached candidates", async () => {
+    const onApplyFileContent = vi.fn();
+    const fileDetail = detail();
+    runLocalAiActionMock.mockResolvedValueOnce({
+      result: {
+        kind: "conflictCandidate",
+        data: {
+          candidate: {
+            kind: GIT_CONFLICT_AI_CANDIDATE_KIND.FullFileResult,
+            scope: {
+              kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
+              filePath: "src/conflict.ts",
+            },
+            summary: "Resolve file",
+            content: "resolved file",
+            decisions: [],
+            input_signatures: {
+              indexSignature: "index",
+              resultSignature: "result",
+            },
+          },
+        },
+      },
+    });
+    const { result } = renderHook(() =>
+      useConflictAiFix({
+        repoPath: "/repo",
+        filePath: "src/conflict.ts",
+        detail: fileDetail,
+        onApplyFileContent,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.runFileFix();
+    });
+
+    expect(onApplyFileContent).toHaveBeenCalledWith("resolved file", []);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("falls back to decision text when candidate details are missing", async () => {
+    const onApplyFileContent = vi.fn();
+    const fileDetail = detail();
+    runLocalAiActionMock.mockResolvedValueOnce({
+      result: {
+        kind: "conflictCandidate",
+        data: {
+          candidate: {
+            kind: GIT_CONFLICT_AI_CANDIDATE_KIND.FullFileResult,
+            scope: {
+              kind: GIT_CONFLICT_AI_SCOPE_KIND.File,
+              filePath: "src/conflict.ts",
+            },
+            summary: "Resolved the file.",
+            content: "resolved file",
+            decisions: [
+              {
+                regionId: "conflict-1",
+                selectedChoice: GIT_CONFLICT_AI_DECISION_CHOICE.Incoming,
+                reason: "Incoming keeps the expected branch behavior.",
+              },
+              {
+                regionId: "conflict-2",
+                selectedChoice: GIT_CONFLICT_AI_DECISION_CHOICE.Combination,
+                reason: "Both sides keep compatible validation changes.",
+              },
+            ],
+            inputSignatures: {
+              indexSignature: "index",
+              resultSignature: "result",
+            },
+          },
+        },
+      },
+    });
+    const { result } = renderHook(() =>
+      useConflictAiFix({
+        repoPath: "/repo",
+        filePath: "src/conflict.ts",
+        detail: fileDetail,
+        onApplyFileContent,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.runFileFix();
+    });
+
+    expect(result.current.candidateSummary).toBe("Resolved the file.");
+    expect(result.current.candidateDetails).toBe(
+      [
+        "conflict-1: Incoming - Incoming keeps the expected branch behavior.",
+        "conflict-2: Combination - Both sides keep compatible validation changes.",
+      ].join("\n"),
+    );
   });
 });

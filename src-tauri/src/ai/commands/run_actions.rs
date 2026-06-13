@@ -431,32 +431,44 @@ fn normalize_scoped_conflict_result(
     let candidate = match (input.scope.clone(), candidate_result.candidate) {
         (
             scope @ LocalAiConflictScope::Region { .. },
-            LocalAiConflictCandidate::RegionReplacement { replacement, .. },
+            LocalAiConflictCandidate::RegionReplacement {
+                replacement,
+                details,
+                decisions,
+                ..
+            },
         ) => LocalAiConflictCandidate::RegionReplacement {
             scope,
             summary: summary.clone(),
+            details,
             replacement,
+            decisions,
             input_signatures: input.signatures.clone(),
         },
         (
             scope @ LocalAiConflictScope::File { .. },
-            LocalAiConflictCandidate::FullFileResult { content, .. },
+            LocalAiConflictCandidate::FullFileResult {
+                content,
+                details,
+                decisions,
+                ..
+            },
         ) => LocalAiConflictCandidate::FullFileResult {
             scope,
             summary: summary.clone(),
+            details,
             content,
+            decisions,
             input_signatures: input.signatures.clone(),
         },
         (LocalAiConflictScope::Region { .. }, _) => {
             return Err(
-                "Local AI returned a file candidate for a region-scoped conflict fix."
-                    .to_string(),
+                "Local AI returned a file candidate for a region-scoped conflict fix.".to_string(),
             );
         }
         (LocalAiConflictScope::File { .. }, _) => {
             return Err(
-                "Local AI returned a region candidate for a file-scoped conflict fix."
-                    .to_string(),
+                "Local AI returned a region candidate for a file-scoped conflict fix.".to_string(),
             );
         }
     };

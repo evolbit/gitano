@@ -67,6 +67,31 @@ mod tests {
     }
 
     #[test]
+    fn deserializes_conflict_scope_request_as_camel_case() {
+        let request: LocalAiRunRequest = serde_json::from_value(serde_json::json!({
+            "repoPath": "/repo",
+            "actionKind": "mergeConflictSuggestions",
+            "conflictScope": {
+                "kind": "file",
+                "filePath": "src/conflict.ts"
+            }
+        }))
+        .expect("deserialize request");
+
+        assert_eq!(request.repo_path, "/repo");
+        assert_eq!(
+            request.action_kind,
+            LocalAiActionKind::MergeConflictSuggestions
+        );
+        assert_eq!(
+            request.conflict_scope,
+            Some(LocalAiConflictScope::File {
+                file_path: "src/conflict.ts".to_string()
+            })
+        );
+    }
+
+    #[test]
     fn deserializes_null_model_preference_as_clear_request() {
         let request: LocalAiSetModelPreferenceRequest = serde_json::from_value(serde_json::json!({
             "modelId": null,

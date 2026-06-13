@@ -1,41 +1,9 @@
 use super::super::git_context::LocalAiGitContext;
-use super::super::types::{
-    LocalAiActionKind, LocalAiConflictScope, LocalAiPreferences,
-};
+use super::super::types::{LocalAiActionKind, LocalAiConflictScope, LocalAiPreferences};
 use std::borrow::Cow;
 
 pub fn default_prompt_instruction(action_kind: LocalAiActionKind) -> &'static str {
-    match action_kind {
-        LocalAiActionKind::CommitMessage => {
-            "Generate a Git commit message for the staged changes only.\n\
-             Requirements:\n\
-             - The message must be specific to the files and behavior changed.\n\
-             - Use imperative mood and keep the subject near 72 characters.\n\
-             - Prefer conventional commit style when a clear type fits: feat, fix, refactor, test, docs, chore.\n\
-             - Do not use generic messages like \"Update changes\", \"Update files\", \"Misc changes\", or \"Refactor code\"."
-        }
-        LocalAiActionKind::CommitAnalysis => {
-            "Analyze this commit for correctness, risk, and maintainability."
-        }
-        LocalAiActionKind::BranchAnalysis => {
-            "Analyze this branch or PR-style diff as a reviewer preparing to approve or question a PR.\n\
-             Focus on intent, real risks, behavioral changes, potential regressions, test gaps, recommendations, and action items.\n\
-             Do not return a raw changed-file list; the UI already shows the changed files. Mention files only when they support a concrete risk or action item.\n\
-             Do not create low-value findings. If there are no concrete findings, return an empty findings array and useful recommendations or action items if applicable.\n\
-             Keep the report focused on findings that affect review or release decisions."
-        }
-        LocalAiActionKind::BranchReview => {
-            "Review this branch like PR review feedback. Find changed lines that may introduce bugs, regressions, unsafe assumptions, missing validation, missing tests, or maintainability issues.\n\
-             Every inline finding must be anchored to a changed line from the diff. Use side \"new\" for added/modified new-code feedback and side \"old\" only when the deleted line itself needs attention.\n\
-             Do not summarize files. Do not produce informational cleanup comments. If there are no actionable changed-code risks, return an empty findings array and a concise summary.\n\
-             Suggested comments should be ready to paste into a PR and should ask for a concrete change or clarification.\n\
-             Include all material changed-code risks you can substantiate.\n\
-             Prioritize actionable, high-confidence findings over exhaustive or stylistic feedback."
-        }
-        LocalAiActionKind::MergeConflictSuggestions => {
-            "Suggest how to resolve these merge conflicts without modifying files."
-        }
-    }
+    action_kind.default_prompt_instruction()
 }
 
 pub fn effective_prompt_instruction(
@@ -84,10 +52,10 @@ fn output_shape_for_context(context: &LocalAiGitContext) -> &'static str {
     match &context.conflict_candidate_input {
         Some(input) => match &input.scope {
             LocalAiConflictScope::Region { .. } => {
-                "{\"summary\":\"...\",\"candidateKind\":\"regionReplacement\",\"replacement\":\"resolved content for the selected region\"}"
+                "{\"summary\":\"brief one-sentence resolution\",\"details\":\"full explanation of the resolution\",\"candidateKind\":\"regionReplacement\",\"replacement\":\"resolved content for the selected region\"}"
             }
             LocalAiConflictScope::File { .. } => {
-                "{\"summary\":\"...\",\"candidateKind\":\"fullFileResult\",\"content\":\"full resolved file content\"}"
+                "{\"summary\":\"brief one-sentence file resolution\",\"details\":\"full explanation with per-region reasoning\",\"candidateKind\":\"fullFileResult\",\"content\":\"full resolved file content\",\"decisions\":[{\"regionId\":\"conflict-1\",\"selectedChoice\":\"current|incoming|combination|custom\",\"reason\":\"why this region was resolved this way\"}]}"
             }
         },
         None => output_shape_for_action(context.action_kind),
@@ -170,7 +138,7 @@ fn build_branch_review_prompt(context: &LocalAiGitContext, instruction: &str) ->
 fn build_conflict_prompt(context: &LocalAiGitContext, instruction: &str) -> String {
     let output_contract = json_output_contract(output_shape_for_context(context));
     let scoped_instruction = if context.conflict_candidate_input.is_some() {
-        "Return exactly one reviewable candidate for the target scope. Do not mark the file resolved and do not claim that files were changed."
+        "Return exactly one reviewable candidate for the target scope. For file-scoped conflict fixes, include one decisions entry for each listed conflict region. Do not mark the file resolved and do not claim that files were changed."
     } else {
         "Do not provide an auto-applied patch."
     };
@@ -211,6 +179,20 @@ mod tests {
             scope: LocalAiConflictScope::Region {
                 file_path: "src/conflict.ts".to_string(),
                 region_id: "conflict-1".to_string(),
+            },
+            signatures: GitConflictSignatures {
+                index_signature: "index".to_string(),
+                result_signature: "result".to_string(),
+            },
+        });
+        context
+    }
+
+    fn scoped_file_context() -> LocalAiGitContext {
+        let mut context = test_context(LocalAiActionKind::MergeConflictSuggestions);
+        context.conflict_candidate_input = Some(LocalAiConflictCandidateInput {
+            scope: LocalAiConflictScope::File {
+                file_path: "src/conflict.ts".to_string(),
             },
             signatures: GitConflictSignatures {
                 index_signature: "index".to_string(),
@@ -275,14 +257,23 @@ mod tests {
 
     #[test]
     fn scoped_conflict_prompt_requests_single_candidate_shape() {
-        let prompt = build_prompt_with_instruction(
-            &scoped_region_context(),
-            "Fix the selected conflict.",
-        );
+        let prompt =
+            build_prompt_with_instruction(&scoped_region_context(), "Fix the selected conflict.");
 
         assert!(prompt.contains("\"candidateKind\":\"regionReplacement\""));
         assert!(prompt.contains("Return exactly one reviewable candidate"));
         assert!(prompt.contains("Do not mark the file resolved"));
+    }
+
+    #[test]
+    fn scoped_file_conflict_prompt_requests_decision_metadata() {
+        let prompt = build_prompt_with_instruction(&scoped_file_context(), "Resolve the file.");
+
+        assert!(prompt.contains("\"candidateKind\":\"fullFileResult\""));
+        assert!(prompt.contains("\"details\":\"full explanation with per-region reasoning\""));
+        assert!(prompt.contains("\"decisions\""));
+        assert!(prompt.contains("\"selectedChoice\":\"current|incoming|combination|custom\""));
+        assert!(prompt.contains("include one decisions entry for each listed conflict region"));
     }
 
     #[test]

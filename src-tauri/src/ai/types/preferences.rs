@@ -9,6 +9,24 @@ fn default_keep_alive_minutes() -> u64 {
     DEFAULT_KEEP_ALIVE_MINUTES
 }
 
+pub fn default_action_prompts() -> HashMap<String, String> {
+    [
+        LocalAiActionKind::CommitMessage,
+        LocalAiActionKind::CommitAnalysis,
+        LocalAiActionKind::BranchAnalysis,
+        LocalAiActionKind::BranchReview,
+        LocalAiActionKind::MergeConflictSuggestions,
+    ]
+    .into_iter()
+    .map(|action_kind| {
+        (
+            action_kind.as_key().to_string(),
+            action_kind.default_prompt_instruction().to_string(),
+        )
+    })
+    .collect()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(
     tag = "type",
@@ -69,6 +87,11 @@ pub struct LocalAiPreferences {
         HashMap<String, HashMap<String, HashMap<String, String>>>,
     #[serde(default)]
     pub action_prompt_overrides: HashMap<String, String>,
+    #[serde(
+        default = "default_action_prompts",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub default_action_prompts: HashMap<String, String>,
     #[serde(default)]
     pub warm_model_ids: Vec<String>,
     #[serde(default = "default_keep_alive_minutes")]
@@ -121,6 +144,7 @@ impl<'de> Deserialize<'de> for LocalAiPreferences {
             external_agent_option_values: wire.external_agent_option_values,
             action_external_agent_option_values: wire.action_external_agent_option_values,
             action_prompt_overrides: wire.action_prompt_overrides,
+            default_action_prompts: default_action_prompts(),
             warm_model_ids: wire.warm_model_ids,
             keep_alive_minutes: wire.keep_alive_minutes,
         };

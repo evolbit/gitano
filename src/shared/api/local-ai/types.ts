@@ -70,6 +70,7 @@ export type LocalAiPreferences = {
     Record<string, Record<string, string>>
   >;
   actionPromptOverrides?: Record<string, string>;
+  defaultActionPrompts?: Record<string, string>;
   warmModelIds?: string[];
   keepAliveMinutes?: number;
 };
